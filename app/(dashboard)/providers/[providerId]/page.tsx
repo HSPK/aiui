@@ -93,7 +93,7 @@ export default function ProviderDetailPage() {
             </div>
 
             {/* Provider Info Section */}
-            <div className="flex flex-col md:flex-row gap-6 md:items-start">
+            <div className="flex flex-col md:flex-row gap-6 md:items-start mr-4 ml-4 justify-between">
                 <div className="flex-1 space-y-4">
                     <div className="flex items-center gap-4">
                         <div className="h-16 w-16 bg-muted/30 rounded-xl flex items-center justify-center border">
@@ -161,7 +161,7 @@ export default function ProviderDetailPage() {
                 ) : models && models.length > 0 ? (
                     <div className="flex flex-col gap-4">
                         {models.map((model) => (
-                            <ModelCard key={model.model_id} model={model} />
+                            <ModelCard key={model.name} model={model} />
                         ))}
                     </div>
                 ) : (
