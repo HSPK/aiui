@@ -16,7 +16,7 @@ export function ModelCard({ model }: ModelCardProps) {
     const isReranker = model.type === "reranker";
 
     return (
-        <Card className="flex flex-col md:flex-row items-start md:items-center p-4 gap-4 bg-muted/30 border-transparent shadow-none hover:bg-card hover:border-border hover:shadow-sm transition-all group/card">
+        <Card className="flex flex-col md:flex-row items-start md:items-center p-4 gap-4 bg-muted/10 border-transparent shadow-none hover:border-border hover:shadow-sm transition-all group/card">
             <div className="flex-1 min-w-0 space-y-2">
                 <div className="flex items-center gap-2">
                     <h3 className="font-semibold text-base md:text-lg leading-snug truncate py-0.5" title={model.name}>
