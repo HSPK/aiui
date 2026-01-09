@@ -53,23 +53,23 @@ export default function ProvidersPage() {
 
     return (
         <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <h2 className="text-3xl font-bold tracking-tight">Providers & Models</h2>
-                <Button
-                    variant="outline"
-                    onClick={() => reloadMutation.mutate()}
-                    disabled={reloadMutation.isPending}
-                >
-                    <RefreshCcw className={`mr-2 h-4 w-4 ${reloadMutation.isPending ? "animate-spin" : ""}`} />
-                    Reload Config
-                </Button>
-            </div>
+            <h2 className="text-3xl font-bold tracking-tight">Providers & Models</h2>
 
             <Tabs defaultValue="providers" className="w-full">
-                <TabsList>
-                    <TabsTrigger value="providers">Providers</TabsTrigger>
-                    <TabsTrigger value="models">Models</TabsTrigger>
-                </TabsList>
+                <div className="flex items-center gap-2">
+                    <TabsList>
+                        <TabsTrigger value="providers">Providers</TabsTrigger>
+                        <TabsTrigger value="models">Models</TabsTrigger>
+                    </TabsList>
+                    <Button
+                        variant="outline"
+                        size="icon-sm"
+                        onClick={() => reloadMutation.mutate()}
+                        disabled={reloadMutation.isPending}
+                    >
+                        <RefreshCcw className={`h-2 w-2 ${reloadMutation.isPending ? "animate-spin" : ""}`} />
+                    </Button>
+                </div>
 
                 <TabsContent value="providers" className="mt-4">
                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -243,7 +243,15 @@ function ModelsTable({ models }: { models: ModelConfig[] }) {
                         <TableCell>
                             <Badge variant="outline">{model.type}</Badge>
                         </TableCell>
-                        <TableCell>{model.context_window?.toLocaleString() || '-'}</TableCell>
+                        <TableCell>
+                            <Badge variant="outline">
+                                {model.context_window
+                                    ? (model.context_window >= 1000
+                                        ? `${Math.round(model.context_window / 1000)}k`
+                                        : model.context_window.toLocaleString())
+                                    : '-'}
+                            </Badge>
+                        </TableCell>
                     </TableRow>
                 ))}
             </TableBody>
