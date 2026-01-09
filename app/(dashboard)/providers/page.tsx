@@ -1,6 +1,5 @@
 "use client"
 
-import * as React from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 import { ProviderConfig, ModelConfig } from "@/lib/types"
@@ -8,7 +7,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { toast } from "sonner"
 import {
     Table,
@@ -218,7 +216,7 @@ function ModelsTable({ models }: { models: ModelConfig[] }) {
                                         <TooltipTrigger asChild>
                                             <span className="truncate cursor-default">{model.name}</span>
                                         </TooltipTrigger>
-                                        <TooltipContent side="right" className="max-w-[300px] break-all">
+                                        <TooltipContent side="right" className="break-all">
                                             <p className="font-mono text-xs">{model.name}</p>
                                         </TooltipContent>
                                     </Tooltip>
