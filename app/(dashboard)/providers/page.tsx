@@ -18,7 +18,13 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table"
-import { RefreshCcw, FileText, BookOpen, ChevronRight } from "lucide-react"
+import { RefreshCcw, FileText, BookOpen, ChevronRight, Copy } from "lucide-react"
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 export default function ProvidersPage() {
     const queryClient = useQueryClient()
@@ -200,20 +206,44 @@ function ModelsTable({ models }: { models: ModelConfig[] }) {
                     <TableHead>Provider</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Context</TableHead>
-                    <TableHead className="text-right">Timeout</TableHead>
                 </TableRow>
             </TableHeader>
             <TableBody>
                 {models.map((model) => (
                     <TableRow key={model.name}>
-                        <TableCell className="font-mono">{model.name}</TableCell>
+                        <TableCell className="font-mono max-w-[300px]">
+                            <div className="flex items-center justify-between gap-2 group w-full">
+                                <TooltipProvider>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <span className="truncate cursor-default">{model.name}</span>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="right" className="max-w-[300px] break-all">
+                                            <p className="font-mono text-xs">{model.name}</p>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                </TooltipProvider>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(model.name)
+                                        toast.success("Model name copied to clipboard")
+                                    }}
+                                >
+                                    <Copy className="h-3 w-3 text-muted-foreground" />
+                                </Button>
+                            </div>
+                        </TableCell>
                         <TableCell className="font-mono text-xs text-muted-foreground">{model.model_id}</TableCell>
                         <TableCell>
                             <Badge variant="outline">{model.provider}</Badge>
                         </TableCell>
-                        <TableCell>{model.type}</TableCell>
+                        <TableCell>
+                            <Badge variant="outline">{model.type}</Badge>
+                        </TableCell>
                         <TableCell>{model.context_window?.toLocaleString() || '-'}</TableCell>
-                        <TableCell className="text-right">{model.timeout}s</TableCell>
                     </TableRow>
                 ))}
             </TableBody>
