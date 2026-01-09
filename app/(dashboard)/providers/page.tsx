@@ -23,6 +23,7 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { ProviderIcon } from "@/components/ProviderIcon"
 
 export default function ProvidersPage() {
     const queryClient = useQueryClient()
@@ -118,8 +119,13 @@ function ProviderCard({
                 <div className="flex justify-between items-start mb-2">
                     <div className="flex items-center gap-4">
                         {/* Logo Placeholder */}
-                        <div className="h-10 w-10 rounded-lg bg-primary/5 flex items-center justify-center border border-primary/10 group-hover:bg-primary/10 transition-colors">
-                            <span className="text-sm font-bold text-primary/80">{provider.provider_name.substring(0, 2).toUpperCase()}</span>
+                        <div className="h-10 w-10 shrink-0 flex items-center justify-center">
+                            <ProviderIcon
+                                providerName={provider.provider_name}
+                                className="h-10 w-10 text-lg"
+                                width={30}
+                                height={30}
+                            />
                         </div>
 
                         <div className="space-y-1">
