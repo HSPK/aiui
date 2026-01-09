@@ -15,7 +15,7 @@ export function ModelCard({ model }: ModelCardProps) {
     const isEmbedding = model.type === "embedding";
 
     return (
-        <Card className="flex flex-col md:flex-row items-start md:items-center p-6 ml-2 mr-2 gap-4 bg-muted/10 border-transparent shadow-none hover:bg-card hover:border-border hover:shadow-sm transition-all">
+        <Card className="flex flex-col md:flex-row items-start md:items-center p-6 ml-2 mr-2 gap-4 bg-muted/10 border-transparent shadow-none hover:border-border hover:shadow-sm transition-all">
             <div className="flex-1 min-w-0 space-y-1.5">
                 <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="font-semibold text-base md:text-lg leading-none truncate" title={model.name}>
