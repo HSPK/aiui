@@ -170,7 +170,10 @@ export default function ProvidersPage() {
                             />
                         ))}
                         {!isLoadingProviders && filteredProviders.length === 0 && (
-                            <p className="text-muted-foreground col-span-full">No providers found matching your search.</p>
+                            <div className="col-span-full flex flex-col items-center justify-center border-2 border-dashed rounded-lg h-[calc(100vh-220px)] text-muted-foreground">
+                                <Search className="h-8 w-8 mb-4 opacity-50" />
+                                <p className="text-lg font-medium">No providers found matching your search.</p>
+                            </div>
                         )}
                     </div>
                 </TabsContent>
