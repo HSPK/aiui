@@ -1,5 +1,6 @@
 "use client"
 
+import * as React from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 import { ProviderConfig, ModelConfig } from "@/lib/types"
@@ -17,7 +18,7 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table"
-import { RefreshCcw, CheckCircle2, XCircle, Globe, FileText, Server } from "lucide-react"
+import { RefreshCcw, FileText, BookOpen, ChevronRight } from "lucide-react"
 
 export default function ProvidersPage() {
     const queryClient = useQueryClient()
@@ -42,16 +43,6 @@ export default function ProvidersPage() {
         onError: (error) => {
             toast.error(`Failed to reload providers: ${error.message}`)
         },
-    })
-
-    const checkProviderMutation = useMutation({
-        mutationFn: api.checkProvider,
-        onSuccess: (_, variables) => {
-            toast.success(`Provider ${variables} is healthy`)
-        },
-        onError: (error, variables) => {
-            toast.error(`Provider ${variables} health check failed: ${error.message}`)
-        }
     })
 
     return (
@@ -82,8 +73,6 @@ export default function ProvidersPage() {
                             <ProviderCard
                                 key={provider.provider_name}
                                 provider={provider}
-                                onCheck={(id) => checkProviderMutation.mutate(id)}
-                                isChecking={checkProviderMutation.isPending && checkProviderMutation.variables === provider.provider_name}
                             />
                         ))}
                         {!isLoadingProviders && providers?.length === 0 && (
@@ -114,55 +103,89 @@ export default function ProvidersPage() {
 
 function ProviderCard({
     provider,
-    onCheck,
-    isChecking
 }: {
     provider: ProviderConfig,
-    onCheck: (id: string) => void,
-    isChecking: boolean
 }) {
     return (
-        <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="font-bold flex items-center gap-2">
-                    {provider.provider_name}
-                    {provider.is_local && <Badge variant="secondary" className="text-xs">Local</Badge>}
-                </CardTitle>
-                <Server className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent className="mt-4 space-y-2">
-                <div className="grid grid-cols-3 gap-2 text-sm">
-                    <span className="font-medium text-muted-foreground">Proxy:</span>
-                    <span className="col-span-2 font-mono text-xs bg-muted px-1 py-0.5 rounded truncate" title={provider.proxy}>
-                        {provider.proxy}
-                    </span>
+        <Card
+            className="group relative transition-all duration-300 hover:shadow-lg border-muted/60 hover:border-primary/20 cursor-pointer bg-card flex flex-col justify-between"
+        >
+            <CardContent>
+                <div className="flex justify-between items-start mb-2">
+                    <div className="flex items-center gap-4">
+                        {/* Logo Placeholder */}
+                        <div className="h-10 w-10 rounded-lg bg-primary/5 flex items-center justify-center border border-primary/10 group-hover:bg-primary/10 transition-colors">
+                            <span className="text-sm font-bold text-primary/80">{provider.provider_name.substring(0, 2).toUpperCase()}</span>
+                        </div>
+
+                        <div className="space-y-1">
+                            <h3 className="font-bold text-base leading-none tracking-tight">{provider.provider_name}</h3>
+                            <div className="flex items-center gap-2">
+                                {/* Status Indicator */}
+                                <div className="flex items-center gap-1.5">
+                                    <span className="h-1 w-1 rounded-full ring-1 ring-offset-1 transition-colors duration-300 bg-green-500 ring-green-200" />
+                                    <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
+                                        Operational
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="text-right">
+                        <div className="text-2xl font-bold tracking-tight text-foreground">{provider.n_models || 0}</div>
+                        <div className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">Models</div>
+                    </div>
                 </div>
 
-                <div className="flex gap-2 text-xs pt-2">
-                    {provider.model_page && (
-                        <a href={provider.model_page} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-blue-500 hover:underline">
-                            <Globe className="h-3 w-3" /> Models
-                        </a>
-                    )}
-                    {provider.document_page && (
-                        <a href={provider.document_page} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-blue-500 hover:underline">
-                            <FileText className="h-3 w-3" /> Docs
-                        </a>
-                    )}
+                <div className="flex items-end justify-between">
+                    <div className="flex flex-col gap-3">
+                        {/* Action Icons */}
+                        <div className="flex gap-3">
+                            {provider.model_page ? (
+                                <a
+                                    href={provider.model_page}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-muted-foreground/60 hover:text-primary transition-colors p-0.5"
+                                    onClick={(e) => e.stopPropagation()}
+                                    title="View Models"
+                                >
+                                    <FileText className="h-4 w-4" strokeWidth={1.5} />
+                                </a>
+                            ) : <FileText className="h-4 w-4 text-muted-foreground/20 cursor-not-allowed" strokeWidth={1.5} />}
+
+                            {provider.document_page ? (
+                                <a
+                                    href={provider.document_page}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-muted-foreground/60 hover:text-primary transition-colors p-0.5"
+                                    onClick={(e) => e.stopPropagation()}
+                                    title="Documentation"
+                                >
+                                    <BookOpen className="h-4 w-4" strokeWidth={1.5} />
+                                </a>
+                            ) : <BookOpen className="h-4 w-4 text-muted-foreground/20 cursor-not-allowed" strokeWidth={1.5} />}
+                        </div>
+
+                        {/* Capability Badges / Endpoint */}
+                        <Badge
+                            variant="outline"
+                            className="font-mono font-normal text-[10px] text-muted-foreground/60 group-hover:text-foreground group-hover:border-primary/20 cursor-default transition-colors h-5 px-1.5 max-w-[160px] truncate block w-fit"
+                            title={`Endpoint: ${provider.proxy}`}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {provider.proxy}
+                        </Badge>
+                    </div>
+
+                    {/* Arrow */}
+                    <div className="opacity-0 group-hover:opacity-100 transition-all duration-300 transform -translate-x-2 group-hover:translate-x-0 pb-0.5">
+                        <ChevronRight className="h-4 w-4 text-muted-foreground/80" />
+                    </div>
                 </div>
             </CardContent>
-            <CardFooter>
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    className="w-full"
-                    onClick={() => onCheck(provider.provider_name)} // API typically uses ID, but schema assumes provider_name? Using proxy or name as ID needs clarification. Usually REST uses ID.
-                    disabled={isChecking}
-                >
-                    {isChecking ? <RefreshCcw className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
-                    Check Health
-                </Button>
-            </CardFooter>
         </Card>
     )
 }
@@ -183,7 +206,7 @@ function ModelsTable({ models }: { models: ModelConfig[] }) {
             <TableBody>
                 {models.map((model) => (
                     <TableRow key={model.name}>
-                        <TableCell className="font-medium">{model.name}</TableCell>
+                        <TableCell className="font-mono">{model.name}</TableCell>
                         <TableCell className="font-mono text-xs text-muted-foreground">{model.model_id}</TableCell>
                         <TableCell>
                             <Badge variant="outline">{model.provider}</Badge>
@@ -197,3 +220,4 @@ function ModelsTable({ models }: { models: ModelConfig[] }) {
         </Table>
     )
 }
+

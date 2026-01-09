@@ -6,4 +6,5 @@ export interface ProviderConfig {
     default_params: Record<string, any>;
     http_proxy?: Record<string, string> | null;
     is_local: boolean;
+    n_models?: number;
 }
