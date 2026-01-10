@@ -28,6 +28,9 @@ interface PlaygroundState {
     removeTab: (id: string) => void;
     setActiveTab: (id: string) => void;
     updateTab: (id: string, updates: Partial<PlaygroundTab>) => void;
+    updateTabTitle: (id: string, title: string) => void;
+    closeOtherTabs: (id: string) => void;
+    closeAllTabs: () => void;
     toggleSidebar: () => void;
     setSidebarOpen: (open: boolean) => void;
 }
@@ -84,6 +87,20 @@ export const usePlaygroundStore = create<PlaygroundState>()(
             updateTab: (id, updates) => set((state) => ({
                 tabs: state.tabs.map((t) => (t.id === id ? { ...t, ...updates } : t)),
             })),
+
+            updateTabTitle: (id, title) => set((state) => ({
+                tabs: state.tabs.map((t) => (t.id === id ? { ...t, title } : t)),
+            })),
+
+            closeOtherTabs: (id) => set((state) => ({
+                tabs: state.tabs.filter((t) => t.id === id),
+                activeTabId: id,
+            })),
+
+            closeAllTabs: () => set({
+                tabs: [],
+                activeTabId: null,
+            }),
 
             toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
             setSidebarOpen: (open) => set({ isSidebarOpen: open }),

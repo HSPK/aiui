@@ -6,17 +6,32 @@ import { ChatFlow } from "@/components/playground/chat-flow"
 import { PlaygroundHome } from "@/components/playground/playground-home"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { Plus, X, MessageSquare, ChevronLeft, ChevronRight } from "lucide-react"
+import { Plus, X, MessageSquare, ChevronLeft, ChevronRight, MoreHorizontal, XCircle, Layers, Trash2 } from "lucide-react"
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
-function TabHeader({ tab, isActive, onClick, onClose }: {
+function TabHeader({ tab, isActive, onClick, onClose, onCloseOthers, onCloseAll }: {
     tab: PlaygroundTab
     isActive: boolean
     onClick: () => void
     onClose: (e: React.MouseEvent) => void
+    onCloseOthers: () => void
+    onCloseAll: () => void
 }) {
+    const [dropdownOpen, setDropdownOpen] = React.useState(false)
+
     return (
         <div
             onClick={onClick}
+            onContextMenu={(e) => {
+                e.preventDefault()
+                setDropdownOpen(true)
+            }}
             className={cn(
                 "group flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer select-none transition-all rounded-t-lg mx-0.5 h-[36px] shrink-0",
                 isActive
@@ -25,7 +40,59 @@ function TabHeader({ tab, isActive, onClick, onClose }: {
             )}
         >
             <MessageSquare className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate max-w-[120px] text-xs font-medium">{tab.title}</span>
+            <span className="truncate max-w-[100px] text-xs font-medium">{tab.title}</span>
+
+            {/* Dropdown Menu */}
+            <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
+                <DropdownMenuTrigger asChild>
+                    <div
+                        role="button"
+                        onClick={(e) => e.stopPropagation()}
+                        className={cn(
+                            "p-0.5 rounded-sm hover:bg-black/10 dark:hover:bg-white/10 transition-all shrink-0",
+                            dropdownOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                            isActive && !dropdownOpen && "opacity-60"
+                        )}
+                    >
+                        <MoreHorizontal className="h-3 w-3" />
+                    </div>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-44">
+                    <DropdownMenuItem
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            onClose(e as unknown as React.MouseEvent)
+                        }}
+                        className="text-xs"
+                    >
+                        <X className="h-3.5 w-3.5 mr-2" />
+                        Close Tab
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            onCloseOthers()
+                        }}
+                        className="text-xs"
+                    >
+                        <Layers className="h-3.5 w-3.5 mr-2" />
+                        Close Other Tabs
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            onCloseAll()
+                        }}
+                        className="text-xs text-destructive focus:text-destructive"
+                    >
+                        <Trash2 className="h-3.5 w-3.5 mr-2" />
+                        Close All Tabs
+                    </DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Close button */}
             <div
                 role="button"
                 onClick={onClose}
@@ -46,7 +113,9 @@ export default function PlaygroundPage() {
         activeTabId,
         setActiveTab,
         removeTab,
-        addTab
+        addTab,
+        closeOtherTabs,
+        closeAllTabs
     } = usePlaygroundStore()
 
     const tabsContainerRef = React.useRef<HTMLDivElement>(null)
@@ -112,6 +181,8 @@ export default function PlaygroundPage() {
                                     e.stopPropagation()
                                     removeTab(tab.id)
                                 }}
+                                onCloseOthers={() => closeOtherTabs(tab.id)}
+                                onCloseAll={closeAllTabs}
                             />
                         ))}
                     </div>

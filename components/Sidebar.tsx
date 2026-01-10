@@ -129,8 +129,19 @@ export function Sidebar({
                                         </TooltipContent>}
                                     </Tooltip>
                                 </TooltipProvider>
-                                {item.title === "Playground" && !collapsed && isPlaygroundExpanded && (
-                                    <SidebarHistory />
+                                {item.title === "Playground" && !collapsed && (
+                                    <div
+                                        className={cn(
+                                            "grid transition-all duration-200 ease-in-out",
+                                            isPlaygroundExpanded
+                                                ? "grid-rows-[1fr] opacity-100"
+                                                : "grid-rows-[0fr] opacity-0"
+                                        )}
+                                    >
+                                        <div className="overflow-hidden">
+                                            <SidebarHistory />
+                                        </div>
+                                    </div>
                                 )}
                             </div>
                         )
