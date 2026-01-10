@@ -37,7 +37,7 @@ const CURSOR_STYLES: Record<CursorShape, string> = {
     dot: "dot"
 }
 
-function ChatMessage({ role, content, model, isTyping, cursorShape = 'block' }: { role: string, content: any, model?: string, isTyping?: boolean, cursorShape?: CursorShape }) {
+const ChatMessage = React.memo(({ role, content, model, isTyping, cursorShape = 'block' }: { role: string, content: any, model?: string, isTyping?: boolean, cursorShape?: CursorShape }) => {
     // Attempt to handle the case where content might be a stringified JSON object
     // (Workaround for potential data synchronization issues)
     let displayContent = content;
@@ -85,7 +85,42 @@ function ChatMessage({ role, content, model, isTyping, cursorShape = 'block' }: 
             </div>
         </div>
     )
-}
+})
+ChatMessage.displayName = "ChatMessage"
+
+const MessageList = React.memo(({ messages, isLoading }: { messages: any[], isLoading: boolean }) => {
+    const messagesEndRef = React.useRef<HTMLDivElement>(null)
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    }
+
+    React.useEffect(() => {
+        scrollToBottom()
+    }, [messages, isLoading])
+
+    return (
+        <div className="pb-4">
+            {messages.length === 0 && (
+                <div className="h-full flex flex-col items-center justify-center p-8 text-muted-foreground opacity-50 space-y-4 pt-20">
+                    <Bot className="h-12 w-12" />
+                    <p>Start a conversation...</p>
+                </div>
+            )}
+            {messages.map((m: any, index: number) => (
+                <ChatMessage
+                    key={m.id}
+                    role={m.role}
+                    content={m.content}
+                    model={m.model}
+                    isTyping={isLoading && index === messages.length - 1 && m.role === 'assistant'}
+                />
+            ))}
+            <div ref={messagesEndRef} />
+        </div>
+    )
+})
+MessageList.displayName = "MessageList"
 
 export function ChatFlow({ tabId }: { tabId: string }) {
     const { tabs, updateTab } = usePlaygroundStore()
@@ -190,37 +225,10 @@ export function ChatFlow({ tabId }: { tabId: string }) {
     }, [messages, updateTab, tabId, tab?.conversationId])
 
 
-    const messagesEndRef = React.useRef<HTMLDivElement>(null)
-
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-    }
-
-    React.useEffect(() => {
-        scrollToBottom()
-    }, [messages, isLoading])
-
     return (
         <div className="flex flex-col h-full relative overflow-hidden">
             <ScrollArea className="flex-1 min-h-0 w-full">
-                <div className="pb-4">
-                    {messages.length === 0 && (
-                        <div className="h-full flex flex-col items-center justify-center p-8 text-muted-foreground opacity-50 space-y-4 pt-20">
-                            <Bot className="h-12 w-12" />
-                            <p>Start a conversation...</p>
-                        </div>
-                    )}
-                    {messages.map((m: any, index: number) => (
-                        <ChatMessage
-                            key={m.id}
-                            role={m.role}
-                            content={m.content}
-                            model={m.model}
-                            isTyping={isLoading && index === messages.length - 1 && m.role === 'assistant'}
-                        />
-                    ))}
-                    <div ref={messagesEndRef} />
-                </div>
+                <MessageList messages={messages} isLoading={isLoading} />
             </ScrollArea>
 
             <div className="p-4 bg-background z-10 w-full flex-none">
@@ -338,3 +346,5 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         </div>
     )
 }
+
+ChatMessage.displayName = "ChatMessage"
