@@ -156,7 +156,7 @@ export function LogsTable({ data, sorting, onSortingChange, onViewDetail }: Logs
                             <TableRow
                                 key={row.id}
                                 data-state={row.getIsSelected() && "selected"}
-                                className="cursor-pointer hover:bg-muted/50 border-b-muted/20 h-10 group"
+                                className="cursor-pointer hover:bg-muted/90 even:bg-muted/50 border-b-muted/20 h-10 group"
                                 onClick={() => onViewDetail(row.original.id)}
                             >
                                 {row.getVisibleCells().map((cell) => (

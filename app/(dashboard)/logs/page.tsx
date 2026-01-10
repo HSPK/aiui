@@ -74,27 +74,28 @@ export default function LogsPage() {
     const totalPages = data ? Math.ceil(data.total / pageSize) : 0
 
     return (
-        <div className="h-full flex flex-col space-y-4 p-0 md:p-0">
+        <div className="h-full flex flex-col space-y-2 p-0 md:p-0">
             {/* Top Controls Bar */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-2">
-                <div className="flex flex-1 items-center gap-3 w-full overflow-x-auto p-1 no-scrollbar">
+            <div className="flex items-center gap-2 py-1 px-1">
+                {/* Scrollable Filters */}
+                <div className="flex flex-1 items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth">
                     <Input
-                        placeholder="Filter user ID"
+                        placeholder="User ID"
                         value={userId}
                         onChange={(e) => setUserId(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                        className="w-[150px] h-9 focus-visible:ring-offset-0"
+                        className="w-[140px] md:w-[180px] h-8 text-xs focus-visible:ring-offset-0 shrink-0"
                     />
                     <Input
-                        placeholder="Filter model name"
+                        placeholder="Model name"
                         value={modelName}
                         onChange={(e) => setModelName(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                        className="w-[150px] h-9 focus-visible:ring-offset-0"
+                        className="w-[140px] md:w-[180px] h-8 text-xs focus-visible:ring-offset-0 shrink-0"
                     />
                     <Select value={status} onValueChange={(val: any) => { setStatus(val); setPage(1); }}>
-                        <SelectTrigger className="w-[140px] h-9">
-                            <SelectValue placeholder="All Status" />
+                        <SelectTrigger className="w-[110px] md:w-[140px] h-8 text-xs shrink-0">
+                            <SelectValue placeholder="Status" />
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">All Status</SelectItem>
@@ -103,31 +104,39 @@ export default function LogsPage() {
                             <SelectItem value="pending">Pending</SelectItem>
                         </SelectContent>
                     </Select>
-                    <div className="h-4 w-px bg-border mx-2 hidden md:block" />
+
+                    <div className="h-4 w-px bg-border mx-1 hidden md:block shrink-0" />
+
                     <Button
                         onClick={handleSearch}
                         size="sm"
                         variant="secondary"
-                        className="h-9 shrink-0"
+                        className="h-8 text-xs shrink-0"
                     >
-                        Apply Filters
+                        Filter
                     </Button>
                     {(activeFilters.userId || activeFilters.modelName || status !== "all") && (
                         <Button
                             variant="ghost"
                             onClick={handleClear}
                             size="sm"
-                            className="h-9 shrink-0 px-2 lg:px-4"
+                            className="h-8 text-xs shrink-0 px-2 text-muted-foreground hover:text-foreground"
                         >
                             Reset
                         </Button>
                     )}
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
-                    <Button variant="outline" size="sm" onClick={() => refetch()} className="h-9">
-                        <RefreshCcw className="h-3.5 w-3.5 mr-2" />
-                        Refresh
+                {/* Fixed Right Actions */}
+                <div className="flex items-center gap-1 shrink-0 pl-2 border-l border-border/50">
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => refetch()}
+                        className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                        title="Refresh Logs"
+                    >
+                        <RefreshCcw className="h-4 w-4" />
                     </Button>
                 </div>
             </div>
