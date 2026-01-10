@@ -19,8 +19,8 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ArrowUpDown, Eye, Files } from "lucide-react"
-import { format } from "date-fns"
 import { GenerationLog } from "@/lib/types"
+import { formatToLocal } from "@/lib/utils"
 
 interface LogsTableProps {
     data: GenerationLog[];
@@ -64,7 +64,7 @@ export function LogsTable({ data, sorting, onSortingChange, onViewDetail }: Logs
             },
             cell: ({ row }) => (
                 <div className="whitespace-nowrap text-xs text-muted-foreground">
-                    {format(new Date(row.getValue("created_at")), "MMM d, HH:mm:ss")}
+                    {formatToLocal(row.getValue("created_at"), "MMM d, HH:mm:ss")}
                 </div>
             )
         },

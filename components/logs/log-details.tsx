@@ -12,8 +12,8 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import dynamic from 'next/dynamic'
-import { format } from "date-fns"
 import { Loader2 } from "lucide-react"
+import { formatToLocal } from "@/lib/utils"
 
 const ReactJson = dynamic(() => import('react-json-view'), { ssr: false })
 
@@ -65,7 +65,9 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                             </div>
                             <div className="space-y-1 min-w-[150px]">
                                 <span className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Time</span>
-                                <div className="text-sm font-mono text-muted-foreground">{format(new Date(log.created_at), "yyyy-MM-dd HH:mm:ss")}</div>
+                                <div className="text-sm font-mono text-muted-foreground">
+                                    {formatToLocal(log.created_at, "yyyy-MM-dd HH:mm:ss")}
+                                </div>
                             </div>
                         </div>
 
