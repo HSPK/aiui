@@ -19,7 +19,7 @@ export function usePlaygroundChat({
     streamOptions = {
         smooth: true,
         delay: 15,
-        minChunkSize: 1
+        minChunkSize: 10
     }
 }: {
     initialMessages?: any[],

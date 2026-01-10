@@ -30,11 +30,11 @@ import { Label } from "@/components/ui/label"
 
 type CursorShape = 'bar' | 'block' | 'underscore' | 'dot'
 
-const CURSOR_CHARS: Record<CursorShape, string> = {
-    bar: '│',
-    block: '▋',
-    underscore: '_',
-    dot: '●'
+const CURSOR_STYLES: Record<CursorShape, string> = {
+    bar: "bar",
+    block: "block",
+    underscore: "underscore",
+    dot: "dot"
 }
 
 function ChatMessage({ role, content, model, isTyping, cursorShape = 'block' }: { role: string, content: any, model?: string, isTyping?: boolean, cursorShape?: CursorShape }) {
@@ -54,10 +54,6 @@ function ChatMessage({ role, content, model, isTyping, cursorShape = 'block' }: 
 
     displayContent = typeof displayContent === 'string' ? displayContent : JSON.stringify(displayContent, null, 2)
 
-    if (isTyping) {
-        displayContent += (CURSOR_CHARS[cursorShape] || '▋');
-    }
-
     return (
         <div className={cn("flex gap-4 p-4", role === "assistant" ? "bg-muted/50" : "bg-background")}>
             <Avatar className="h-8 w-8 border">
@@ -72,8 +68,19 @@ function ChatMessage({ role, content, model, isTyping, cursorShape = 'block' }: 
                     <span className="font-semibold text-sm capitalize">{role}</span>
                     {model && <Badge variant="outline" className="text-xs font-normal text-muted-foreground">{model}</Badge>}
                 </div>
-                <div className="prose prose-sm dark:prose-invert max-w-none break-words relative">
+                <div className={cn(
+                    "prose prose-sm dark:prose-invert max-w-none break-words relative",
+                    isTyping && displayContent && [
+                        "[&>*:last-child]:after:content-['▋']",
+                        "[&>*:last-child]:after:ml-1",
+                        "[&>*:last-child]:after:animate-pulse",
+                        "[&>*:last-child]:after:inline-block"
+                    ]
+                )}>
                     <ReactMarkdown>{displayContent}</ReactMarkdown>
+                    {isTyping && !displayContent && (
+                        <span className="animate-pulse">▋</span>
+                    )}
                 </div>
             </div>
         </div>
@@ -212,13 +219,6 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                             isTyping={isLoading && index === messages.length - 1 && m.role === 'assistant'}
                         />
                     ))}
-                    {isLoading && (
-                        <div className="p-4 pl-16">
-                            <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                                <Loader2 className="h-3 w-3 animate-spin" /> Thinking...
-                            </div>
-                        </div>
-                    )}
                     <div ref={messagesEndRef} />
                 </div>
             </ScrollArea>
