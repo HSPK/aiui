@@ -95,14 +95,14 @@ export function ModelSelector({ selectedModelIds, onModelSelect, side = "top", a
     React.useEffect(() => {
         if (open && optimisticIds.length > 0) {
             // Find the element with the data-model-id attribute matching the first selected id
-            // We use a slight timeout to allow the dropdown animation/render to happen
+            // Use a microtask/immediate timeout to scroll instantly after mount
             const timer = setTimeout(() => {
                 const firstSelected = optimisticIds[0]
                 const element = document.querySelector(`[data-model-id="${firstSelected}"]`)
                 if (element) {
-                    element.scrollIntoView({ block: "center", behavior: "smooth" })
+                    element.scrollIntoView({ block: "center" })
                 }
-            }, 100)
+            }, 10)
             return () => clearTimeout(timer)
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
