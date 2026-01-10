@@ -3,17 +3,19 @@
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Check, Copy, User, ChevronDown, ChevronRight } from "lucide-react"
+import { Check, Copy, ChevronDown, ChevronRight } from "lucide-react"
 import { cn, formatMessageTime } from "@/lib/utils"
 import ReactMarkdown from 'react-markdown'
 import { ProviderIcon } from "@/components/ProviderIcon"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { useSettingsStore } from "@/lib/stores/settings-store"
 
 export const ChatMessage = React.memo(({ message, provider, isTyping }: { message: any, provider?: string, isTyping?: boolean }) => {
     const { role, content, reasoning_content, model_id, created_at, createdAt } = message
     const messageDate = created_at || createdAt
     const [copied, setCopied] = React.useState(false)
     const [isReasoningOpen, setIsReasoningOpen] = React.useState(true)
+    const { userName, userAvatar } = useSettingsStore()
 
     // Memoize the JSON parsing/display calculation to avoid doing it on every render
     const displayContent = React.useMemo(() => {
@@ -53,8 +55,8 @@ export const ChatMessage = React.memo(({ message, provider, isTyping }: { messag
                         />
                     </AvatarFallback>
                 ) : (
-                    <AvatarFallback className="bg-muted text-muted-foreground">
-                        <User className="h-4 w-4" />
+                    <AvatarFallback className="bg-muted text-lg">
+                        {userAvatar}
                     </AvatarFallback>
                 )}
             </Avatar>
@@ -62,7 +64,7 @@ export const ChatMessage = React.memo(({ message, provider, isTyping }: { messag
             <div className="flex-1 space-y-1 overflow-hidden min-w-0">
                 <div className="flex items-center gap-2 min-w-0">
                     <span className="font-semibold text-sm truncate">
-                        {role === 'assistant' ? (provider ? `${provider} / ${model_id || 'Assistant'}` : (model_id || 'Assistant')) : 'User'}
+                        {role === 'assistant' ? (provider ? `${provider} / ${model_id || 'Assistant'}` : (model_id || 'Assistant')) : userName}
                     </span>
                     <span className="text-[10px] text-muted-foreground tabular-nums select-none opacity-50 group-hover:opacity-100 transition-opacity">
                         {formatMessageTime(messageDate)}

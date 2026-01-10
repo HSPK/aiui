@@ -3,6 +3,7 @@
 import * as React from "react"
 import { usePlaygroundChat } from "@/components/playground/use-playground-chat"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
+import { useSettingsStore } from "@/lib/stores/settings-store"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { ArrowUp } from "lucide-react"
@@ -12,11 +13,16 @@ import { useChatScroll, usePaginatedMessages } from "@/components/playground/hoo
 
 export function ChatFlow({ tabId }: { tabId: string }) {
     const { tabs, updateTab } = usePlaygroundStore()
+    const settings = useSettingsStore()
     const tab = tabs.find(t => t.id === tabId)
 
-    // Local settings state
-    const [temperature, setTemperature] = React.useState<number | undefined>(tab?.temperature)
-    const [historyLimit, setHistoryLimit] = React.useState(tab?.historyLimit ?? 10)
+    // Local settings state - use user defaults from settings store
+    const [temperature, setTemperature] = React.useState<number | undefined>(
+        tab?.temperature ?? settings.defaultTemperature
+    )
+    const [historyLimit, setHistoryLimit] = React.useState(
+        tab?.historyLimit ?? settings.defaultHistoryLimit
+    )
     const [reasoningEffort, setReasoningEffort] = React.useState<string | null>(null)
 
     // Normalize messages from store

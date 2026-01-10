@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input"
 import { useQuery } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 import { ProviderIcon } from "@/components/ProviderIcon"
+import { useSettingsStore } from "@/lib/stores/settings-store"
 
 const ModelItem = React.memo(({ model, isSelected, onSelect }: { model: any, isSelected: boolean, onSelect: (name: string) => void }) => {
     return (
@@ -52,6 +53,7 @@ export function ModelSelector({ selectedModelIds, onModelSelect, side = "top", a
     const [open, setOpen] = React.useState(false)
     const [searchQuery, setSearchQuery] = React.useState("")
     const scrollContainerRef = React.useRef<HTMLDivElement>(null)
+    const { defaultModel } = useSettingsStore()
 
     // Optimistic state for instant feedback
     const [optimisticIds, setOptimisticIds] = React.useState<string[]>(selectedModelIds)
@@ -73,11 +75,12 @@ export function ModelSelector({ selectedModelIds, onModelSelect, side = "top", a
     // Auto-select default model if none selected
     React.useEffect(() => {
         if (!isLoading && models.length > 0 && selectedModelIds.length === 0) {
-            const defaultModel = "gpt-3.5-turbo"
-            const hasDefault = models.some(m => m.name === defaultModel)
-            onModelSelect([hasDefault ? defaultModel : models[0].name])
+            // Use user's default model from settings, or fallback
+            const userDefault = defaultModel || "gpt-3.5-turbo"
+            const hasDefault = models.some(m => m.name === userDefault)
+            onModelSelect([hasDefault ? userDefault : models[0].name])
         }
-    }, [isLoading, models, selectedModelIds.length, onModelSelect])
+    }, [isLoading, models, selectedModelIds.length, onModelSelect, defaultModel])
 
     const filteredModels = React.useMemo(() => {
         if (!searchQuery) return models
