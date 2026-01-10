@@ -9,6 +9,7 @@ export type Message = {
     id: string
     role: "user" | "assistant" | "system"
     content: string
+    reasoning_content?: string
     model_id?: string
     created_at?: Date | string
     createdAt?: Date | string
@@ -52,6 +53,7 @@ export function usePlaygroundChat({
 
     // Smooth streaming state
     const pendingStreamBufferRef = useRef<string>("")
+    const pendingReasoningBufferRef = useRef<string>("")
     const streamIntervalRef = useRef<NodeJS.Timeout | null>(null)
     const isStreamingRef = useRef(false)
 
@@ -68,9 +70,43 @@ export function usePlaygroundChat({
     }, [])
 
     const flushStreamBuffer = useCallback((targetMsgId: string) => {
+        // Separate handling for content and reasoning
+
+        // 1. Flush Reasoning
+        if (pendingReasoningBufferRef.current) {
+            const backlog = pendingReasoningBufferRef.current.length;
+
+            // Smoother typewriter effect for reasoning
+            // Default to 1 char per tick (very smooth)
+            // Increase speed only if falling behind
+            let size = 1;
+
+            if (backlog > 200) size = 20;      // Emergency catch-up
+            else if (backlog > 50) size = 5;   // Moderate speed up
+            else if (backlog > 10) size = 2;   // Slight speed up
+
+            // Ensure we don't get stuck if buffer has content but size calculation is weird (unlikely with above)
+            if (size < 1) size = 1;
+
+            const chunk = pendingReasoningBufferRef.current.slice(0, size);
+            pendingReasoningBufferRef.current = pendingReasoningBufferRef.current.slice(size);
+
+            if (chunk) {
+                setMessages(prev => prev.map(m => {
+                    if (m.id === targetMsgId) {
+                        const currentReasoning = m.reasoning_content || ""
+                        return { ...m, reasoning_content: currentReasoning + chunk }
+                    }
+                    return m
+                }))
+                return
+            }
+        }
+
+        // 2. Flush Content (with existing smoothing logic)
         if (!pendingStreamBufferRef.current) return
 
-        // Dynamic chunk size based on buffer backlog to maintain smoothness
+        // Dynamic chunk size...
         // If backlog is huge, speed up typing, but avoid "dumping" all at once.
         const backlog = pendingStreamBufferRef.current.length
         let size = streamOptions.minChunkSize || 1
@@ -101,6 +137,7 @@ export function usePlaygroundChat({
         if (initializedRef.current !== currentId) {
             initializedRef.current = currentId
             pendingStreamBufferRef.current = ""
+            pendingReasoningBufferRef.current = ""
             if (initialMessages && initialMessages.length > 0) {
                 setMessages(initialMessages.map(m => ({
                     ...m,
@@ -259,8 +296,18 @@ export function usePlaygroundChat({
                         try {
                             const data = JSON.parse(dataStr)
 
-                            // Handle standard OpenAI chunk format: choices[0].delta.content
-                            const content = data.choices?.[0]?.delta?.content
+                            // Handle Standard / Reasoning
+                            const delta = data.choices?.[0]?.delta
+                            const content = delta?.content
+                            const reasoning = delta?.reasoning_content
+
+                            if (reasoning) {
+                                pendingReasoningBufferRef.current += reasoning
+                                if (isFirstChunk) {
+                                    isFirstChunk = false
+                                    flushStreamBuffer(assistantMsgId)
+                                }
+                            }
 
                             if (content) {
                                 // Instead of setting state immediately, we push to buffer
@@ -280,7 +327,7 @@ export function usePlaygroundChat({
             }
 
             // After stream is done, ensure buffer is fully flushed
-            while (pendingStreamBufferRef.current.length > 0) {
+            while (pendingStreamBufferRef.current.length > 0 || pendingReasoningBufferRef.current.length > 0) {
                 flushStreamBuffer(assistantMsgId)
                 await new Promise(r => setTimeout(r, streamOptions.delay || 15))
             }
@@ -313,7 +360,7 @@ export function usePlaygroundChat({
 
         isStreamingRef.current = true
         streamIntervalRef.current = setInterval(() => {
-            if (pendingStreamBufferRef.current.length > 0) {
+            if (pendingStreamBufferRef.current.length > 0 || pendingReasoningBufferRef.current.length > 0) {
                 flushStreamBuffer(msgId)
             } else if (!isStreamingRef.current) {
                 // Buffer empty and stream done

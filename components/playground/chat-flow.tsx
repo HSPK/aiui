@@ -28,6 +28,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
     // Local settings state (sync with store if needed)
     const [temperature, setTemperature] = React.useState<number | undefined>(tab?.temperature)
     const [historyLimit, setHistoryLimit] = React.useState(tab?.historyLimit ?? 10)
+    const [reasoningEffort, setReasoningEffort] = React.useState<string | null>(null)
 
     const handleModelSelect = (ids: string[]) => {
         updateTab(tabId, { modelIds: ids })
@@ -42,7 +43,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         })) || []
     }, [tab?.messages])
 
-    const { messages, input, handleInputChange, handleSubmit, isLoading, setMessages } = usePlaygroundChat({
+    const { messages, input, handleInputChange, handleSubmit, isLoading, setMessages, stop } = usePlaygroundChat({
         conversationId: tab?.conversationId,
         initialMessages: normalizedMessages,
     })
@@ -59,6 +60,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         role: m.role,
         content: typeof m.content === 'string' ? m.content : (Array.isArray(m.content) && m.content[0]?.text) || JSON.stringify(m.content),
         model_id: m.model_id,
+        reasoning_content: m.reasoning_content,
         created_at: m.created_at
     }), [])
 
@@ -228,16 +230,23 @@ export function ChatFlow({ tabId }: { tabId: string }) {
     }, [messages])
 
     // Smart Auto-Scroll (Only for new messages at the bottom)
+    const shouldAutoScrollRef = React.useRef(true)
     React.useEffect(() => {
         const viewport = viewportRef.current
         if (!viewport || messages.length === 0) return
 
         const lastMsg = messages[messages.length - 1]
+        const isNewMessage = lastMsg.id !== lastMessageIdRef.current
 
         // If the last message ID changed, it implies a new message was added to the END.
-        if (lastMsg.id !== lastMessageIdRef.current) {
+        if (isNewMessage) {
             lastMessageIdRef.current = lastMsg.id
             viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' })
+            shouldAutoScrollRef.current = true
+        } else if (shouldAutoScrollRef.current) {
+            // If we are already at the bottom (checked via shouldAutoScrollRef), keep scrolling
+            // Use 'instant' behavior or just set scrollTop to avoid jitter during rapid streaming
+            viewport.scrollTop = viewport.scrollHeight
         }
     }, [messages])
 
@@ -258,6 +267,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         // Threashold can be e.g. 100px from bottom
         const isAtBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 100
         setShowScrollBottom(!isAtBottom)
+        shouldAutoScrollRef.current = isAtBottom
 
     }, [hasMore, isLoadingMore, messages.length, loadMoreMessages])
 
@@ -268,13 +278,16 @@ export function ChatFlow({ tabId }: { tabId: string }) {
     }
 
     const onFormSubmit = (e: React.FormEvent) => {
+        const config: any = {
+            stream: true,
+            conv_history_limit: historyLimit
+        }
+        if (temperature !== undefined) config.temperature = temperature
+        if (reasoningEffort) config.reasoning_effort = reasoningEffort
+
         handleSubmit(e, {
             models: tab?.modelIds || ["gpt-3.5-turbo"], // Default fallback
-            config: {
-                stream: true,
-                temperature,
-                conv_history_limit: historyLimit
-            }
+            config
         })
     }
 
@@ -311,6 +324,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                     role: m.role as any,
                     content: [{ type: "text", text: String(contentVal) }],
                     model_id: m.model_id,
+                    reasoning_content: m.reasoning_content,
                     is_active: true,
                     created_at: m.created_at || new Date().toISOString()
                 }
@@ -395,20 +409,36 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                                     <div className="space-y-4">
                                         <h4 className="font-medium leading-none">Configuration</h4>
                                         <div className="grid gap-2">
-                                            <Label htmlFor="temperature">Temperature: {temperature}</Label>
+                                            <Label htmlFor="temperature">Temperature: {temperature ?? 'Default'}</Label>
                                             <Input
                                                 id="temperature"
                                                 type="number"
                                                 min={0}
                                                 max={2}
                                                 step={0.1}
-                                                value={temperature}
+                                                value={temperature ?? ''}
                                                 onChange={(e) => {
-                                                    const val = parseFloat(e.target.value)
+                                                    const val = e.target.value ? parseFloat(e.target.value) : undefined
                                                     setTemperature(val)
                                                     updateTab(tabId, { temperature: val })
                                                 }}
+                                                className="h-8"
+                                                placeholder="Default (Empty)"
                                             />
+                                        </div>
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="reasoning-effort">Reasoning Effort</Label>
+                                            <select
+                                                id="reasoning-effort"
+                                                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                                                value={reasoningEffort || ""}
+                                                onChange={(e) => setReasoningEffort(e.target.value || null)}
+                                            >
+                                                <option value="">Default (Empty)</option>
+                                                <option value="low">Low</option>
+                                                <option value="medium">Medium</option>
+                                                <option value="high">High</option>
+                                            </select>
                                         </div>
                                         <div className="grid gap-2">
                                             <Label htmlFor="history">History Limit</Label>
@@ -441,19 +471,27 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                                 </Button>
                             )}
 
-                            {(input?.trim() || isLoading) && (
+                            {isLoading ? (
+                                <Button
+                                    type="button"
+                                    size="icon"
+                                    onClick={(e) => {
+                                        e.preventDefault()
+                                        stop()
+                                    }}
+                                    className="h-8 w-8 rounded-full ml-1 bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                                >
+                                    <div className="h-2.5 w-2.5 bg-current rounded-[1px]" />
+                                </Button>
+                            ) : (input?.trim() && (
                                 <Button
                                     type="submit"
                                     size="icon"
-                                    disabled={isLoading || !input?.trim()}
-                                    className={cn(
-                                        "h-8 w-8 rounded-full ml-1",
-                                        isLoading ? "bg-muted text-muted-foreground" : "bg-primary text-primary-foreground"
-                                    )}
+                                    className="h-8 w-8 rounded-full ml-1 bg-primary text-primary-foreground"
                                 >
-                                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-5 w-5" />}
+                                    <ArrowUp className="h-5 w-5" />
                                 </Button>
-                            )}
+                            ))}
                         </div>
                     </div>
                 </form>

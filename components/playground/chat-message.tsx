@@ -3,15 +3,17 @@
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Check, Copy, User } from "lucide-react"
+import { Check, Copy, User, ChevronDown, ChevronRight, BrainCircuit } from "lucide-react"
 import { cn, formatMessageTime } from "@/lib/utils"
 import ReactMarkdown from 'react-markdown'
 import { ProviderIcon } from "@/components/ProviderIcon"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 
 export const ChatMessage = React.memo(({ message, provider, isTyping }: { message: any, provider?: string, isTyping?: boolean }) => {
-    const { role, content, model_id, created_at, createdAt } = message
+    const { role, content, reasoning_content, model_id, created_at, createdAt } = message
     const messageDate = created_at || createdAt
     const [copied, setCopied] = React.useState(false)
+    const [isReasoningOpen, setIsReasoningOpen] = React.useState(true) // Default open while generating? Or maybe user preference. Let's start open.
 
     // Memoize the JSON parsing/display calculation to avoid doing it on every render
     const displayContent = React.useMemo(() => {
@@ -66,6 +68,56 @@ export const ChatMessage = React.memo(({ message, provider, isTyping }: { messag
                         {formatMessageTime(messageDate)}
                     </span>
                 </div>
+
+                {/* Reasoning Block */}
+                {reasoning_content && (
+                    <Collapsible
+                        open={isReasoningOpen}
+                        onOpenChange={setIsReasoningOpen}
+                        className="mb-2"
+                    >
+                        <CollapsibleTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-6 p-2 hover:bg-transparent text-muted-foreground text-xs flex items-center gap-2 w-auto justify-start font-normal opacity-70 hover:opacity-100 transition-opacity">
+                                <span className="flex items-center justify-center w-4 h-4 rounded bg-muted/50">
+                                    {isReasoningOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                                </span>
+                                {isTyping && (!content || content.length === 0) ? "Reasoning..." : "Reasoning process"}
+                            </Button>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                            <div className={cn(
+                                "mt-2 pl-4 border-l-2 border-border/40 ml-2",
+                                "prose prose-sm prose-neutral dark:prose-invert max-w-none break-words leading-relaxed",
+                                "text-xs text-muted-foreground"
+                            )}>
+                                <ReactMarkdown
+                                    components={{
+                                        pre: ({ node, ...props }) => (
+                                            <div className="overflow-auto w-full my-2 bg-background/50 p-2 rounded-md border text-xs">
+                                                <pre {...props} />
+                                            </div>
+                                        ),
+                                        code: ({ node, inline, className, children, ...props }: any) => {
+                                            return (
+                                                <code
+                                                    className={cn("bg-background/50 rounded px-1 py-0.5 text-xs", className)}
+                                                    {...props}
+                                                >
+                                                    {children}
+                                                </code>
+                                            )
+                                        }
+                                    }}
+                                >
+                                    {reasoning_content}
+                                </ReactMarkdown>
+                                {isTyping && (!content || content.length === 0) && (
+                                    <span className="animate-pulse inline-block ml-0.5 align-middle text-primary">▋</span>
+                                )}
+                            </div>
+                        </CollapsibleContent>
+                    </Collapsible>
+                )}
 
                 <div className={cn(
                     "prose prose-sm dark:prose-invert max-w-none break-words relative leading-relaxed",
