@@ -98,7 +98,7 @@ export function LogsTable({ data, sorting, onSortingChange, onViewDetail }: Logs
         },
         {
             accessorKey: "status",
-            header: "Status",
+            header: () => <div className="text-left">Status</div>,
             cell: ({ row }) => {
                 const status = row.getValue("status") as string
                 return (
@@ -107,14 +107,6 @@ export function LogsTable({ data, sorting, onSortingChange, onViewDetail }: Logs
                     </Badge>
                 )
             }
-        },
-        {
-            id: "actions",
-            cell: ({ row }) => (
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onViewDetail(row.original.id)}>
-                    <Eye className="h-4 w-4" />
-                </Button>
-            )
         }
     ]
 
