@@ -24,7 +24,7 @@ const ModelItem = React.memo(({ model, isSelected, onSelect }: { model: any, isS
             onSelect={(e) => e.preventDefault()}
             data-model-id={model.name}
         >
-             <div className="flex items-center gap-2 w-full overflow-hidden">
+            <div className="flex items-center gap-2 w-full overflow-hidden">
                 <div className="h-4 w-4 shrink-0 flex items-center justify-center">
                     <ProviderIcon
                         providerName={model.provider || "unknown"}
@@ -70,6 +70,15 @@ export function ModelSelector({ selectedModelIds, onModelSelect, side = "top", a
         return Array.isArray(modelsData) ? modelsData : []
     }, [modelsData])
 
+    // Auto-select default model if none selected
+    React.useEffect(() => {
+        if (!isLoading && models.length > 0 && selectedModelIds.length === 0) {
+            const defaultModel = "gpt-3.5-turbo"
+            const hasDefault = models.some(m => m.name === defaultModel)
+            onModelSelect([hasDefault ? defaultModel : models[0].name])
+        }
+    }, [isLoading, models, selectedModelIds.length, onModelSelect])
+
     const filteredModels = React.useMemo(() => {
         if (!searchQuery) return models
         return models.filter(m => m.name.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -105,27 +114,29 @@ export function ModelSelector({ selectedModelIds, onModelSelect, side = "top", a
         onModelSelectRef.current = onModelSelect
     })
 
+    // Keep a ref of optimisticIds to read inside the stable callback
+    const optimisticIdsRef = React.useRef(optimisticIds)
+    React.useLayoutEffect(() => {
+        optimisticIdsRef.current = optimisticIds
+    }, [optimisticIds])
+
     const handleSelect = React.useCallback((modelName: string) => {
-        setOptimisticIds(prev => {
-            const isSelected = prev.includes(modelName)
-            let newIds
-            if (isSelected) {
-                 // Prevent deselecting if it's the last one, or allow it?
-                 // Usually select at least one is good, but let's allow empty if user wants, 
-                 // though the UI shows "Select Model". 
-                 // Actually the original code prevented empty: "if (selectedModelIds.length > 1)"
-                 // Let's keep that behavior.
-                if (prev.length > 1) {
-                    newIds = prev.filter(id => id !== modelName)
-                } else {
-                    return prev
-                }
-            } else {
-                newIds = [...prev, modelName]
+        const prev = optimisticIdsRef.current
+        const isSelected = prev.includes(modelName)
+        let newIds = prev
+
+        if (isSelected) {
+            if (prev.length > 1) {
+                newIds = prev.filter(id => id !== modelName)
             }
+        } else {
+            newIds = [...prev, modelName]
+        }
+
+        if (newIds !== prev) {
+            setOptimisticIds(newIds)
             onModelSelectRef.current(newIds)
-            return newIds
-        })
+        }
     }, [])
 
     const triggerLabel = React.useMemo(() => {
