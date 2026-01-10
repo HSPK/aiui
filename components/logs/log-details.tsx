@@ -23,6 +23,7 @@ import { Loader2, Copy, Check, FileText, Terminal, AlignLeft, Code } from "lucid
 import { formatToLocal, cn } from "@/lib/utils"
 // @ts-ignore
 import ReactMarkdown from 'react-markdown'
+import { useTheme } from "next-themes"
 
 const ReactJson = dynamic(() => import('react-json-view'), { ssr: false })
 
@@ -111,6 +112,7 @@ function ContentViewer({ title, content, colorClass }: { title: string, content:
 }
 
 export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
+    const { resolvedTheme } = useTheme()
     const { data: log, isLoading } = useQuery({
         queryKey: ["log", logId],
         queryFn: () => api.getLogDetail(logId!),
@@ -143,20 +145,24 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                 ) : log ? (
                     <div className="px-6 py-6 space-y-8 flex-1 overflow-y-auto">
                         {/* KPI Grid */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-card rounded-lg border shadow-sm">
+                        <div className="grid grid-cols-2 md:grid-cols-[2fr_1.5fr_1fr_0.5fr] gap-4 p-4 bg-card rounded-lg border shadow-sm">
                             <div className="space-y-1">
                                 <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider flex items-center gap-1">
                                     <Terminal className="h-3 w-3" /> Model
                                 </span>
-                                <div className="font-mono text-sm font-medium">{log.model_name}</div>
+                                <div title={log.model_name}>
+                                    <Badge variant="outline" className="font-mono text-xs font-normal h-auto whitespace-normal text-left break-all">
+                                        {log.model_name}
+                                    </Badge>
+                                </div>
                             </div>
-                            <div className="space-y-1">
+                            <div className="space-y-1 overflow-hidden">
                                 <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">User</span>
                                 <div className="text-sm font-medium truncate" title={log.user_id}>{log.user_id}</div>
                             </div>
                             <div className="space-y-1">
                                 <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Time</span>
-                                <div className="text-sm font-mono text-muted-foreground">
+                                <div className="text-sm font-mono text-muted-foreground whitespace-nowrap">
                                     {formatToLocal(log.created_at, "MM-dd HH:mm:ss")}
                                 </div>
                             </div>
@@ -198,6 +204,7 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                                             collapsed={false}
                                             displayDataTypes={false}
                                             enableClipboard
+                                            theme={resolvedTheme === 'dark' ? 'monokai' : 'rjv-default'}
                                             style={{ backgroundColor: 'transparent', fontSize: '12px' }}
                                         />
                                     </div>
@@ -218,6 +225,7 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                                             displayDataTypes={false}
                                             enableClipboard
                                             collapsed={1}
+                                            theme={resolvedTheme === 'dark' ? 'monokai' : 'rjv-default'}
                                             style={{ backgroundColor: 'transparent', fontSize: '12px' }}
                                         />
                                     </div>
