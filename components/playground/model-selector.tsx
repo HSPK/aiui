@@ -72,8 +72,9 @@ const ModelItem = React.memo(({ model, isSelected, onSelect }: { model: any, isS
             onCheckedChange={() => onSelect(model.name)}
             onSelect={(e) => e.preventDefault()}
             data-model-id={model.name}
+            className="text-xs py-1.5"
         >
-            <div className="flex items-center gap-2 w-full overflow-hidden">
+            <div className="flex items-center gap-1.5 w-full overflow-hidden">
                 <ProviderIconLight provider={model.provider || "unknown"} />
                 <span className="truncate">{model.name}</span>
             </div>
@@ -209,12 +210,12 @@ export function ModelSelector({ selectedModelIds, onModelSelect, side = "top", a
                 side={side}
                 onCloseAutoFocus={(e) => e.preventDefault()}
             >
-                <div className="px-2 py-2 border-b">
+                <div className="px-2 py-1.5 border-b">
                     <div className="relative">
-                        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Search className="absolute left-2 top-1.5 h-3.5 w-3.5 text-muted-foreground" />
                         <Input
                             placeholder="Search models..."
-                            className="pl-8 h-9"
+                            className="pl-7 h-7 text-xs"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             onKeyDown={(e) => e.stopPropagation()}
