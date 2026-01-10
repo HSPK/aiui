@@ -135,25 +135,25 @@ export function PlaygroundHome({ tabId }: { tabId?: string }) {
                     </div>
 
                     {/* Template Grid - Compact horizontal layout */}
-                    <div className="flex gap-2 overflow-x-auto pb-2 lg:flex-wrap scrollbar-none">
+                    <div className="flex gap-2 overflow-x-auto pb-2 lg:gap-3 lg:flex-wrap scrollbar-none">
                         {templates.map((template) => (
                             <div
                                 key={template.title}
                                 onClick={!template.disabled ? template.action : undefined}
                                 className={cn(
-                                    "group relative flex-shrink-0 rounded-xl border px-3 py-2.5 transition-all duration-200",
-                                    template.disabled 
-                                        ? "opacity-50 cursor-not-allowed bg-muted/30" 
+                                    "group relative flex-shrink-0 rounded-xl border px-3 py-2.5 lg:px-4 lg:py-3 transition-all duration-200",
+                                    template.disabled
+                                        ? "opacity-50 cursor-not-allowed bg-muted/30"
                                         : "cursor-pointer hover:shadow-md hover:border-primary/50 bg-gradient-to-br " + template.gradient
                                 )}
                             >
                                 <div className="flex items-center gap-3">
                                     <div className={cn(
-                                        "w-9 h-9 rounded-lg flex items-center justify-center shrink-0",
+                                        "w-9 h-9 lg:w-10 lg:h-10 rounded-lg flex items-center justify-center shrink-0",
                                         template.disabled ? "bg-muted" : "bg-background/80 backdrop-blur-sm shadow-sm"
                                     )}>
                                         <template.icon className={cn(
-                                            "h-4 w-4",
+                                            "h-4 w-4 lg:h-5 lg:w-5",
                                             template.disabled ? "text-muted-foreground" : template.iconColor
                                         )} />
                                     </div>
@@ -186,7 +186,7 @@ export function PlaygroundHome({ tabId }: { tabId?: string }) {
                         <span>Recent Activity</span>
                     </div>
 
-                    <div 
+                    <div
                         ref={scrollContainerRef}
                         className="flex-1 overflow-y-auto scrollbar-none min-h-0"
                     >
@@ -223,7 +223,7 @@ export function PlaygroundHome({ tabId }: { tabId?: string }) {
                                             <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                                         </div>
                                     ))}
-                                    
+
                                     {/* Loading indicator for infinite scroll */}
                                     <div ref={observerTarget} className="h-8 flex justify-center items-center">
                                         {isFetchingNextPage && (

@@ -125,7 +125,7 @@ function ConversationItem({
         <div
             onClick={onOpen}
             className={cn(
-                "group flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs cursor-pointer transition-all relative",
+                "group flex items-center gap-2 rounded-md px-4 py-1.5 text-xs cursor-pointer transition-all relative",
                 isSelected
                     ? "bg-secondary text-secondary-foreground font-medium"
                     : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
