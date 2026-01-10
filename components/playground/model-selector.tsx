@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Check, ChevronsUpDown, Box, Search } from "lucide-react"
+import { Check, ChevronsUpDown, Box, Search, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
     DropdownMenu,
@@ -220,6 +220,21 @@ export function ModelSelector({ selectedModelIds, onModelSelect, side = "top", a
                             onKeyDown={(e) => e.stopPropagation()}
                         />
                     </div>
+                    {/* Selected models chips */}
+                    {optimisticIds.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2">
+                            {optimisticIds.map((id) => (
+                                <button
+                                    key={id}
+                                    onClick={() => handleSelect(id)}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs hover:bg-primary/20 transition-colors group"
+                                >
+                                    <span className="truncate max-w-[120px]">{id}</span>
+                                    <X className="h-3 w-3 opacity-50 group-hover:opacity-100" />
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
                 {isLoading ? (
                     <div className="p-2 text-sm text-muted-foreground">Loading...</div>
