@@ -74,40 +74,26 @@ export default function LogsPage() {
     const totalPages = data ? Math.ceil(data.total / pageSize) : 0
 
     return (
-        <div className="space-y-6 h-full flex flex-col">
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => refetch()}>
-                        <RefreshCcw className="h-4 w-4 mr-2" />
-                        Refresh
-                    </Button>
-                </div>
-            </div>
-
-            {/* Filters */}
-            <div className="flex flex-col md:flex-row gap-4 p-4 border rounded-lg bg-card md:items-end">
-                <div className="flex-1 space-y-2">
-                    <label className="text-sm font-medium">User ID</label>
+        <div className="h-full flex flex-col space-y-4 p-0 md:p-0">
+            {/* Top Controls Bar */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-2">
+                <div className="flex flex-1 items-center gap-3 w-full overflow-x-auto p-1 no-scrollbar">
                     <Input
-                        placeholder="Filter by user..."
+                        placeholder="Filter user ID"
                         value={userId}
                         onChange={(e) => setUserId(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                        className="w-[150px] h-9 focus-visible:ring-offset-0"
                     />
-                </div>
-                <div className="flex-1 space-y-2">
-                    <label className="text-sm font-medium">Model Name</label>
                     <Input
-                        placeholder="Filter by model..."
+                        placeholder="Filter model name"
                         value={modelName}
                         onChange={(e) => setModelName(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                        className="w-[150px] h-9 focus-visible:ring-offset-0"
                     />
-                </div>
-                <div className="w-full md:w-48 space-y-2">
-                    <label className="text-sm font-medium">Status</label>
                     <Select value={status} onValueChange={(val: any) => { setStatus(val); setPage(1); }}>
-                        <SelectTrigger>
+                        <SelectTrigger className="w-[140px] h-9">
                             <SelectValue placeholder="All Status" />
                         </SelectTrigger>
                         <SelectContent>
@@ -117,69 +103,89 @@ export default function LogsPage() {
                             <SelectItem value="pending">Pending</SelectItem>
                         </SelectContent>
                     </Select>
-                </div>
-                <div className="flex items-center gap-2 pb-0.5">
-                    <Button onClick={handleSearch}>
-                        <Search className="h-4 w-4 mr-2" />
-                        Search
+                    <div className="h-4 w-px bg-border mx-2 hidden md:block" />
+                    <Button
+                        onClick={handleSearch}
+                        size="sm"
+                        variant="secondary"
+                        className="h-9 shrink-0"
+                    >
+                        Apply Filters
                     </Button>
-                    <Button variant="ghost" onClick={handleClear}>
-                        Clear
+                    {(activeFilters.userId || activeFilters.modelName || status !== "all") && (
+                        <Button
+                            variant="ghost"
+                            onClick={handleClear}
+                            size="sm"
+                            className="h-9 shrink-0 px-2 lg:px-4"
+                        >
+                            Reset
+                        </Button>
+                    )}
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                    <Button variant="outline" size="sm" onClick={() => refetch()} className="h-9">
+                        <RefreshCcw className="h-3.5 w-3.5 mr-2" />
+                        Refresh
                     </Button>
                 </div>
             </div>
 
             {/* Table Area */}
-            <div className="flex-1 border rounded-md min-h-[400px] bg-card relative">
+            <div className="flex-1 border rounded-xl bg-card shadow-sm flex flex-col overflow-hidden relative">
                 {isLoading && !data && (
                     <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
-                        <p className="text-muted-foreground">Loading logs...</p>
+                        <p className="text-muted-foreground animate-pulse">Loading logs...</p>
                     </div>
                 )}
-                <LogsTable
-                    data={data?.items || []}
-                    sorting={sorting}
-                    onSortingChange={setSorting}
-                    onViewDetail={(id) => {
-                        setSelectedLogId(id)
-                        setIsDetailOpen(true)
-                    }}
-                />
-            </div>
 
-            {/* Pagination Controls */}
-            <div className="flex items-center justify-between">
-                <div className="text-sm text-muted-foreground">
-                    {data ? (
-                        <>
-                            Showing {((page - 1) * pageSize) + 1} to {Math.min(page * pageSize, data.total)} of {data.total} entries
-                        </>
-                    ) : (
-                        "No data"
-                    )}
+                <div className="flex-1 overflow-auto">
+                    <LogsTable
+                        data={data?.items || []}
+                        sorting={sorting}
+                        onSortingChange={setSorting}
+                        onViewDetail={(id) => {
+                            setSelectedLogId(id)
+                            setIsDetailOpen(true)
+                        }}
+                    />
                 </div>
-                <div className="flex items-center space-x-2">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setPage(p => Math.max(1, p - 1))}
-                        disabled={page === 1 || isLoading}
-                    >
-                        <ChevronLeft className="h-4 w-4" />
-                        Previous
-                    </Button>
-                    <div className="flex items-center gap-1 text-sm font-medium min-w-[3rem] justify-center">
-                        Page {page} of {totalPages || 1}
+
+                {/* Pagination Footer */}
+                <div className="border-t bg-muted/20 p-2 flex items-center justify-between shrink-0">
+                    <div className="text-xs text-muted-foreground px-2">
+                        {data ? (
+                            <>
+                                Showing <span className="font-medium">{((page - 1) * pageSize) + 1}</span> to <span className="font-medium">{Math.min(page * pageSize, data.total)}</span> of <span className="font-medium">{data.total}</span>
+                            </>
+                        ) : (
+                            "No data"
+                        )}
                     </div>
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                        disabled={page >= totalPages || isLoading}
-                    >
-                        Next
-                        <ChevronRight className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center space-x-2">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onClick={() => setPage(p => Math.max(1, p - 1))}
+                            disabled={page === 1 || isLoading}
+                        >
+                            <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <div className="flex items-center gap-1 text-xs font-medium min-w-[3rem] justify-center">
+                            {page} / {totalPages || 1}
+                        </div>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                            disabled={page >= totalPages || isLoading}
+                        >
+                            <ChevronRight className="h-4 w-4" />
+                        </Button>
+                    </div>
                 </div>
             </div>
 

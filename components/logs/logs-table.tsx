@@ -33,12 +33,12 @@ export function LogsTable({ data, sorting, onSortingChange, onViewDetail }: Logs
     const columns: ColumnDef<GenerationLog>[] = [
         {
             accessorKey: "id",
-            header: "Trace ID",
+            header: () => <div className="text-center">Trace ID</div>,
             cell: ({ row }) => (
-                <div className="flex items-center gap-1 group">
-                    <span className="font-mono text-xs">{row.original.id.slice(0, 8)}</span>
+                <div className="flex items-center justify-center gap-1 group">
+                    <span className="font-mono text-xs text-muted-foreground">{row.original.id.slice(0, 8)}</span>
                     <Files
-                        className="h-3 w-3 opacity-0 group-hover:opacity-100 cursor-pointer text-muted-foreground"
+                        className="h-3 w-3 opacity-0 group-hover:opacity-100 cursor-pointer text-muted-foreground transition-opacity"
                         onClick={(e) => {
                             e.stopPropagation();
                             navigator.clipboard.writeText(row.original.id);
@@ -82,7 +82,7 @@ export function LogsTable({ data, sorting, onSortingChange, onViewDetail }: Logs
             accessorKey: "input",
             header: "Prompt",
             cell: ({ row }) => (
-                <div className="max-w-[150px] truncate text-xs text-muted-foreground" title={row.getValue("input")}>
+                <div className="max-w-[200px] truncate text-xs text-muted-foreground" title={row.getValue("input")}>
                     {row.getValue("input")}
                 </div>
             )
@@ -130,14 +130,14 @@ export function LogsTable({ data, sorting, onSortingChange, onViewDetail }: Logs
     })
 
     return (
-        <div className="rounded-md border">
+        <div className="overflow-hidden">
             <Table>
-                <TableHeader>
+                <TableHeader className="bg-muted/40 sticky top-0 z-10">
                     {table.getHeaderGroups().map((headerGroup) => (
-                        <TableRow key={headerGroup.id}>
+                        <TableRow key={headerGroup.id} className="hover:bg-transparent border-b-muted/60 shadow-sm">
                             {headerGroup.headers.map((header) => {
                                 return (
-                                    <TableHead key={header.id}>
+                                    <TableHead key={header.id} className="h-10 text-xs font-semibold tracking-wide uppercase text-muted-foreground/80 last:text-right first:pl-4 last:pr-4">
                                         {header.isPlaceholder
                                             ? null
                                             : flexRender(
@@ -156,11 +156,11 @@ export function LogsTable({ data, sorting, onSortingChange, onViewDetail }: Logs
                             <TableRow
                                 key={row.id}
                                 data-state={row.getIsSelected() && "selected"}
-                                className="cursor-pointer hover:bg-muted/50"
+                                className="cursor-pointer hover:bg-muted/50 border-b-muted/20 h-10 group"
                                 onClick={() => onViewDetail(row.original.id)}
                             >
                                 {row.getVisibleCells().map((cell) => (
-                                    <TableCell key={cell.id}>
+                                    <TableCell key={cell.id} className="py-2 first:pl-4 last:pr-4">
                                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                                     </TableCell>
                                 ))}
@@ -168,8 +168,8 @@ export function LogsTable({ data, sorting, onSortingChange, onViewDetail }: Logs
                         ))
                     ) : (
                         <TableRow>
-                            <TableCell colSpan={columns.length} className="h-24 text-center">
-                                No results.
+                            <TableCell colSpan={columns.length} className="h-full min-h-[200px] text-center text-muted-foreground align-middle">
+                                No logs found.
                             </TableCell>
                         </TableRow>
                     )}
