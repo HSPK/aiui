@@ -1,8 +1,8 @@
 // Proxy for the Chat backend
-// Ideally this should be in `lib/chat-hooks.ts` or similar, but putting here given the instructions
 
 import { useEffect, useState, useRef, useCallback } from "react"
 import { toast } from "sonner"
+import { flushSync } from "react-dom"
 import { getAuthHeader } from "@/lib/api"
 
 export type Message = {
@@ -19,27 +19,19 @@ export function usePlaygroundChat({
     initialMessages = [],
     conversationId,
     onConversationCreated,
-    streamOptions = {
-        smooth: true,
-        delay: 15,
-        minChunkSize: 10
-    }
+    updateInterval = 100,
 }: {
-    initialMessages?: any[],
-    conversationId?: string,
-    onConversationCreated?: (id: string, groupId?: string) => void,
-    streamOptions?: {
-        smooth?: boolean,
-        delay?: number,
-        minChunkSize?: number
-    }
+    initialMessages?: any[]
+    conversationId?: string
+    onConversationCreated?: (id: string, groupId?: string) => void
+    /** Minimum interval (ms) between UI updates during streaming. Default: 50ms */
+    updateInterval?: number
 }) {
-    // Initialize state from props to avoid initial render flicker/scroll
     const [messages, setMessages] = useState<Message[]>(() => {
         if (initialMessages && initialMessages.length > 0) {
             return initialMessages.map(m => ({
                 ...m,
-                id: m.id || ((typeof crypto !== 'undefined' && crypto.randomUUID && crypto.randomUUID()) || Math.random().toString(36).substring(2)),
+                id: m.id || crypto.randomUUID(),
                 role: m.role || "user",
                 content: m.content || ""
             }))
@@ -51,93 +43,16 @@ export function usePlaygroundChat({
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState<Error | null>(null)
 
-    // Smooth streaming state
-    const pendingStreamBufferRef = useRef<string>("")
-    const pendingReasoningBufferRef = useRef<string>("")
-    const streamIntervalRef = useRef<NodeJS.Timeout | null>(null)
-    const isStreamingRef = useRef(false)
-
-    // To handle aborts
     const abortControllerRef = useRef<AbortController | null>(null)
-    // Initialize with current conversationId to prevent immediate effect re-run
     const initializedRef = useRef<string | null>(conversationId || "new")
 
-    // Cleanup interval on unmount
-    useEffect(() => {
-        return () => {
-            if (streamIntervalRef.current) clearInterval(streamIntervalRef.current)
-        }
-    }, [])
-
-    const flushStreamBuffer = useCallback((targetMsgId: string) => {
-        // Separate handling for content and reasoning
-
-        // 1. Flush Reasoning
-        if (pendingReasoningBufferRef.current) {
-            const backlog = pendingReasoningBufferRef.current.length;
-
-            // Smoother typewriter effect for reasoning
-            // Default to 1 char per tick (very smooth)
-            // Increase speed only if falling behind
-            let size = 1;
-
-            if (backlog > 200) size = 20;      // Emergency catch-up
-            else if (backlog > 50) size = 5;   // Moderate speed up
-            else if (backlog > 10) size = 2;   // Slight speed up
-
-            // Ensure we don't get stuck if buffer has content but size calculation is weird (unlikely with above)
-            if (size < 1) size = 1;
-
-            const chunk = pendingReasoningBufferRef.current.slice(0, size);
-            pendingReasoningBufferRef.current = pendingReasoningBufferRef.current.slice(size);
-
-            if (chunk) {
-                setMessages(prev => prev.map(m => {
-                    if (m.id === targetMsgId) {
-                        const currentReasoning = m.reasoning_content || ""
-                        return { ...m, reasoning_content: currentReasoning + chunk }
-                    }
-                    return m
-                }))
-                return
-            }
-        }
-
-        // 2. Flush Content (with existing smoothing logic)
-        if (!pendingStreamBufferRef.current) return
-
-        // Dynamic chunk size...
-        // If backlog is huge, speed up typing, but avoid "dumping" all at once.
-        const backlog = pendingStreamBufferRef.current.length
-        let size = streamOptions.minChunkSize || 1
-
-        if (backlog > 200) size = 10     // Very far behind
-        else if (backlog > 100) size = 5 // Far behind
-        else if (backlog > 30) size = 2  // Slightly behind
-
-        const chunk = pendingStreamBufferRef.current.slice(0, size)
-        pendingStreamBufferRef.current = pendingStreamBufferRef.current.slice(size)
-
-        if (chunk) {
-            setMessages(prev => prev.map(m => {
-                if (m.id === targetMsgId) {
-                    const currentContent = typeof m.content === 'string' ? m.content : ""
-                    return { ...m, content: currentContent + chunk }
-                }
-                return m
-            }))
-        }
-    }, [streamOptions.minChunkSize])
-
-    // Sync initial messages
+    // Sync initial messages when conversationId changes
     useEffect(() => {
         if (isLoading) return
 
         const currentId = conversationId || "new"
         if (initializedRef.current !== currentId) {
             initializedRef.current = currentId
-            pendingStreamBufferRef.current = ""
-            pendingReasoningBufferRef.current = ""
             if (initialMessages && initialMessages.length > 0) {
                 setMessages(initialMessages.map(m => ({
                     ...m,
@@ -156,16 +71,10 @@ export function usePlaygroundChat({
             abortControllerRef.current.abort()
             abortControllerRef.current = null
         }
-        if (streamIntervalRef.current) {
-            clearInterval(streamIntervalRef.current)
-            streamIntervalRef.current = null
-        }
-        isStreamingRef.current = false
         setIsLoading(false)
     }, [])
 
-
-    const handleSubmit = async (e?: React.FormEvent, options?: { models: string[], config: any }) => {
+    const handleSubmit = async (e?: React.FormEvent, options?: { models: string[]; config: any }) => {
         e?.preventDefault()
 
         const safeInput = input || ""
@@ -179,7 +88,7 @@ export function usePlaygroundChat({
 
         const model = options.models[0]
         if (options.models.length > 1) {
-            toast.info(`Comparing models is not fully supported in this mode yet. Using ${model}.`)
+            toast.info(`Comparing models is not fully supported yet. Using ${model}.`)
         }
 
         const userContent = safeInput
@@ -187,7 +96,6 @@ export function usePlaygroundChat({
         setError(null)
         setIsLoading(true)
 
-        // Optimistic user update
         const userMsg: Message = {
             id: crypto.randomUUID(),
             role: "user",
@@ -195,7 +103,6 @@ export function usePlaygroundChat({
             created_at: new Date()
         }
 
-        // Placeholder assistant message
         const assistantMsgId = crypto.randomUUID()
         const assistantMsg: Message = {
             id: assistantMsgId,
@@ -207,19 +114,82 @@ export function usePlaygroundChat({
 
         setMessages(prev => [...prev, userMsg, assistantMsg])
 
-        // Abort controller
         abortControllerRef.current = new AbortController()
 
-        // Start stream consumer
-        startStreamConsumer(assistantMsgId)
+        // Accumulated content for the streaming message
+        let accumulatedContent = ""
+        let accumulatedReasoning = ""
+
+        // Throttle updates: min interval configurable, but always update first and last
+        const MIN_UPDATE_INTERVAL = updateInterval
+        let lastUpdateTime = 0
+        let isFirstUpdate = true
+        let pendingUpdate = false
+        let pendingTimeout: ReturnType<typeof setTimeout> | null = null
+
+        const updateMessage = (content: string, reasoning: string, force = false) => {
+            const now = Date.now()
+            const timeSinceLastUpdate = now - lastUpdateTime
+
+            // Clear any pending timeout
+            if (pendingTimeout) {
+                clearTimeout(pendingTimeout)
+                pendingTimeout = null
+            }
+
+            // First update or forced update (for [DONE]) - immediate
+            if (isFirstUpdate || force) {
+                isFirstUpdate = false
+                lastUpdateTime = now
+                flushSync(() => {
+                    setMessages(prev =>
+                        prev.map(m =>
+                            m.id === assistantMsgId
+                                ? { ...m, content, reasoning_content: reasoning || undefined }
+                                : m
+                        )
+                    )
+                })
+                return
+            }
+
+            // Enough time has passed - update immediately
+            if (timeSinceLastUpdate >= MIN_UPDATE_INTERVAL) {
+                lastUpdateTime = now
+                flushSync(() => {
+                    setMessages(prev =>
+                        prev.map(m =>
+                            m.id === assistantMsgId
+                                ? { ...m, content, reasoning_content: reasoning || undefined }
+                                : m
+                        )
+                    )
+                })
+            } else {
+                // Schedule update for later
+                pendingUpdate = true
+                pendingTimeout = setTimeout(() => {
+                    lastUpdateTime = Date.now()
+                    pendingUpdate = false
+                    flushSync(() => {
+                        setMessages(prev =>
+                            prev.map(m =>
+                                m.id === assistantMsgId
+                                    ? { ...m, content, reasoning_content: reasoning || undefined }
+                                    : m
+                            )
+                        )
+                    })
+                }, MIN_UPDATE_INTERVAL - timeSinceLastUpdate)
+            }
+        }
 
         try {
-            // Use local proxy/rewrite path
             const res = await fetch("/api/playground/chat", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
-                    "Authorization": getAuthHeader() || ""
+                    Authorization: getAuthHeader() || ""
                 },
                 body: JSON.stringify({
                     conversation_id: conversationId,
@@ -239,137 +209,79 @@ export function usePlaygroundChat({
 
             const reader = res.body.getReader()
             const decoder = new TextDecoder()
-            let done = false
             let buffer = ""
-            let currentEvent = "message"
-            // To reduce TTFT (Time To First Token), we track the first chunk
-            let isFirstChunk = true
 
-            while (!done) {
-                const { value, done: doneReading } = await reader.read()
-                done = doneReading
-                if (value) {
-                    const chunk = decoder.decode(value, { stream: true })
-                    buffer += chunk
+            while (true) {
+                const { value, done } = await reader.read()
+                if (done) break
 
-                    const lines = buffer.split("\n")
-                    // Keep the last line in buffer if incomplete
-                    buffer = lines.pop() || ""
+                buffer += decoder.decode(value, { stream: true })
+                const lines = buffer.split("\n")
+                buffer = lines.pop() || ""
 
-                    for (const line of lines) {
-                        const trimmed = line.trim()
+                for (const line of lines) {
+                    const trimmed = line.trim()
+                    if (!trimmed || !trimmed.startsWith("data: ")) continue
 
-                        // Empty line indicates end of event
-                        if (!trimmed) {
-                            currentEvent = "message"
-                            continue
+                    const dataStr = trimmed.slice(6)
+                    if (dataStr === "[DONE]") {
+                        // Force final update when stream ends
+                        updateMessage(accumulatedContent, accumulatedReasoning, true)
+                        break
+                    }
+
+                    try {
+                        const data = JSON.parse(dataStr)
+                        const delta = data.choices?.[0]?.delta
+                        const content = delta?.content
+                        const reasoning = delta?.reasoning_content
+
+                        let hasUpdate = false
+
+                        if (reasoning) {
+                            accumulatedReasoning += reasoning
+                            hasUpdate = true
+                        }
+                        if (content) {
+                            accumulatedContent += content
+                            hasUpdate = true
                         }
 
-                        if (trimmed.startsWith("event: ")) {
-                            currentEvent = trimmed.slice(7).trim()
-                            continue
+                        // Throttled update
+                        if (hasUpdate) {
+                            updateMessage(accumulatedContent, accumulatedReasoning)
                         }
-
-                        if (!trimmed.startsWith("data: ")) continue
-
-                        const dataStr = trimmed.slice(6) // Remove "data: "
-                        if (dataStr === "[DONE]") {
-                            done = true
-                            break
-                        }
-
-                        // Handle explicit server-side stream errors
-                        if (currentEvent === "error") {
-                            try {
-                                const data = JSON.parse(dataStr)
-                                const errMsg = data.error?.message || "Stream error occurred"
-                                throw new Error(errMsg)
-                            } catch (e) {
-                                if (e instanceof Error && e.message !== "Unexpected end of JSON input") {
-                                    throw e
-                                }
-                                // If parse fails, maybe raw string?
-                                throw new Error(dataStr || "Stream error occurred")
-                            }
-                        }
-
-                        try {
-                            const data = JSON.parse(dataStr)
-
-                            // Handle Standard / Reasoning
-                            const delta = data.choices?.[0]?.delta
-                            const content = delta?.content
-                            const reasoning = delta?.reasoning_content
-
-                            if (reasoning) {
-                                pendingReasoningBufferRef.current += reasoning
-                                if (isFirstChunk) {
-                                    isFirstChunk = false
-                                    flushStreamBuffer(assistantMsgId)
-                                }
-                            }
-
-                            if (content) {
-                                // Instead of setting state immediately, we push to buffer
-                                pendingStreamBufferRef.current += content
-
-                                // If it's the very first chunk, flush immediately to avoid any delay
-                                if (isFirstChunk) {
-                                    isFirstChunk = false
-                                    flushStreamBuffer(assistantMsgId)
-                                }
-                            }
-                        } catch (e) {
-                            // ignore parse errors for non-json data lines if any
-                        }
+                    } catch {
+                        // ignore parse errors
                     }
                 }
             }
-
-            // After stream is done, ensure buffer is fully flushed
-            while (pendingStreamBufferRef.current.length > 0 || pendingReasoningBufferRef.current.length > 0) {
-                flushStreamBuffer(assistantMsgId)
-                await new Promise(r => setTimeout(r, streamOptions.delay || 15))
-            }
-
+            // Final update after stream ends (in case [DONE] wasn't received)
+            updateMessage(accumulatedContent, accumulatedReasoning, true)
         } catch (err: any) {
-            if (err.name === 'AbortError') {
-                console.log('Request aborted')
+            if (err.name === "AbortError") {
+                console.log("Request aborted")
+                // Still update with whatever we have
+                updateMessage(accumulatedContent, accumulatedReasoning, true)
             } else {
                 console.error("Chat Error:", err)
                 setError(err)
                 toast.error(err.message || "Failed to send message")
-                setMessages(prev => prev.map(m =>
-                    m.id === assistantMsgId ? { ...m, content: "Error: " + (err.message || "Failed to generate response") } : m
-                ))
+                setMessages(prev =>
+                    prev.map(m =>
+                        m.id === assistantMsgId
+                            ? { ...m, content: "Error: " + (err.message || "Failed to generate response") }
+                            : m
+                    )
+                )
             }
         } finally {
-            if (streamIntervalRef.current) {
-                clearInterval(streamIntervalRef.current)
-                streamIntervalRef.current = null
-            }
             setIsLoading(false)
-            isStreamingRef.current = false
             abortControllerRef.current = null
         }
     }
 
-    // Start consumption loop when we start loading
-    const startStreamConsumer = useCallback((msgId: string) => {
-        if (streamIntervalRef.current) clearInterval(streamIntervalRef.current)
-
-        isStreamingRef.current = true
-        streamIntervalRef.current = setInterval(() => {
-            if (pendingStreamBufferRef.current.length > 0 || pendingReasoningBufferRef.current.length > 0) {
-                flushStreamBuffer(msgId)
-            } else if (!isStreamingRef.current) {
-                // Buffer empty and stream done
-                if (streamIntervalRef.current) clearInterval(streamIntervalRef.current)
-            }
-        }, streamOptions.delay || 15)
-    }, [flushStreamBuffer, streamOptions.delay])
-
-    const handleInputChangeCustom = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         setInput(e.target.value)
     }
 
@@ -377,7 +289,7 @@ export function usePlaygroundChat({
         messages,
         input,
         setInput,
-        handleInputChange: handleInputChangeCustom,
+        handleInputChange,
         handleSubmit,
         isLoading,
         setMessages,

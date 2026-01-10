@@ -123,3 +123,26 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Typing cursor blink animation - independent of content updates */
+@keyframes cursor-blink {
+  0%, 50% {
+    opacity: 1;
+  }
+  51%, 100% {
+    opacity: 0;
+  }
+}
+
+.typing-cursor {
+  animation: cursor-blink 1s step-end infinite;
+}
+
+/* Typing cursor as pseudo-element on the last child */
+.typing-active > *:last-child::after {
+  content: "▋";
+  display: inline;
+  margin-left: 2px;
+  color: hsl(var(--primary));
+  animation: cursor-blink 1s step-end infinite;
+}

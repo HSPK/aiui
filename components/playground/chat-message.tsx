@@ -3,7 +3,7 @@
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Check, Copy, User, ChevronDown, ChevronRight, BrainCircuit } from "lucide-react"
+import { Check, Copy, User, ChevronDown, ChevronRight } from "lucide-react"
 import { cn, formatMessageTime } from "@/lib/utils"
 import ReactMarkdown from 'react-markdown'
 import { ProviderIcon } from "@/components/ProviderIcon"
@@ -13,7 +13,7 @@ export const ChatMessage = React.memo(({ message, provider, isTyping }: { messag
     const { role, content, reasoning_content, model_id, created_at, createdAt } = message
     const messageDate = created_at || createdAt
     const [copied, setCopied] = React.useState(false)
-    const [isReasoningOpen, setIsReasoningOpen] = React.useState(true) // Default open while generating? Or maybe user preference. Let's start open.
+    const [isReasoningOpen, setIsReasoningOpen] = React.useState(true)
 
     // Memoize the JSON parsing/display calculation to avoid doing it on every render
     const displayContent = React.useMemo(() => {
@@ -111,9 +111,6 @@ export const ChatMessage = React.memo(({ message, provider, isTyping }: { messag
                                 >
                                     {reasoning_content}
                                 </ReactMarkdown>
-                                {isTyping && (!content || content.length === 0) && (
-                                    <span className="animate-pulse inline-block ml-0.5 align-middle text-primary">▋</span>
-                                )}
                             </div>
                         </CollapsibleContent>
                     </Collapsible>
@@ -121,12 +118,7 @@ export const ChatMessage = React.memo(({ message, provider, isTyping }: { messag
 
                 <div className={cn(
                     "prose prose-sm dark:prose-invert max-w-none break-words relative leading-relaxed",
-                    isTyping && displayContent && [
-                        "[&>*:last-child]:after:content-['▋']",
-                        "[&>*:last-child]:after:ml-1",
-                        "[&>*:last-child]:after:animate-pulse",
-                        "[&>*:last-child]:after:inline-block"
-                    ]
+                    isTyping && displayContent && "typing-active"
                 )}>
                     <ReactMarkdown components={{
                         pre: ({ node, ...props }) => (
@@ -148,7 +140,7 @@ export const ChatMessage = React.memo(({ message, provider, isTyping }: { messag
                         {displayContent}
                     </ReactMarkdown>
                     {isTyping && !displayContent && (
-                        <span className="animate-pulse">▋</span>
+                        <span className="typing-cursor text-primary">▋</span>
                     )}
                 </div>
             </div>
