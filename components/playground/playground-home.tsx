@@ -18,10 +18,11 @@ export function PlaygroundHome({ tabId }: { tabId?: string }) {
     })
 
     const handleSelect = (types: any) => {
+        const conversationId = crypto.randomUUID()
         if (tabId) {
-            updateTab(tabId, { type: types, title: "Chat" });
+            updateTab(tabId, { type: types, title: "Chat", conversationId });
         } else {
-            addTab(types);
+            addTab({ type: types, title: "Chat", conversationId });
         }
     }
 

@@ -48,6 +48,7 @@ export const usePlaygroundStore = create<PlaygroundState>((set) => ({
 
         const id = tabConfig.id || crypto.randomUUID();
         const newTab: PlaygroundTab = {
+            conversationId: crypto.randomUUID(),
             id,
             title: tabConfig.title || "New Tab",
             messages: [],

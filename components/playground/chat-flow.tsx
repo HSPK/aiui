@@ -28,7 +28,17 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
-function ChatMessage({ role, content, model, isTyping }: { role: string, content: any, model?: string, isTyping?: boolean }) {
+
+type CursorShape = 'bar' | 'block' | 'underscore' | 'dot'
+
+const CURSOR_STYLES: Record<CursorShape, string> = {
+    bar: "after:content-['|']",
+    block: "after:content-['▋']",
+    underscore: "after:content-['_']",
+    dot: "after:content-['●']"
+}
+
+function ChatMessage({ role, content, model, isTyping, cursorShape = 'block' }: { role: string, content: any, model?: string, isTyping?: boolean, cursorShape?: CursorShape }) {
     // Attempt to handle the case where content might be a stringified JSON object
     // (Workaround for potential data synchronization issues)
     let displayContent = content;
@@ -59,10 +69,22 @@ function ChatMessage({ role, content, model, isTyping }: { role: string, content
                     <span className="font-semibold text-sm capitalize">{role}</span>
                     {model && <Badge variant="outline" className="text-xs font-normal text-muted-foreground">{model}</Badge>}
                 </div>
-                <div className="prose prose-sm dark:prose-invert max-w-none break-words relative">
+                <div className={cn(
+                    "prose prose-sm dark:prose-invert max-w-none break-words relative",
+                    isTyping && [
+                        "[&>*:last-child]:after:ml-0.5",
+                        "[&>*:last-child]:after:animate-pulse",
+                        "[&>*:last-child]:after:inline-block",
+                        "[&>*:last-child]:after:align-baseline",
+                        CURSOR_STYLES[cursorShape]
+                    ]
+                )}>
                     <ReactMarkdown>{displayContent}</ReactMarkdown>
-                    {isTyping && (
-                        <span className="inline-block w-2 h-4 ml-1 bg-current animate-pulse align-middle" style={{ animationDuration: '0.6s' }} />
+                    {/* Fallback for empty content start */}
+                    {isTyping && !displayContent && (
+                        <span className={cn("animate-pulse inline-block", cursorShape === 'block' ? "" : "ml-0.5")}>
+                            {cursorShape === 'bar' ? '|' : cursorShape === 'underscore' ? '_' : cursorShape === 'dot' ? '●' : '▋'}
+                        </span>
                     )}
                 </div>
             </div>
