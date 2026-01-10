@@ -206,8 +206,8 @@ export const ChatMessage = React.memo(({ message, provider, isTyping, onViewGene
                     )}
                 </Button>
 
-                {/* Rating buttons - only for assistant messages */}
-                {role === "assistant" && (
+                {/* Rating buttons - only for assistant messages after generation is complete (has generation_id) */}
+                {role === "assistant" && generation_id && (
                     <>
                         <Button
                             variant="ghost"

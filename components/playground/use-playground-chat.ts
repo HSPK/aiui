@@ -119,6 +119,8 @@ export function usePlaygroundChat({
         // Accumulated content for the streaming message
         let accumulatedContent = ""
         let accumulatedReasoning = ""
+        let serverMessageId: string | null = null
+        let serverGenerationId: string | null = null
 
         // Throttle updates: min interval configurable, but always update first and last
         const MIN_UPDATE_INTERVAL = updateInterval
@@ -127,7 +129,7 @@ export function usePlaygroundChat({
         let pendingUpdate = false
         let pendingTimeout: ReturnType<typeof setTimeout> | null = null
 
-        const updateMessage = (content: string, reasoning: string, force = false) => {
+        const updateMessage = (content: string, reasoning: string, force = false, includeIds = false) => {
             const now = Date.now()
             const timeSinceLastUpdate = now - lastUpdateTime
 
@@ -137,15 +139,28 @@ export function usePlaygroundChat({
                 pendingTimeout = null
             }
 
+            // Build the update object
+            const getUpdate = () => {
+                const update: any = { content, reasoning_content: reasoning || undefined }
+                if (includeIds) {
+                    // Use server ID as the message id for rating/details functionality
+                    if (serverMessageId) update.id = serverMessageId
+                    if (serverGenerationId) update.generation_id = serverGenerationId
+                }
+                return update
+            }
+
             // First update or forced update (for [DONE]) - immediate
             if (isFirstUpdate || force) {
                 isFirstUpdate = false
                 lastUpdateTime = now
+                const updateObj = getUpdate()
                 flushSync(() => {
                     setMessages(prev =>
                         prev.map(m =>
-                            m.id === assistantMsgId
-                                ? { ...m, content, reasoning_content: reasoning || undefined }
+                            // Match by current id OR by the temp assistantMsgId
+                            (m.id === assistantMsgId || m.id === serverMessageId)
+                                ? { ...m, ...updateObj }
                                 : m
                         )
                     )
@@ -159,8 +174,8 @@ export function usePlaygroundChat({
                 flushSync(() => {
                     setMessages(prev =>
                         prev.map(m =>
-                            m.id === assistantMsgId
-                                ? { ...m, content, reasoning_content: reasoning || undefined }
+                            (m.id === assistantMsgId || m.id === serverMessageId)
+                                ? { ...m, ...getUpdate() }
                                 : m
                         )
                     )
@@ -174,7 +189,7 @@ export function usePlaygroundChat({
                     flushSync(() => {
                         setMessages(prev =>
                             prev.map(m =>
-                                m.id === assistantMsgId
+                                (m.id === assistantMsgId || m.id === serverMessageId)
                                     ? { ...m, content, reasoning_content: reasoning || undefined }
                                     : m
                             )
@@ -205,6 +220,10 @@ export function usePlaygroundChat({
                 throw new Error(text || res.statusText)
             }
 
+            // Get message and generation IDs from response headers
+            serverMessageId = res.headers.get("X-Message-ID")
+            serverGenerationId = res.headers.get("X-Generation-ID")
+
             if (!res.body) throw new Error("No response body")
 
             const reader = res.body.getReader()
@@ -225,8 +244,8 @@ export function usePlaygroundChat({
 
                     const dataStr = trimmed.slice(6)
                     if (dataStr === "[DONE]") {
-                        // Force final update when stream ends
-                        updateMessage(accumulatedContent, accumulatedReasoning, true)
+                        // Force final update when stream ends, include server IDs
+                        updateMessage(accumulatedContent, accumulatedReasoning, true, true)
                         break
                     }
 
@@ -257,19 +276,19 @@ export function usePlaygroundChat({
                 }
             }
             // Final update after stream ends (in case [DONE] wasn't received)
-            updateMessage(accumulatedContent, accumulatedReasoning, true)
+            updateMessage(accumulatedContent, accumulatedReasoning, true, true)
         } catch (err: any) {
             if (err.name === "AbortError") {
                 console.log("Request aborted")
-                // Still update with whatever we have
-                updateMessage(accumulatedContent, accumulatedReasoning, true)
+                // Still update with whatever we have, include IDs if available
+                updateMessage(accumulatedContent, accumulatedReasoning, true, true)
             } else {
                 console.error("Chat Error:", err)
                 setError(err)
                 toast.error(err.message || "Failed to send message")
                 setMessages(prev =>
                     prev.map(m =>
-                        m.id === assistantMsgId
+                        (m.id === assistantMsgId || m.id === serverMessageId)
                             ? { ...m, content: "Error: " + (err.message || "Failed to generate response") }
                             : m
                     )

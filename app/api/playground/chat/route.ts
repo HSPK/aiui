@@ -34,12 +34,18 @@ export async function POST(req: NextRequest) {
         })
     }
 
-    // Forward the SSE stream directly
-    return new Response(response.body, {
-        headers: {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-        },
-    })
+    // Forward the SSE stream directly, including message/generation IDs from backend
+    const headers: Record<string, string> = {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+    }
+
+    // Forward X-Message-ID and X-Generation-ID from backend response
+    const messageId = response.headers.get("X-Message-ID")
+    const generationId = response.headers.get("X-Generation-ID")
+    if (messageId) headers["X-Message-ID"] = messageId
+    if (generationId) headers["X-Generation-ID"] = generationId
+
+    return new Response(response.body, { headers })
 }

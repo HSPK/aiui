@@ -117,19 +117,6 @@ export const ChatInput = React.memo(function ChatInput({
                         onReasoningEffortChange={onReasoningEffortChange}
                     />
 
-                    {hasMessages && (
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={onClearMessages}
-                            title="Clear history"
-                            className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        >
-                            <Eraser className="h-5 w-5" />
-                        </Button>
-                    )}
-
                     {isLoading ? (
                         <Button
                             type="button"
