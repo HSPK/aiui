@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { usePlaygroundChat } from "@/components/playground/use-playground-chat"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
 import { useSettingsStore } from "@/lib/stores/settings-store"
@@ -10,11 +11,16 @@ import { ArrowUp } from "lucide-react"
 import { MessageList } from "@/components/playground/message-list"
 import { ChatInput } from "@/components/playground/chat-input"
 import { useChatScroll, usePaginatedMessages } from "@/components/playground/hooks"
+import { api } from "@/lib/api"
 
 export function ChatFlow({ tabId }: { tabId: string }) {
-    const { tabs, updateTab } = usePlaygroundStore()
+    const { tabs, updateTab, updateTabTitle } = usePlaygroundStore()
     const settings = useSettingsStore()
+    const queryClient = useQueryClient()
     const tab = tabs.find(t => t.id === tabId)
+
+    // Track if we've generated a title for this conversation
+    const titleGeneratedRef = React.useRef<Set<string>>(new Set())
 
     // Local settings state - use user defaults from settings store
     const [temperature, setTemperature] = React.useState<number | undefined>(
@@ -120,6 +126,58 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         }, 1000)
         return () => clearTimeout(timeout)
     }, [messages, updateTab, tabId, tab?.conversationId])
+
+    // Auto-generate title after first response
+    React.useEffect(() => {
+        const convId = tab?.conversationId
+        const currentTitle = tab?.title
+        if (!convId) return
+
+        // Only generate title once per conversation
+        if (titleGeneratedRef.current.has(convId)) return
+
+        // Skip if conversation already has a meaningful title (not default)
+        // This handles: existing conversations, tab switches, page refreshes
+        const defaultTitles = ['Chat', 'New Tab', 'New Chat', '']
+        if (currentTitle && !defaultTitles.includes(currentTitle)) {
+            // Mark as already generated so we don't try again
+            titleGeneratedRef.current.add(convId)
+            return
+        }
+
+        // Need at least one user message and one assistant response
+        if (messages.length < 2) return
+
+        const userMsg = messages.find(m => m.role === 'user')
+        const assistantMsg = messages.find(m => m.role === 'assistant' && m.content && m.content.length > 10)
+
+        if (!userMsg || !assistantMsg) return
+
+        // Don't generate if still loading (assistant might not be done)
+        if (isLoading) return
+
+        // Mark as generated to prevent duplicate calls
+        titleGeneratedRef.current.add(convId)
+
+        // Get summary model from settings, fallback to default model or first available
+        const summaryModel = settings.defaultSummaryModel || settings.defaultModel || tab?.modelIds?.[0]
+        if (!summaryModel) return
+
+        // Generate title in background
+        api.generateTitle(summaryModel, userMsg.content, assistantMsg.content)
+            .then(title => {
+                updateTabTitle(tabId, title)
+                // Also update on backend
+                api.updateConversationTitle(convId, title).catch(() => {
+                    // Ignore backend errors, local title is sufficient
+                })
+                // Refresh sidebar history to show new conversation
+                queryClient.invalidateQueries({ queryKey: ["conversations"] })
+            })
+            .catch(err => {
+                console.error('Failed to generate title:', err)
+            })
+    }, [messages, isLoading, tab?.conversationId, tab?.title, tab?.modelIds, settings.defaultSummaryModel, settings.defaultModel, tabId, updateTabTitle])
 
     return (
         <div className="h-full relative overflow-hidden">

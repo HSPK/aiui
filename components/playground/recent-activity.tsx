@@ -49,7 +49,16 @@ export function RecentActivity({ onOpenConversation }: RecentActivityProps) {
         return () => observer.disconnect()
     }, [hasNextPage, fetchNextPage, isFetchingNextPage])
 
-    const conversations = data?.pages.flatMap((page) => page?.items || []) || []
+    // Deduplicate conversations by id (can happen with pagination + new data)
+    const conversations = React.useMemo(() => {
+        const items = data?.pages.flatMap((page) => page?.items || []) || []
+        const seen = new Set<string>()
+        return items.filter((conv: any) => {
+            if (seen.has(conv.id)) return false
+            seen.add(conv.id)
+            return true
+        })
+    }, [data?.pages])
 
     return (
         <div className="flex-1 lg:flex-[2] flex flex-col lg:border-l lg:pl-8 pt-6 lg:pt-0 border-t lg:border-t-0 mt-4 lg:mt-0 min-h-0 overflow-hidden">

@@ -281,7 +281,16 @@ export function SidebarHistory() {
         )
     }
 
-    const conversations = data?.pages.flatMap((page) => page?.items || []) || []
+    // Deduplicate conversations by id (can happen with pagination + new data)
+    const conversations = React.useMemo(() => {
+        const items = data?.pages.flatMap((page) => page?.items || []) || []
+        const seen = new Set<string>()
+        return items.filter(conv => {
+            if (seen.has(conv.id)) return false
+            seen.add(conv.id)
+            return true
+        })
+    }, [data?.pages])
 
     if (conversations.length === 0) {
         return (

@@ -197,4 +197,44 @@ export const api = {
 
         return res;
     },
+
+    // Generate conversation title using summary model
+    generateTitle: async (model: string, userMessage: string, assistantMessage: string): Promise<string> => {
+        const auth = getAuthHeader();
+        const headers: Record<string, string> = {
+            "Content-Type": "application/json",
+        };
+        if (auth) {
+            headers["Authorization"] = auth;
+        }
+
+        const res = await fetch(`${BASE_URL}/v1/chat/completions`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+                model,
+                messages: [
+                    {
+                        role: "system",
+                        content: "Generate a concise title (3-6 words) for this conversation. Output only the title, no quotes or extra text."
+                    },
+                    {
+                        role: "user",
+                        content: `User: ${userMessage.slice(0, 500)}\n\nAssistant: ${assistantMessage.slice(0, 500)}`
+                    }
+                ],
+                max_tokens: 30,
+                temperature: 0.7,
+            }),
+        });
+
+        if (!res.ok) {
+            throw new ApiError(`Failed to generate title`, res.status);
+        }
+
+        const json = await res.json();
+        const title = json.choices?.[0]?.message?.content?.trim() || "New Chat";
+        // Clean up: remove quotes if present
+        return title.replace(/^["']|["']$/g, '').slice(0, 50);
+    },
 };
