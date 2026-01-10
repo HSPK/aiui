@@ -163,6 +163,15 @@ export const api = {
         });
     },
 
+    // Rate a message (thumbs up/down)
+    rateMessage: async (messageId: string, rating: "up" | "down" | "none", feedback?: string) => {
+        const params = new URLSearchParams({ rating });
+        if (feedback) params.append("feedback", feedback);
+        return fetcher<void>(`/messages/${messageId}/rate?${params.toString()}`, {
+            method: "POST",
+        });
+    },
+
     playgroundChat: async (data: {
         message: string;
         conversation_id?: string;

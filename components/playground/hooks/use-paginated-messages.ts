@@ -18,7 +18,10 @@ export function transformMessage(m: any) {
             : (Array.isArray(m.content) && m.content[0]?.text) || JSON.stringify(m.content),
         model_id: m.model_id,
         reasoning_content: m.reasoning_content,
-        created_at: m.created_at
+        created_at: m.created_at,
+        rating: m.rating,
+        generation_id: m.generation_id,
+        feedback: m.feedback
     }
 }
 

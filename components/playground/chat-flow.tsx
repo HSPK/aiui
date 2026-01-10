@@ -12,6 +12,7 @@ import { MessageList } from "@/components/playground/message-list"
 import { ChatInput } from "@/components/playground/chat-input"
 import { useChatScroll, usePaginatedMessages } from "@/components/playground/hooks"
 import { api } from "@/lib/api"
+import { LogDetails } from "@/components/logs/log-details"
 
 export function ChatFlow({ tabId }: { tabId: string }) {
     const { tabs, updateTab, updateTabTitle } = usePlaygroundStore()
@@ -21,6 +22,9 @@ export function ChatFlow({ tabId }: { tabId: string }) {
 
     // Track if we've generated a title for this conversation
     const titleGeneratedRef = React.useRef<Set<string>>(new Set())
+
+    // Generation detail drawer state
+    const [selectedGenerationId, setSelectedGenerationId] = React.useState<string | null>(null)
 
     // Local settings state - use user defaults from settings store
     const [temperature, setTemperature] = React.useState<number | undefined>(
@@ -98,6 +102,11 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         setMessages([])
     }, [setMessages])
 
+    // Handle view generation details
+    const handleViewGeneration = React.useCallback((generationId: string) => {
+        setSelectedGenerationId(generationId)
+    }, [])
+
     // Handle form submit
     const onFormSubmit = React.useCallback((e: React.FormEvent) => {
         const config: any = {
@@ -134,7 +143,10 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                     model_id: m.model_id,
                     reasoning_content: m.reasoning_content,
                     is_active: true,
-                    created_at: m.created_at || new Date().toISOString()
+                    created_at: m.created_at || new Date().toISOString(),
+                    rating: m.rating,
+                    generation_id: m.generation_id,
+                    feedback: m.feedback
                 }
             })
             updateTab(tabId, { messages: storeMessages as any })
@@ -201,7 +213,11 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                 viewportRef={viewportRef}
                 onScroll={handleScroll}
             >
-                <MessageList messages={messages} isLoading={isLoading} />
+                <MessageList
+                    messages={messages}
+                    isLoading={isLoading}
+                    onViewGeneration={handleViewGeneration}
+                />
             </ScrollArea>
 
             <div className="absolute bottom-0 left-0 w-full p-4 z-10 bg-gradient-to-t from-background via-background/90 to-transparent pb-6">
@@ -234,6 +250,13 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                     onReasoningEffortChange={setReasoningEffort}
                 />
             </div>
+
+            {/* Generation Detail Drawer */}
+            <LogDetails
+                logId={selectedGenerationId}
+                open={!!selectedGenerationId}
+                onOpenChange={(open) => !open && setSelectedGenerationId(null)}
+            />
         </div>
     )
 }

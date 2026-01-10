@@ -273,15 +273,8 @@ export function SidebarHistory() {
         return () => observer.disconnect()
     }, [hasNextPage, fetchNextPage, isFetchingNextPage])
 
-    if (isLoading) {
-        return (
-            <div className="flex justify-center py-3">
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-            </div>
-        )
-    }
-
     // Deduplicate conversations by id (can happen with pagination + new data)
+    // IMPORTANT: Must be called before any conditional returns to follow Rules of Hooks
     const conversations = React.useMemo(() => {
         const items = data?.pages.flatMap((page) => page?.items || []) || []
         const seen = new Set<string>()
@@ -291,6 +284,14 @@ export function SidebarHistory() {
             return true
         })
     }, [data?.pages])
+
+    if (isLoading) {
+        return (
+            <div className="flex justify-center py-3">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            </div>
+        )
+    }
 
     if (conversations.length === 0) {
         return (

@@ -19,7 +19,13 @@ const DateSeparator = React.memo(({ date }: { date: string | Date }) => (
 ))
 DateSeparator.displayName = "DateSeparator"
 
-export const MessageList = React.memo(({ messages, isLoading }: { messages: any[], isLoading: boolean }) => {
+interface MessageListProps {
+    messages: any[]
+    isLoading: boolean
+    onViewGeneration?: (generationId: string) => void
+}
+
+export const MessageList = React.memo(({ messages, isLoading, onViewGeneration }: MessageListProps) => {
     const { data: modelsData } = useQuery({
         queryKey: ["models"],
         queryFn: () => api.getModels(),
@@ -59,11 +65,12 @@ export const MessageList = React.memo(({ messages, isLoading }: { messages: any[
                     message={m}
                     provider={m.model_id ? modelProviderMap.get(m.model_id) : undefined}
                     isTyping={isLoading && index === messages.length - 1 && m.role === 'assistant'}
+                    onViewGeneration={onViewGeneration}
                 />
             )
         })
         return items
-    }, [messages, isLoading, modelProviderMap])
+    }, [messages, isLoading, modelProviderMap, onViewGeneration])
 
     return (
         <div className="pb-36 pt-4">
