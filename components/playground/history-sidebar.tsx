@@ -14,7 +14,8 @@ import {
     MoreHorizontal,
     Edit2,
     Plus,
-    Loader2
+    Loader2,
+    PanelLeftClose
 } from "lucide-react"
 import {
     DropdownMenu,
@@ -29,7 +30,7 @@ import { toast } from "sonner"
 export function HistorySidebar() {
     const [search, setSearch] = React.useState("")
     const queryClient = useQueryClient()
-    const { addTab } = usePlaygroundStore()
+    const { addTab, toggleSidebar } = usePlaygroundStore()
 
     // Query for conversations
     // Simple pagination for now: load first page
@@ -65,13 +66,18 @@ export function HistorySidebar() {
     }
 
     return (
-        <div className="w-[300px] flex flex-col border-r bg-muted/10 h-full">
+        <div className="w-full flex flex-col border-r bg-muted/10 h-full">
             <div className="p-4 border-b space-y-4">
                 <div className="flex items-center justify-between">
                     <h2 className="font-semibold text-sm">History</h2>
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => addTab({ type: "chat", title: "New Chat" })}>
-                        <Plus className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => addTab({ type: "chat", title: "New Chat" })}>
+                            <Plus className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={toggleSidebar}>
+                            <PanelLeftClose className="h-4 w-4" />
+                        </Button>
+                    </div>
                 </div>
                 <div className="relative">
                     <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -98,34 +104,25 @@ export function HistorySidebar() {
                         data?.data?.items.map((conv) => (
                             <div
                                 key={conv.id}
-                                className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors"
+                                className="group flex items-center justify-between p-2 rounded-md hover:bg-muted/50 cursor-pointer text-sm"
                                 onClick={() => handleOpenConversation(conv)}
                             >
-                                <MessageSquare className="h-4 w-4 text-muted-foreground shrink-0" />
-                                <div className="flex-1 overflow-hidden">
-                                    <div className="truncate">{conv.title}</div>
-                                    <div className="text-[10px] text-muted-foreground font-normal">
-                                        {formatToLocal(conv.updated_at, "MM-dd HH:mm")}
-                                    </div>
+                                <div className="flex flex-col gap-0.5 overflow-hidden">
+                                    <span className="font-medium truncate">{conv.title}</span>
+                                    <span className="text-xs text-muted-foreground truncate">
+                                        {formatToLocal(conv.created_at)}
+                                    </span>
                                 </div>
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                                            onClick={(e) => e.stopPropagation()}
-                                        >
-                                            <MoreHorizontal className="h-3 w-3" />
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                        <DropdownMenuItem onClick={(e) => handleDelete(e, conv.id)} className="text-destructive focus:text-destructive">
-                                            <Trash2 className="h-4 w-4 mr-2" />
-                                            Delete
-                                        </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
+                                <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                                        onClick={(e) => handleDelete(e, conv.id)}
+                                    >
+                                        <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                </div>
                             </div>
                         ))
                     )}
@@ -134,3 +131,4 @@ export function HistorySidebar() {
         </div>
     )
 }
+

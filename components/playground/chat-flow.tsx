@@ -75,8 +75,8 @@ export function ChatFlow({ tabId }: { tabId: string }) {
 
     // Sync React Query data to useChat
     React.useEffect(() => {
-        if (initialMessagesData?.data?.items && messages.length === 0) {
-            const mapped = initialMessagesData.data.items.map(m => ({
+        if (initialMessagesData?.items && messages.length === 0) {
+            const mapped = initialMessagesData.items.map((m: any) => ({
                 id: m.id,
                 role: m.role as any,
                 content: typeof m.content === 'string' ? m.content : (Array.isArray(m.content) && m.content[0]?.text) || JSON.stringify(m.content),

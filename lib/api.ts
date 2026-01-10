@@ -126,32 +126,32 @@ export const api = {
         const params = new URLSearchParams({
             page: page.toString(),
             page_size: pageSize.toString(),
-            sort: "updated_at:desc",
+            sort: "-updated_at",
         });
         if (keyword) {
             params.append("keyword", keyword);
         }
-        return fetcher<BaseResponse<ConversationListResponse>>(`/conversations?${params.toString()}`);
+        return fetcher<ConversationListResponse>(`/conversations?${params.toString()}`);
     },
 
     getConversationMessages: async (convId: string) => {
         const params = new URLSearchParams({
             page: "1",
             page_size: "100",
-            sort: "created_at:asc",
+            sort: "created_at",
         });
-        return fetcher<BaseResponse<MessageListResponse>>(`/conversations/${convId}/messages?${params.toString()}`);
+        return fetcher<MessageListResponse>(`/conversations/${convId}/messages?${params.toString()}`);
     },
 
     deleteConversation: async (convId: string) => {
-        return fetcher<BaseResponse<void>>(`/conversations/${convId}`, {
+        return fetcher<void>(`/conversations/${convId}`, {
             method: "DELETE",
         });
     },
 
     updateConversationTitle: async (convId: string, title: string) => {
         const params = new URLSearchParams({ title });
-        return fetcher<BaseResponse<void>>(`/conversations/${convId}/title?${params.toString()}`, {
+        return fetcher<void>(`/conversations/${convId}/title?${params.toString()}`, {
             method: "PUT",
         });
     },

@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -11,6 +12,7 @@ import {
     ScrollText,
     Server,
     Settings,
+    ChevronRight,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
@@ -20,6 +22,7 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { SidebarHistory } from "@/components/playground/sidebar-history"
 
 const sidebarItems = [
     {
@@ -59,6 +62,7 @@ export function Sidebar({
     onToggle?: () => void
 }) {
     const pathname = usePathname()
+    const [isPlaygroundExpanded, setIsPlaygroundExpanded] = useState(true)
 
     return (
         <div className={cn("flex h-full flex-col bg-background", className)}>
@@ -82,35 +86,53 @@ export function Sidebar({
                         const isActive = pathname === item.href
 
                         return (
-                            <TooltipProvider key={index} disableHoverableContent>
-                                <Tooltip delayDuration={0}>
-                                    <TooltipTrigger asChild>
-                                        <Link href={item.href}>
-                                            <Button
-                                                variant={isActive ? "secondary" : "ghost"}
-                                                className={cn(
-                                                    "w-full justify-start h-10 mb-1 overflow-hidden transition-all duration-300",
-                                                    collapsed ? "px-2" : "px-4",
-                                                    isActive && "bg-secondary"
-                                                )}
-                                            >
-                                                <item.icon className={cn("h-4 w-4 shrink-0 transition-all duration-300", collapsed ? "mr-0" : "mr-2")} />
-                                                <span
+                            <div key={index} className="flex flex-col gap-1">
+                                <TooltipProvider disableHoverableContent>
+                                    <Tooltip delayDuration={0}>
+                                        <TooltipTrigger asChild>
+                                            <Link href={item.href}>
+                                                <Button
+                                                    variant={isActive ? "secondary" : "ghost"}
                                                     className={cn(
-                                                        "truncate transition-all duration-300",
-                                                        collapsed ? "max-w-0 opacity-0 -translate-x-4" : "max-w-[200px] opacity-100 translate-x-0"
+                                                        "w-full justify-start h-10 mb-1 overflow-hidden transition-all duration-300 relative",
+                                                        collapsed ? "px-2" : "px-4",
+                                                        isActive && "bg-secondary"
                                                     )}
                                                 >
-                                                    {item.title}
-                                                </span>
-                                            </Button>
-                                        </Link>
-                                    </TooltipTrigger>
-                                    {collapsed && <TooltipContent side="right" className="flex items-center gap-4">
-                                        {item.title}
-                                    </TooltipContent>}
-                                </Tooltip>
-                            </TooltipProvider>
+                                                    <item.icon className={cn("h-4 w-4 shrink-0 transition-all duration-300", collapsed ? "mr-0" : "mr-2")} />
+                                                    <span
+                                                        className={cn(
+                                                            "truncate transition-all duration-300",
+                                                            collapsed ? "max-w-0 opacity-0 -translate-x-4" : "max-w-[200px] opacity-100 translate-x-0"
+                                                        )}
+                                                    >
+                                                        {item.title}
+                                                    </span>
+                                                    {item.title === "Playground" && !collapsed && (
+                                                        <div
+                                                            role="button"
+                                                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded-sm transition-colors z-20"
+                                                            onClick={(e) => {
+                                                                e.preventDefault()
+                                                                e.stopPropagation()
+                                                                setIsPlaygroundExpanded(!isPlaygroundExpanded)
+                                                            }}
+                                                        >
+                                                            <ChevronRight className={cn("h-3 w-3 transition-transform duration-200", isPlaygroundExpanded ? "rotate-90" : "")} />
+                                                        </div>
+                                                    )}
+                                                </Button>
+                                            </Link>
+                                        </TooltipTrigger>
+                                        {collapsed && <TooltipContent side="right" className="flex items-center gap-4">
+                                            {item.title}
+                                        </TooltipContent>}
+                                    </Tooltip>
+                                </TooltipProvider>
+                                {item.title === "Playground" && !collapsed && isPlaygroundExpanded && (
+                                    <SidebarHistory />
+                                )}
+                            </div>
                         )
                     })}
                 </nav>

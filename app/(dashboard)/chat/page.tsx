@@ -2,20 +2,14 @@
 
 import * as React from "react"
 import { usePlaygroundStore, PlaygroundTab } from "@/lib/stores/playground-store"
-import { HistorySidebar } from "@/components/playground/history-sidebar"
 import { ChatFlow } from "@/components/playground/chat-flow"
 import { PlaygroundHome } from "@/components/playground/playground-home"
 import { cn } from "@/lib/utils"
-import {
-    ResizableHandle,
-    ResizablePanel,
-    ResizablePanelGroup,
-} from "@/components/ui/resizable"
 import { Badge } from "@/components/ui/badge"
 import { Loader2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { Plus, X, MessageSquare, Settings2, Sliders } from "lucide-react"
+import { Plus, X, MessageSquare, Settings2 } from "lucide-react"
 
 function TabHeader({ tab, isActive, onClick, onClose }: { tab: PlaygroundTab, isActive: boolean, onClick: () => void, onClose: (e: React.MouseEvent) => void }) {
     return (
@@ -46,7 +40,6 @@ export default function PlaygroundPage() {
     const {
         tabs,
         activeTabId,
-        sidebarOpen,
         setActiveTab,
         removeTab,
         addTab
@@ -56,87 +49,74 @@ export default function PlaygroundPage() {
 
     return (
         <div className="h-full flex overflow-hidden bg-background">
-            <ResizablePanelGroup direction="horizontal">
-                {sidebarOpen && (
-                    <>
-                        <ResizablePanel defaultSize={20} minSize={15} maxSize={30} className="min-w-[250px] border-r">
-                            <HistorySidebar />
-                        </ResizablePanel>
-                        <ResizableHandle />
-                    </>
-                )}
+            <div className="flex-1 flex flex-col h-full overflow-hidden">
+                {/* Tabs Bar */}
+                <div className="flex items-end bg-muted/10 border-b flex-none">
+                    <div className="flex-1 flex overflow-x-auto no-scrollbar items-end h-[41px]">
+                        {tabs.map(tab => (
+                            <TabHeader
+                                key={tab.id}
+                                tab={tab}
+                                isActive={tab.id === activeTabId}
+                                onClick={() => setActiveTab(tab.id)}
+                                onClose={(e) => {
+                                    e.stopPropagation()
+                                    removeTab(tab.id)
+                                }}
+                            />
+                        ))}
+                    </div>
+                    <div className="px-2 py-1.5 border-l bg-background/50 flex-none h-[40px] flex items-center">
+                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => addTab()}>
+                            <Plus className="h-4 w-4" />
+                        </Button>
+                    </div>
+                </div>
 
-                <ResizablePanel defaultSize={sidebarOpen ? 80 : 100}>
-                    <div className="h-full flex flex-col">
-                        {/* Tabs Bar */}
-                        <div className="flex items-end bg-muted/10 border-b flex-none">
-                            <div className="flex-1 flex overflow-x-auto no-scrollbar items-end h-[41px]">
-                                {tabs.map(tab => (
-                                    <TabHeader
-                                        key={tab.id}
-                                        tab={tab}
-                                        isActive={tab.id === activeTabId}
-                                        onClick={() => setActiveTab(tab.id)}
-                                        onClose={(e) => {
-                                            e.stopPropagation()
-                                            removeTab(tab.id)
-                                        }}
-                                    />
-                                ))}
-                            </div>
-                            <div className="px-2 py-1.5 border-l bg-background/50 flex-none h-[40px] flex items-center">
-                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => addTab()}>
-                                    <Plus className="h-4 w-4" />
-                                </Button>
-                            </div>
-                        </div>
-
-                        {/* Main Content Area */}
-                        <div className="flex-1 flex overflow-hidden">
-                            {tabs.length === 0 ? (
-                                <PlaygroundHome />
-                            ) : activeTab ? (
-                                <>
-                                    <div className="flex-1 flex flex-col min-w-0 bg-background">
-                                        {/* Configuration Header for non-home type tabs */}
-                                        {activeTab.type !== 'new' && (
-                                            <div className="border-b px-4 py-2 flex items-center justify-between bg-background/95 backdrop-blur z-10 flex-none">
-                                                <div className="flex items-center gap-2">
-                                                    <Badge variant="outline" className="font-mono text-xs">
-                                                        {activeTab.modelId || "Default Model"}
-                                                    </Badge>
-                                                    {activeTab.conversationId && (
-                                                        <span className="text-xs text-muted-foreground font-mono">
-                                                            {activeTab.conversationId.slice(0, 8)}...
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
-                                                    <Settings2 className="h-4 w-4" />
-                                                </Button>
-                                            </div>
-                                        )}
-
-                                        {/* Tab Content */}
-                                        <div className="flex-1 overflow-hidden relative">
-                                            {activeTab.type === 'chat' && (
-                                                <ChatFlow key={activeTab.id} tabId={activeTab.id} />
-                                            )}
-                                            {activeTab.type === 'new' && (
-                                                <PlaygroundHome tabId={activeTab.id} />
+                {/* Main Content Area */}
+                <div className="flex-1 flex overflow-hidden">
+                    {tabs.length === 0 ? (
+                        <PlaygroundHome />
+                    ) : activeTab ? (
+                        <>
+                            <div className="flex-1 flex flex-col min-w-0 bg-background h-full">
+                                {/* Configuration Header for non-home type tabs */}
+                                {activeTab.type !== 'new' && (
+                                    <div className="border-b px-4 py-2 flex items-center justify-between bg-background/95 backdrop-blur z-10 flex-none">
+                                        <div className="flex items-center gap-2">
+                                            <Badge variant="outline" className="font-mono text-xs">
+                                                {activeTab.modelId || "Default Model"}
+                                            </Badge>
+                                            {activeTab.conversationId && (
+                                                <span className="text-xs text-muted-foreground font-mono">
+                                                    {activeTab.conversationId.slice(0, 8)}...
+                                                </span>
                                             )}
                                         </div>
+                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                                            <Settings2 className="h-4 w-4" />
+                                        </Button>
                                     </div>
-                                </>
-                            ) : (
-                                <div className="flex-1 flex items-center justify-center">
-                                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                                )}
+
+                                {/* Tab Content */}
+                                <div className="flex-1 overflow-hidden relative h-full">
+                                    {activeTab.type === 'chat' && (
+                                        <ChatFlow key={activeTab.id} tabId={activeTab.id} />
+                                    )}
+                                    {activeTab.type === 'new' && (
+                                        <PlaygroundHome tabId={activeTab.id} />
+                                    )}
                                 </div>
-                            )}
+                            </div>
+                        </>
+                    ) : (
+                        <div className="flex-1 flex items-center justify-center">
+                            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                         </div>
-                    </div>
-                </ResizablePanel>
-            </ResizablePanelGroup>
+                    )}
+                </div>
+            </div>
         </div>
     )
 }
