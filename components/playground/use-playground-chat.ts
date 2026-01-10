@@ -4,6 +4,7 @@
 import { useState, useCallback, useEffect } from "react"
 import { api } from "@/lib/api"
 import { Message } from "@/lib/types/playground"
+import { toast } from "sonner"
 
 export function usePlaygroundChat({
     initialMessages = [],
@@ -29,7 +30,7 @@ export function usePlaygroundChat({
         e?.preventDefault()
         if (!input.trim() || isLoading) return
         if (!options?.models || options.models.length === 0) {
-            alert("Please select a model first")
+            toast.error("Please select a model first")
             return
         }
 
@@ -40,6 +41,8 @@ export function usePlaygroundChat({
             created_at: new Date().toISOString()
         }
 
+        const previousInput = input
+
         // Optimistic update
         setMessages(prev => [...prev, userMsg])
         setInput("")
@@ -48,80 +51,99 @@ export function usePlaygroundChat({
         try {
             // Handle Multiple Models (Comparison) or Single
             const groupId = options.models.length > 1 ? crypto.randomUUID() : undefined
-            const currentConvId = conversationId // Might be undefined
+            const currentConvId = conversationId
 
-            // Send request(s)
-            // If Single: Just one request
-            // If Multiple: Parallel requests? 
-            // Warning: The backend snippet implies `group_id` is passed. 
-            // If passing group_id, presumably we make multiple calls for each model?
-            // "if selected multiple models, also need to generate group id" -> Yes.
-
-            const promises = options.models.map(model =>
-                api.playgroundChat({
+            const promises = options.models.map(async model => {
+                const res = await api.playgroundChat({
                     message: userMsg.content,
-                    conversation_id: currentConvId, // Note: If multiple models, usually we have diff conversation IDs per model, or shares ONE ID?
-                    // "Comparison mode conversation" usually means independent conversations grouped by a group_id.
-                    // If we pass `conversation_id: None` for the first time, backend creates it.
-                    // If we have an *existing* conversationId, we can't reuse it for *multiple* models usually, unless the backend supports "Arena" in one ID.
-                    // I will assume: If multiple models, we treat it as NEW conversations (or new branches) if we don't have existing IDs mapping to models.
-                    // Be safe: For now, if multiple models, we pass conversation_id = undefined (create new) IF we are starting fresh.
-                    // If we are in a conversation, adding a model is complex.
-                    // Let's assume standard flow: 
-                    // Single Model: Pass conversationId.
-                    // Multi Model: Pass conversationId? If conversationId is bound to a single model in backend, this fails.
-                    // I'll assume conversationId is generic.
-
+                    conversation_id: currentConvId,
                     group_id: groupId,
                     model: model,
-                    ...options.config // temperature, history_limit
-                }).then(res => ({ model, res }))
-            )
+                    ...options.config
+                })
+
+                // Create a placeholder message for this model if standard flow
+                // But we act after all promises? No, we should probably start showing them ASAP.
+                // Current logic waits for all. Let's keep it simple and accumulate text.
+
+                const reader = res.body?.getReader()
+                const decoder = new TextDecoder()
+                let fullText = ""
+
+                if (!reader) return { model, res: "" }
+
+                try {
+                    while (true) {
+                        const { done, value } = await reader.read()
+                        if (done) break
+
+                        const chunk = decoder.decode(value, { stream: true })
+                        const lines = chunk.split('\n')
+
+                        for (const line of lines) {
+                            if (line.startsWith('event: error')) {
+                                // The NEXT line should be data: containing the error
+                                continue
+                            }
+                            if (line.startsWith('data: ')) {
+                                const dataStr = line.slice(6)
+                                if (dataStr.trim() === '[DONE]') continue
+
+                                let data;
+                                try {
+                                    data = JSON.parse(dataStr)
+                                } catch (e) {
+                                    console.warn("Failed to parse SSE data JSON", dataStr)
+                                    continue
+                                }
+
+                                if (data.error) {
+                                    throw new Error(data.error.message || "Stream Error")
+                                }
+
+                                // Normal data
+                                if (typeof data === 'string') {
+                                    fullText += data
+                                } else if (data.content) {
+                                    fullText += data.content
+                                } else if (data.delta?.content) {
+                                    fullText += data.delta.content
+                                } else if (data.response) {
+                                    fullText += data.response
+                                } else {
+                                    fullText += JSON.stringify(data)
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {
+                    throw e
+                }
+
+                return { model, res: fullText }
+            })
 
             const results = await Promise.all(promises)
 
             // Handle Results
-            // If single model, append assistant message.
-            // If multiple, append multiple assistant messages? 
-            // Or display them differently? The current UI is a single stream.
-            // I'll append them all for now.
-
             const newMessages = results.map(r => {
-                let textContent = ""
-                const resAny = r.res as any
-                if (typeof resAny === 'string') {
-                    textContent = resAny
-                } else if (resAny.message && typeof resAny.message === 'string') {
-                    textContent = resAny.message
-                } else if (resAny.response && typeof resAny.response === 'string') {
-                    textContent = resAny.response
-                } else {
-                    // Fallback to stringify but try to keep it clean
-                    // Check if it has a 'data' field that might be string
-                    if (resAny.data && typeof resAny.data === 'string') {
-                        textContent = resAny.data
-                    } else {
-                        textContent = JSON.stringify(resAny)
-                    }
-                }
-
                 return {
                     id: crypto.randomUUID(),
                     role: "assistant",
-                    content: textContent,
+                    content: r.res,
                     model: r.model
                 }
             })
 
             setMessages(prev => [...prev, ...newMessages])
 
-            // If created new conversation, notify parent
-            // But we might have created N conversations if we sent N requests with conv_id=null.
-            // This is tricky. I'll ignore updating the ID for now if multiple.
-
-        } catch (err) {
+        } catch (err: any) {
             console.error(err)
-            // Revert or show error
+            toast.error(err.message || "Failed to send message")
+
+            // Restore state on error
+            setMessages(prev => prev.filter(m => m.id !== userMsg.id))
+            setInput(previousInput)
         } finally {
             setIsLoading(false)
         }

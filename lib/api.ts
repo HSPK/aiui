@@ -156,19 +156,38 @@ export const api = {
         });
     },
 
-    playgroundChat: (data: {
+    playgroundChat: async (data: {
         message: string;
         conversation_id?: string;
         group_id?: string;
         conv_histrory_limit?: number;
-        model?: string; // Implicitly needed probably
+        model?: string;
         [key: string]: any;
     }) => {
-        // use fetcher but need to handle stream if it returns stream?
-        // For now assume JSON as per typical 'fetcher' usage
-        return fetcher("/playground/chat", {
+        const auth = getAuthHeader();
+        const headers: Record<string, string> = {
+            "Content-Type": "application/json",
+        };
+        if (auth) {
+            headers["Authorization"] = auth;
+        }
+
+        const res = await fetch(`${BASE_URL}/playground/chat`, {
             method: "POST",
+            headers,
             body: JSON.stringify(data),
         });
+
+        if (!res.ok) {
+            // Try to parse error if possible, otherwise throw generic
+            let errorMessage = `API Error: ${res.statusText}`;
+            try {
+                const errorBody = await res.json();
+                errorMessage = errorBody.msg || errorMessage;
+            } catch { }
+            throw new ApiError(errorMessage, res.status);
+        }
+
+        return res;
     },
 };
