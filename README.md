@@ -81,9 +81,7 @@
 - **列定义**：Trace ID (截断显示，点击复制)、时间、User、Model、Tokens (Prompt/Completion)、耗时、Status (带颜色 Tag)。
     
 - **过滤器 (Filters)**：
-    
-    - 这正是你后端 `FilterDefinition` 发挥作用的地方。前端生成动态表单（Input, Select, DateRangePicker），构造过滤参数传给后端。
-        
+
 - **抽屉详情 (Drawer)**：点击某一行，右侧滑出 Drawer，展示完整的 Request Body 和 Response Body (使用 `react-json-view` 进行格式化展示)。
     
 

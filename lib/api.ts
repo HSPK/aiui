@@ -1,4 +1,4 @@
-import { BaseResponse, ModelConfig, ProviderConfig, User, AuthParams } from "./types";
+import { BaseResponse, ModelConfig, ProviderConfig, User, AuthParams, LogFilterParams, LogListResponse, GenerationLogDetail } from "./types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
 
@@ -104,4 +104,18 @@ export const api = {
 
     health: () => fetcher<void>("/health"),
     ping: () => fetcher<string>("/ping"),
+
+    // Logs
+    getLogs: (params: LogFilterParams) => {
+        const searchParams = new URLSearchParams();
+        if (params.page) searchParams.set("page", params.page.toString());
+        if (params.page_size) searchParams.set("page_size", params.page_size.toString());
+        if (params.sort) searchParams.set("sort", params.sort);
+        if (params.user_id) searchParams.set("user_id", params.user_id);
+        if (params.model_name) searchParams.set("model_name", params.model_name);
+        if (params.status) searchParams.set("status", params.status);
+
+        return fetcher<LogListResponse>(`/logs/generations?${searchParams.toString()}`);
+    },
+    getLogDetail: (id: string) => fetcher<GenerationLogDetail>(`/logs/generations/${id}`),
 };
