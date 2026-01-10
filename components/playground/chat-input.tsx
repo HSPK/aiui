@@ -26,7 +26,7 @@ interface ChatInputProps {
     onReasoningEffortChange: (value: string | null) => void
 }
 
-export function ChatInput({
+export const ChatInput = React.memo(function ChatInput({
     input,
     onInputChange,
     onSubmit,
@@ -155,4 +155,4 @@ export function ChatInput({
             </div>
         </form>
     )
-}
+})

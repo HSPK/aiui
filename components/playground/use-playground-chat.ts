@@ -281,9 +281,9 @@ export function usePlaygroundChat({
         }
     }
 
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         setInput(e.target.value)
-    }
+    }, [])
 
     return {
         messages,

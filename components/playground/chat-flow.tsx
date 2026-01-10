@@ -78,13 +78,28 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         onSaveScrollPosition: (pos) => updateTab(tabId, { scrollPosition: pos }),
     })
 
-    // Handle model selection
-    const handleModelSelect = (ids: string[]) => {
+    // Handle model selection - memoized to prevent ChatInput re-renders
+    const handleModelSelect = React.useCallback((ids: string[]) => {
         updateTab(tabId, { modelIds: ids })
-    }
+    }, [tabId, updateTab])
+
+    // Memoize config change handlers
+    const handleTemperatureChange = React.useCallback((val: number | undefined) => {
+        setTemperature(val)
+        updateTab(tabId, { temperature: val })
+    }, [tabId, updateTab])
+
+    const handleHistoryLimitChange = React.useCallback((val: number) => {
+        setHistoryLimit(val)
+        updateTab(tabId, { historyLimit: val })
+    }, [tabId, updateTab])
+
+    const handleClearMessages = React.useCallback(() => {
+        setMessages([])
+    }, [setMessages])
 
     // Handle form submit
-    const onFormSubmit = (e: React.FormEvent) => {
+    const onFormSubmit = React.useCallback((e: React.FormEvent) => {
         const config: any = {
             stream: true,
             conv_history_limit: historyLimit
@@ -96,7 +111,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
             models: tab?.modelIds || ["gpt-3.5-turbo"],
             config
         })
-    }
+    }, [temperature, historyLimit, reasoningEffort, handleSubmit, tab?.modelIds])
 
     // Sync messages to store (debounced)
     React.useEffect(() => {
@@ -209,18 +224,12 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                     onStop={stop}
                     selectedModelIds={tab?.modelIds || []}
                     onModelSelect={handleModelSelect}
-                    onClearMessages={() => setMessages([])}
+                    onClearMessages={handleClearMessages}
                     hasMessages={messages.length > 0}
                     temperature={temperature}
-                    onTemperatureChange={(val) => {
-                        setTemperature(val)
-                        updateTab(tabId, { temperature: val })
-                    }}
+                    onTemperatureChange={handleTemperatureChange}
                     historyLimit={historyLimit}
-                    onHistoryLimitChange={(val) => {
-                        setHistoryLimit(val)
-                        updateTab(tabId, { historyLimit: val })
-                    }}
+                    onHistoryLimitChange={handleHistoryLimitChange}
                     reasoningEffort={reasoningEffort}
                     onReasoningEffortChange={setReasoningEffort}
                 />
