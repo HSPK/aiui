@@ -241,6 +241,10 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         }
     }, [messages])
 
+
+    // Scroll to bottom button visibility
+    const [showScrollBottom, setShowScrollBottom] = React.useState(false)
+
     const handleScroll = React.useCallback((e: React.UIEvent<HTMLDivElement>) => {
         const target = e.currentTarget
         currentScrollRef.current = target.scrollTop // Update ref synchronously
@@ -249,7 +253,19 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         if (target.scrollTop < 50 && hasMore && !isLoadingMore && messages.length > 0) {
             loadMoreMessages()
         }
+
+        // Show scroll-to-bottom button if we are not at bottom
+        // Threashold can be e.g. 100px from bottom
+        const isAtBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 100
+        setShowScrollBottom(!isAtBottom)
+
     }, [hasMore, isLoadingMore, messages.length, loadMoreMessages])
+
+    const scrollToBottom = () => {
+        if (viewportRef.current) {
+            viewportRef.current.scrollTo({ top: viewportRef.current.scrollHeight, behavior: 'smooth' })
+        }
+    }
 
     const onFormSubmit = (e: React.FormEvent) => {
         handleSubmit(e, {
@@ -316,7 +332,17 @@ export function ChatFlow({ tabId }: { tabId: string }) {
             </ScrollArea>
 
             <div className="absolute bottom-0 left-0 w-full p-4 z-10 bg-gradient-to-t from-background via-background/90 to-transparent pb-6">
-                <form onSubmit={onFormSubmit} className="flex flex-col gap-2 w-full mx-auto max-w-4xl">
+                {showScrollBottom && (
+                    <Button
+                        variant="outline"
+                        size="icon"
+                        className="absolute -top-8 left-1/2 -translate-x-1/2 rounded-full h-8 w-8 shadow-md bg-background/80 backdrop-blur-sm hover:bg-background"
+                        onClick={scrollToBottom}
+                    >
+                        <ArrowUp className="h-4 w-4 rotate-180" />
+                    </Button>
+                )}
+                <form onSubmit={onFormSubmit} className="flex flex-col gap-2 w-full mx-auto max-w-4xl relative">
                     <div className="flex items-end gap-2 bg-background border rounded-2xl px-2 py-2 focus-within:ring-1 focus-within:ring-ring transition-all shadow-lg">
                         <Button
                             type="button"
