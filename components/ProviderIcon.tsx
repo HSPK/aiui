@@ -55,6 +55,8 @@ export function ProviderIcon({
     // IF the user wants auto-discovery, we'd need a server component or a pre-generated map.
     // Given the list from `ls`, manually mapping is safest.
 
+    const isDarkInvert = ['openai', 'vertex', 'vertexai', 'siliconflow'].includes(normalizedName);
+
     if (logoSrc && !imgError) {
         return (
             <div className={cn("relative shrink-0 flex items-center justify-center", className)} style={{ width, height }}>
@@ -63,7 +65,7 @@ export function ProviderIcon({
                     alt={providerName}
                     width={width}
                     height={height}
-                    className="object-contain"
+                    className={cn("object-contain", isDarkInvert && "dark:invert")}
                     onError={() => setImgError(true)}
                 />
             </div>
