@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Send, Bot, User, StopCircle, RefreshCw, Eraser, Settings2, Sliders } from "lucide-react"
+import { Loader2, Send, Bot, User, StopCircle, RefreshCw, Eraser, Settings2, Sliders, Plus, ArrowUp } from "lucide-react"
 import { cn } from "@/lib/utils"
 import ReactMarkdown from 'react-markdown'
 import { api } from "@/lib/api"
@@ -223,112 +223,114 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                 </div>
             </ScrollArea>
 
-            <div className="p-4 bg-background/95 backdrop-blur z-10 w-full max-w-4xl mx-auto flex-none">
-                <form onSubmit={onFormSubmit} className="relative flex flex-col gap-0 border rounded-xl overflow-hidden shadow-sm bg-background focus-within:ring-1 focus-within:ring-ring">
-                    <div className="flex items-center gap-1 p-2 border-b bg-muted/20">
-                        <ModelSelector
-                            selectedModelIds={tab?.modelIds || []}
-                            onModelSelect={handleModelSelect}
-                            side="top"
-                            align="start"
-                            trigger={
-                                <Button variant="ghost" size="sm" className="h-7 gap-2 px-2 text-muted-foreground hover:text-foreground font-normal">
-                                    {(tab?.modelIds?.length || 0) > 0 ? (
-                                        <>
-                                            <span className="truncate max-w-[150px] text-xs">
-                                                {(tab?.modelIds?.length || 0) > 1
-                                                    ? `${tab?.modelIds?.length} models`
-                                                    : tab?.modelIds?.[0]}
-                                            </span>
-                                        </>
-                                    ) : <span className="text-xs">Select Model</span>}
-                                </Button>
-                            }
+            <div className="p-4 bg-background z-10 w-full flex-none">
+                <form onSubmit={onFormSubmit} className="flex flex-col gap-2 w-full mx-auto">
+                    <div className="flex items-end gap-2 bg-muted/20 border rounded-md px-2 py-2 focus-within:border-primary/20 transition-all">
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="rounded-full h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                            title="Add attachment"
+                        >
+                            <Plus className="h-5 w-5" />
+                        </Button>
+
+                        <Textarea
+                            value={input}
+                            onChange={handleInputChange}
+                            placeholder={`Message ${tab?.modelIds?.[0] || 'AI'}...`}
+                            className="min-h-[32px] max-h-[200px] border-0 focus-visible:ring-0 resize-none p-0 py-[6px] bg-transparent dark:bg-transparent shadow-none flex-1 text-sm leading-[20px]"
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                    e.preventDefault()
+                                    onFormSubmit(e as any)
+                                }
+                            }}
                         />
 
-                        <div className="flex-1" />
+                        <div className="flex items-center gap-1 shrink-0">
+                            <ModelSelector
+                                selectedModelIds={tab?.modelIds || []}
+                                onModelSelect={handleModelSelect}
+                                side="top"
+                                align="end"
+                                trigger={
+                                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                                        <Bot className="h-5 w-5" />
+                                    </Button>
+                                }
+                            />
 
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
-                                    <Settings2 className="h-3.5 w-3.5" />
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                                        <Settings2 className="h-5 w-5" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent className="w-80 p-4" align="end">
+                                    <div className="space-y-4">
+                                        <h4 className="font-medium leading-none">Configuration</h4>
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="temperature">Temperature: {temperature}</Label>
+                                            <Input
+                                                id="temperature"
+                                                type="number"
+                                                min={0}
+                                                max={2}
+                                                step={0.1}
+                                                value={temperature}
+                                                onChange={(e) => {
+                                                    const val = parseFloat(e.target.value)
+                                                    setTemperature(val)
+                                                    updateTab(tabId, { temperature: val })
+                                                }}
+                                            />
+                                        </div>
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="history">History Limit</Label>
+                                            <Input
+                                                id="history"
+                                                type="number"
+                                                min={0}
+                                                value={historyLimit}
+                                                onChange={(e) => {
+                                                    const val = parseInt(e.target.value)
+                                                    setHistoryLimit(val)
+                                                    updateTab(tabId, { historyLimit: val })
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+
+                            {messages.length > 0 && (
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setMessages([])}
+                                    title="Clear history"
+                                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                >
+                                    <Eraser className="h-5 w-5" />
                                 </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent className="w-80 p-4" align="end">
-                                <div className="space-y-4">
-                                    <h4 className="font-medium leading-none">Configuration</h4>
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="temperature">Temperature: {temperature}</Label>
-                                        <Input
-                                            id="temperature"
-                                            type="number"
-                                            min={0}
-                                            max={2}
-                                            step={0.1}
-                                            value={temperature}
-                                            onChange={(e) => {
-                                                const val = parseFloat(e.target.value)
-                                                setTemperature(val)
-                                                updateTab(tabId, { temperature: val })
-                                            }}
-                                        />
-                                    </div>
-                                    <div className="grid gap-2">
-                                        <Label htmlFor="history">History Limit</Label>
-                                        <Input
-                                            id="history"
-                                            type="number"
-                                            min={0}
-                                            value={historyLimit}
-                                            onChange={(e) => {
-                                                const val = parseInt(e.target.value)
-                                                setHistoryLimit(val)
-                                                updateTab(tabId, { historyLimit: val })
-                                            }}
-                                        />
-                                    </div>
-                                </div>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
-                    </div>
+                            )}
 
-                    <Textarea
-                        value={input}
-                        onChange={handleInputChange}
-                        placeholder="Type a message..."
-                        className="min-h-[60px] max-h-[300px] border-0 focus-visible:ring-0 resize-none px-4 py-3 bg-transparent shadow-none"
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                                e.preventDefault()
-                                onFormSubmit(e as any)
-                            }
-                        }}
-                    />
-
-                    <div className="flex justify-between items-center p-2 pt-0">
-                        <div className="flex items-center gap-2">
-                            {/* Placeholder for future tools */}
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => setMessages([])}
-                                title="Clear history"
-                                disabled={isLoading || messages.length === 0}
-                                className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                            >
-                                <Eraser className="h-4 w-4" />
-                            </Button>
-                            <Button
-                                type="submit"
-                                size="icon"
-                                disabled={isLoading || !input?.trim() || (tab?.modelIds?.length || 0) === 0}
-                                className="h-8 w-8"
-                            >
-                                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                            </Button>
+                            {(input?.trim() || isLoading) && (
+                                <Button
+                                    type="submit"
+                                    size="icon"
+                                    disabled={isLoading || !input?.trim()}
+                                    className={cn(
+                                        "h-8 w-8 rounded-full ml-1",
+                                        isLoading ? "bg-muted text-muted-foreground" : "bg-primary text-primary-foreground"
+                                    )}
+                                >
+                                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-5 w-5" />}
+                                </Button>
+                            )}
                         </div>
                     </div>
                 </form>
