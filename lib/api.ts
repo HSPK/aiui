@@ -155,4 +155,20 @@ export const api = {
             method: "PUT",
         });
     },
+
+    playgroundChat: (data: {
+        message: string;
+        conversation_id?: string;
+        group_id?: string;
+        conv_histrory_limit?: number;
+        model?: string; // Implicitly needed probably
+        [key: string]: any;
+    }) => {
+        // use fetcher but need to handle stream if it returns stream?
+        // For now assume JSON as per typical 'fetcher' usage
+        return fetcher("/playground/chat", {
+            method: "POST",
+            body: JSON.stringify(data),
+        });
+    },
 };

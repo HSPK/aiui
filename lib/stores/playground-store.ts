@@ -8,10 +8,12 @@ export interface PlaygroundTab {
     type: TabType;
     title: string;
     conversationId?: string;
-    modelId?: string;
+    modelId?: string; // Kept for legacy
+    modelIds?: string[]; // Use this for Multi-Model Support
     systemPrompt?: string;
     temperature?: number;
     maxTokens?: number;
+    historyLimit?: number; // Added
     messages: Message[]; // Initial messages if any
 }
 

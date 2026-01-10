@@ -80,25 +80,6 @@ export default function PlaygroundPage() {
                     ) : activeTab ? (
                         <>
                             <div className="flex-1 flex flex-col min-w-0 bg-background h-full">
-                                {/* Configuration Header for non-home type tabs */}
-                                {activeTab.type !== 'new' && (
-                                    <div className="border-b px-4 py-2 flex items-center justify-between bg-background/95 backdrop-blur z-10 flex-none">
-                                        <div className="flex items-center gap-2">
-                                            <Badge variant="outline" className="font-mono text-xs">
-                                                {activeTab.modelId || "Default Model"}
-                                            </Badge>
-                                            {activeTab.conversationId && (
-                                                <span className="text-xs text-muted-foreground font-mono">
-                                                    {activeTab.conversationId.slice(0, 8)}...
-                                                </span>
-                                            )}
-                                        </div>
-                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
-                                            <Settings2 className="h-4 w-4" />
-                                        </Button>
-                                    </div>
-                                )}
-
                                 {/* Tab Content */}
                                 <div className="flex-1 overflow-hidden relative h-full">
                                     {activeTab.type === 'chat' && (
