@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { Bot } from "lucide-react"
-import { formatRelativeDate, normalizeDate } from "@/lib/utils"
+import { cn, formatRelativeDate, normalizeDate } from "@/lib/utils"
 import { api } from "@/lib/api"
 import { useQuery } from "@tanstack/react-query"
 import { ChatMessage } from "./chat-message"
@@ -73,9 +73,9 @@ export const MessageList = React.memo(({ messages, isLoading, onViewGeneration }
     }, [messages, isLoading, modelProviderMap, onViewGeneration])
 
     return (
-        <div className="pb-36 pt-4">
+        <div className={cn("pb-36 pt-4", messages.length === 0 && "min-h-[calc(100vh-200px)] flex flex-col")}>
             {messages.length === 0 && (
-                <div className="h-full flex flex-col items-center justify-center p-8 text-muted-foreground opacity-50 space-y-4 pt-20">
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-muted-foreground opacity-50 space-y-4">
                     <Bot className="h-12 w-12" />
                     <p>Start a conversation...</p>
                 </div>

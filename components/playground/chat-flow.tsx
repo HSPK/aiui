@@ -154,6 +154,16 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         return () => clearTimeout(timeout)
     }, [messages, updateTab, tabId, tab?.conversationId])
 
+    // Refresh sidebar when message sending completes (to update order by updated_at)
+    const prevIsLoadingRef = React.useRef(isLoading)
+    React.useEffect(() => {
+        // Detect transition from loading to not loading (message sent)
+        if (prevIsLoadingRef.current && !isLoading && messages.length > 0) {
+            queryClient.invalidateQueries({ queryKey: ["conversations"] })
+        }
+        prevIsLoadingRef.current = isLoading
+    }, [isLoading, messages.length, queryClient])
+
     // Auto-generate title after first response
     React.useEffect(() => {
         const convId = tab?.conversationId

@@ -98,7 +98,7 @@ export function RecentActivity({ onOpenConversation }: RecentActivityProps) {
                                             {conv.title}
                                         </span>
                                         <span className="text-xs text-muted-foreground">
-                                            {formatToLocal(conv.created_at)}
+                                            {formatToLocal(conv.updated_at)}
                                         </span>
                                     </div>
                                     <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
