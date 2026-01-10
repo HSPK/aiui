@@ -3,7 +3,7 @@ import { Activity, DollarSign, Zap, Clock } from "lucide-react"
 
 export default function DashboardPage() {
     return (
-        <div className="space-y-6">
+        <div className="h-full overflow-y-auto p-4 space-y-6">
             <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                 <Card>

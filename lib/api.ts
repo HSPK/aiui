@@ -1,6 +1,8 @@
 import { BaseResponse, ModelConfig, ProviderConfig, User, AuthParams, LogFilterParams, LogListResponse, GenerationLogDetail } from "./types";
+import { ConversationListResponse, MessageListResponse, Conversation, Message } from "./types/playground";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
+
 
 const AUTH_STORAGE_KEY = "aiui_auth_credentials";
 
@@ -118,4 +120,39 @@ export const api = {
         return fetcher<LogListResponse>(`/logs/generations?${searchParams.toString()}`);
     },
     getLogDetail: (id: string) => fetcher<GenerationLogDetail>(`/logs/generations/${id}`),
+
+    // Playground
+    getConversations: async (page: number = 1, pageSize: number = 20, keyword?: string) => {
+        const params = new URLSearchParams({
+            page: page.toString(),
+            page_size: pageSize.toString(),
+            sort: "updated_at:desc",
+        });
+        if (keyword) {
+            params.append("keyword", keyword);
+        }
+        return fetcher<BaseResponse<ConversationListResponse>>(`/conversations?${params.toString()}`);
+    },
+
+    getConversationMessages: async (convId: string) => {
+        const params = new URLSearchParams({
+            page: "1",
+            page_size: "100",
+            sort: "created_at:asc",
+        });
+        return fetcher<BaseResponse<MessageListResponse>>(`/conversations/${convId}/messages?${params.toString()}`);
+    },
+
+    deleteConversation: async (convId: string) => {
+        return fetcher<BaseResponse<void>>(`/conversations/${convId}`, {
+            method: "DELETE",
+        });
+    },
+
+    updateConversationTitle: async (convId: string, title: string) => {
+        const params = new URLSearchParams({ title });
+        return fetcher<BaseResponse<void>>(`/conversations/${convId}/title?${params.toString()}`, {
+            method: "PUT",
+        });
+    },
 };

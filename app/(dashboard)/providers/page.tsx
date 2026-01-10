@@ -86,7 +86,7 @@ export default function ProvidersPage() {
     })
 
     return (
-        <div className="space-y-6">
+        <div className="h-full overflow-y-auto p-4 space-y-6">
             <h2 className="text-3xl font-bold tracking-tight">Providers & Models</h2>
 
             <Tabs defaultValue="providers" className="w-full" onValueChange={setActiveTab}>

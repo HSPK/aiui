@@ -74,7 +74,8 @@ export default function LogsPage() {
     const totalPages = data ? Math.ceil(data.total / pageSize) : 0
 
     return (
-        <div className="h-full flex flex-col space-y-2 p-0 md:p-0">
+        <div className="h-full flex flex-col p-4 overflow-y-hidden">
+            <div className="flex-1 flex flex-col min-h-0 space-y-2">
             {/* Top Controls Bar */}
             <div className="flex items-center gap-2 py-1 px-1">
                 {/* Scrollable Filters */}
@@ -203,6 +204,7 @@ export default function LogsPage() {
                 open={isDetailOpen}
                 onOpenChange={setIsDetailOpen}
             />
+        </div>
         </div>
     )
 }
