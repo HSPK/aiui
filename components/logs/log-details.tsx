@@ -233,7 +233,7 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                             </AccordionItem>
                         </Accordion>
 
-                        {log.reason && (
+                        {log.reason && log.reason !== "success" && (
                             <div className="border-l-4 border-yellow-500 pl-4 py-3 bg-yellow-500/10 rounded-r-md">
                                 <h3 className="text-sm font-bold text-yellow-700 dark:text-yellow-400 mb-1">Debug Info</h3>
                                 <pre className="text-xs whitespace-pre-wrap font-mono text-muted-foreground">{log.reason}</pre>
