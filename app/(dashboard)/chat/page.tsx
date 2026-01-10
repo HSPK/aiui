@@ -5,29 +5,33 @@ import { usePlaygroundStore, PlaygroundTab } from "@/lib/stores/playground-store
 import { ChatFlow } from "@/components/playground/chat-flow"
 import { PlaygroundHome } from "@/components/playground/playground-home"
 import { cn } from "@/lib/utils"
-import { Badge } from "@/components/ui/badge"
-import { Loader2 } from "lucide-react"
-
 import { Button } from "@/components/ui/button"
-import { Plus, X, MessageSquare, Settings2 } from "lucide-react"
+import { Plus, X, MessageSquare, ChevronLeft, ChevronRight } from "lucide-react"
 
-function TabHeader({ tab, isActive, onClick, onClose }: { tab: PlaygroundTab, isActive: boolean, onClick: () => void, onClose: (e: React.MouseEvent) => void }) {
+function TabHeader({ tab, isActive, onClick, onClose }: {
+    tab: PlaygroundTab
+    isActive: boolean
+    onClick: () => void
+    onClose: (e: React.MouseEvent) => void
+}) {
     return (
         <div
             onClick={onClick}
             className={cn(
-                "group flex items-center gap-2 px-4 py-2 text-sm border-r cursor-pointer select-none hover:bg-muted/50 transition-colors min-w-[120px] max-w-[200px] h-[40px]",
-                isActive ? "bg-background border-b-0 border-t-2 border-t-primary" : "bg-muted/20 border-b"
+                "group flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer select-none transition-all rounded-t-lg mx-0.5 h-[36px] shrink-0",
+                isActive
+                    ? "bg-background text-foreground shadow-sm border border-b-0 border-border/50"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
             )}
         >
-            <MessageSquare className="h-3 w-3 text-muted-foreground" />
-            <span className="truncate flex-1 font-medium">{tab.title}</span>
+            <MessageSquare className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate max-w-[120px] text-xs font-medium">{tab.title}</span>
             <div
                 role="button"
                 onClick={onClose}
                 className={cn(
-                    "opacity-0 group-hover:opacity-100 p-0.5 rounded-sm hover:bg-destructive/10 hover:text-destructive transition-all",
-                    isActive && "opacity-100"
+                    "opacity-0 group-hover:opacity-100 p-0.5 rounded-sm hover:bg-destructive/10 hover:text-destructive transition-all shrink-0",
+                    isActive && "opacity-60 hover:opacity-100"
                 )}
             >
                 <X className="h-3 w-3" />
@@ -45,14 +49,59 @@ export default function PlaygroundPage() {
         addTab
     } = usePlaygroundStore()
 
-    const activeTab = tabs.find(t => t.id === activeTabId)
+    const tabsContainerRef = React.useRef<HTMLDivElement>(null)
+    const [showLeftArrow, setShowLeftArrow] = React.useState(false)
+    const [showRightArrow, setShowRightArrow] = React.useState(false)
+
+    const checkScrollArrows = React.useCallback(() => {
+        const container = tabsContainerRef.current
+        if (!container) return
+
+        setShowLeftArrow(container.scrollLeft > 0)
+        setShowRightArrow(
+            container.scrollLeft < container.scrollWidth - container.clientWidth - 1
+        )
+    }, [])
+
+    React.useEffect(() => {
+        checkScrollArrows()
+        window.addEventListener('resize', checkScrollArrows)
+        return () => window.removeEventListener('resize', checkScrollArrows)
+    }, [checkScrollArrows, tabs.length])
+
+    const scrollTabs = (direction: 'left' | 'right') => {
+        const container = tabsContainerRef.current
+        if (!container) return
+
+        const scrollAmount = 200
+        container.scrollBy({
+            left: direction === 'left' ? -scrollAmount : scrollAmount,
+            behavior: 'smooth'
+        })
+    }
 
     return (
         <div className="h-full flex overflow-hidden bg-background">
             <div className="flex-1 flex flex-col h-full overflow-hidden">
                 {/* Tabs Bar */}
-                <div className="flex items-end bg-muted/10 border-b flex-none">
-                    <div className="flex-1 flex overflow-x-auto no-scrollbar items-end h-[41px]">
+                <div className="flex items-end bg-muted/30 border-b flex-none relative">
+                    {/* Left scroll arrow */}
+                    {showLeftArrow && (
+                        <button
+                            onClick={() => scrollTabs('left')}
+                            className="absolute left-0 top-0 bottom-0 z-10 px-1 bg-gradient-to-r from-muted/80 to-transparent hover:from-muted flex items-center"
+                        >
+                            <ChevronLeft className="h-4 w-4 text-muted-foreground" />
+                        </button>
+                    )}
+
+                    {/* Tabs container */}
+                    <div
+                        ref={tabsContainerRef}
+                        onScroll={checkScrollArrows}
+                        className="flex-1 flex overflow-x-auto scrollbar-none items-end pt-1.5 px-1"
+                        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                    >
                         {tabs.map(tab => (
                             <TabHeader
                                 key={tab.id}
@@ -66,35 +115,53 @@ export default function PlaygroundPage() {
                             />
                         ))}
                     </div>
-                    <div className="px-2 py-1.5 border-l bg-background/50 flex-none h-[40px] flex items-center">
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => addTab()}>
+
+                    {/* Right scroll arrow */}
+                    {showRightArrow && (
+                        <button
+                            onClick={() => scrollTabs('right')}
+                            className="absolute right-10 top-0 bottom-0 z-10 px-1 bg-gradient-to-l from-muted/80 to-transparent hover:from-muted flex items-center"
+                        >
+                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        </button>
+                    )}
+
+                    {/* Add tab button */}
+                    <div className="px-2 py-1 flex-none flex items-center">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                            onClick={() => addTab()}
+                        >
                             <Plus className="h-4 w-4" />
                         </Button>
                     </div>
                 </div>
 
-                {/* Main Content Area */}
-                <div className="flex-1 flex overflow-hidden">
+                {/* Main Content Area - Keep all tabs mounted but hidden */}
+                <div className="flex-1 flex overflow-hidden relative">
                     {tabs.length === 0 ? (
                         <PlaygroundHome />
-                    ) : activeTab ? (
-                        <>
-                            <div className="flex-1 flex flex-col min-w-0 bg-background h-full">
-                                {/* Tab Content */}
-                                <div className="flex-1 overflow-hidden relative h-full">
-                                    {activeTab.type === 'chat' && (
-                                        <ChatFlow key={activeTab.id} tabId={activeTab.id} />
-                                    )}
-                                    {activeTab.type === 'new' && (
-                                        <PlaygroundHome tabId={activeTab.id} />
-                                    )}
-                                </div>
-                            </div>
-                        </>
                     ) : (
-                        <div className="flex-1 flex items-center justify-center">
-                            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                        </div>
+                        tabs.map(tab => (
+                            <div
+                                key={tab.id}
+                                className={cn(
+                                    "absolute inset-0 flex flex-col bg-background transition-opacity",
+                                    tab.id === activeTabId
+                                        ? "opacity-100 z-10 pointer-events-auto"
+                                        : "opacity-0 z-0 pointer-events-none"
+                                )}
+                            >
+                                {tab.type === 'chat' && (
+                                    <ChatFlow tabId={tab.id} />
+                                )}
+                                {tab.type === 'new' && (
+                                    <PlaygroundHome tabId={tab.id} />
+                                )}
+                            </div>
+                        ))
                     )}
                 </div>
             </div>
