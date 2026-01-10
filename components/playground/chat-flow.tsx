@@ -9,12 +9,13 @@ import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Send, Bot, User, StopCircle, RefreshCw, Eraser, Settings2, Sliders, Plus, ArrowUp } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { Loader2, Send, Bot, User, StopCircle, RefreshCw, Eraser, Settings2, Sliders, Plus, ArrowUp, Copy, Check, MoreVertical } from "lucide-react"
+import { cn, formatMessageTime, formatRelativeDate, normalizeDate } from "@/lib/utils"
 import ReactMarkdown from 'react-markdown'
 import { api } from "@/lib/api"
 import { useQuery } from "@tanstack/react-query"
 import { ModelSelector } from "@/components/playground/model-selector"
+import { ProviderIcon } from "@/components/ProviderIcon"
 import {
     DropdownMenu,
     DropdownMenuTrigger,
@@ -37,9 +38,12 @@ const CURSOR_STYLES: Record<CursorShape, string> = {
     dot: "dot"
 }
 
-const ChatMessage = React.memo(({ role, content, model, isTyping, cursorShape = 'block' }: { role: string, content: any, model?: string, isTyping?: boolean, cursorShape?: CursorShape }) => {
+const ChatMessage = React.memo(({ message, provider, isTyping }: { message: any, provider?: string, isTyping?: boolean }) => {
+    const { role, content, model, created_at, createdAt } = message
+    const messageDate = created_at || createdAt
+    const [copied, setCopied] = React.useState(false)
+
     // Attempt to handle the case where content might be a stringified JSON object
-    // (Workaround for potential data synchronization issues)
     let displayContent = content;
     if (typeof content === 'string' && content.trim().startsWith('[') && content.includes('"type":"text"')) {
         try {
@@ -54,22 +58,46 @@ const ChatMessage = React.memo(({ role, content, model, isTyping, cursorShape = 
 
     displayContent = typeof displayContent === 'string' ? displayContent : JSON.stringify(displayContent, null, 2)
 
+    const onCopy = () => {
+        navigator.clipboard.writeText(displayContent)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+    }
+
     return (
-        <div className={cn("flex gap-4 p-4", role === "assistant" ? "bg-muted/50" : "bg-background")}>
-            <Avatar className="h-8 w-8 border">
+        <div className={cn(
+            "group relative flex gap-4 px-4 py-6 hover:bg-muted/40 transition-colors w-full",
+            role === "assistant" ? "" : ""
+        )}>
+            <Avatar className="h-8 w-8 shrink-0 bg-background border">
                 {role === "assistant" ? (
-                    <AvatarFallback className="bg-primary text-primary-foreground"><Bot className="h-4 w-4" /></AvatarFallback>
+                    <AvatarFallback className="bg-transparent">
+                        <ProviderIcon
+                            providerName={provider || "unknown"}
+                            className="h-5 w-5"
+                            width={20}
+                            height={20}
+                        />
+                    </AvatarFallback>
                 ) : (
-                    <AvatarFallback><User className="h-4 w-4" /></AvatarFallback>
+                    <AvatarFallback className="bg-muted text-muted-foreground">
+                        <User className="h-4 w-4" />
+                    </AvatarFallback>
                 )}
             </Avatar>
-            <div className="flex-1 space-y-2 overflow-hidden">
-                <div className="flex items-center gap-2">
-                    <span className="font-semibold text-sm capitalize">{role}</span>
-                    {model && <Badge variant="outline" className="text-xs font-normal text-muted-foreground">{model}</Badge>}
+
+            <div className="flex-1 space-y-1 overflow-hidden min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-semibold text-sm capitalize truncate">
+                        {role === 'assistant' ? (provider ? `${provider} / ${model || 'Assistant'}` : (model || 'Assistant')) : 'User'}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground tabular-nums select-none opacity-50 group-hover:opacity-100 transition-opacity">
+                        {formatMessageTime(messageDate)}
+                    </span>
                 </div>
+
                 <div className={cn(
-                    "prose prose-sm dark:prose-invert max-w-none break-words relative",
+                    "prose prose-sm dark:prose-invert max-w-none break-words relative leading-relaxed",
                     isTyping && displayContent && [
                         "[&>*:last-child]:after:content-['▋']",
                         "[&>*:last-child]:after:ml-1",
@@ -77,46 +105,125 @@ const ChatMessage = React.memo(({ role, content, model, isTyping, cursorShape = 
                         "[&>*:last-child]:after:inline-block"
                     ]
                 )}>
-                    <ReactMarkdown>{displayContent}</ReactMarkdown>
+                    <ReactMarkdown components={{
+                        pre: ({ node, ...props }) => (
+                            <div className="overflow-auto w-full my-2 bg-muted/50 p-2 rounded-md">
+                                <pre {...props} />
+                            </div>
+                        ),
+                        code: ({ node, inline, className, children, ...props }: any) => {
+                            return (
+                                <code
+                                    className={cn("bg-muted/50 rounded px-1 py-0.5", className)}
+                                    {...props}
+                                >
+                                    {children}
+                                </code>
+                            )
+                        }
+                    }}>
+                        {displayContent}
+                    </ReactMarkdown>
                     {isTyping && !displayContent && (
                         <span className="animate-pulse">▋</span>
                     )}
                 </div>
+            </div>
+
+            {/* Hover Actions */}
+            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 z-10 bg-background/80 backdrop-blur-sm p-1 rounded-md border shadow-sm">
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onCopy} title="Copy">
+                    {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                </Button>
             </div>
         </div>
     )
 })
 ChatMessage.displayName = "ChatMessage"
 
+const DateSeparator = React.memo(({ date }: { date: string }) => (
+    <div className="relative flex items-center justify-center my-6">
+        <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t" />
+        </div>
+        <div className="relative bg-background px-3 text-xs text-muted-foreground font-medium rounded-full border">
+            {formatRelativeDate(date)}
+        </div>
+    </div>
+))
+DateSeparator.displayName = "DateSeparator"
+
 const MessageList = React.memo(({ messages, isLoading }: { messages: any[], isLoading: boolean }) => {
     const messagesEndRef = React.useRef<HTMLDivElement>(null)
+    const { data: modelsData } = useQuery({
+        queryKey: ["models"],
+        queryFn: () => api.getModels(),
+        staleTime: 1000 * 60 * 5, // Cache for 5 mins
+    })
 
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-    }
+    const modelProviderMap = React.useMemo(() => {
+        const map = new Map<string, string>()
+        if (Array.isArray(modelsData)) {
+            modelsData.forEach((m: any) => {
+                if (m.name) map.set(m.name, m.provider)
+            })
+        }
+        return map
+    }, [modelsData])
 
+    const scrollContainerRef = React.useRef<HTMLDivElement>(null)
+
+    // Initial scroll
+    React.useLayoutEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "instant" })
+    }, [])
+
+    // Auto crawl logic
     React.useEffect(() => {
-        scrollToBottom()
-    }, [messages, isLoading])
+        // Simple auto-scroll on new messages or loading state
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    }, [messages.length, isLoading])
+
+    // Process messages to inject date separators
+    const renderItems = React.useMemo(() => {
+        const items: React.ReactNode[] = []
+        let lastDate: string | null = null
+
+        messages.forEach((m: any, index: number) => {
+            const mDate = m.created_at || m.createdAt
+            const dateObj = normalizeDate(mDate)
+            const currentDate = dateObj.toDateString() // "Mon Jan 01 2024" (Local)
+            
+            if (currentDate !== lastDate) {
+                items.push(<DateSeparator key={`date-${currentDate}-${index}`} date={mDate} />)
+                // UPDATE lastDate!
+                lastDate = currentDate
+            }
+
+            items.push(
+                <ChatMessage
+                    key={m.id}
+                    message={m}
+                    provider={m.model ? modelProviderMap.get(m.model) : undefined}
+                    isTyping={isLoading && index === messages.length - 1 && m.role === 'assistant'}
+                />
+            )
+        })
+        return items
+    }, [messages, isLoading, modelProviderMap])
 
     return (
-        <div className="pb-32">
+        <div className="pb-36 pt-4">
             {messages.length === 0 && (
                 <div className="h-full flex flex-col items-center justify-center p-8 text-muted-foreground opacity-50 space-y-4 pt-20">
                     <Bot className="h-12 w-12" />
                     <p>Start a conversation...</p>
                 </div>
             )}
-            {messages.map((m: any, index: number) => (
-                <ChatMessage
-                    key={m.id}
-                    role={m.role}
-                    content={m.content}
-                    model={m.model}
-                    isTyping={isLoading && index === messages.length - 1 && m.role === 'assistant'}
-                />
-            ))}
-            <div ref={messagesEndRef} />
+
+            {renderItems}
+
+            <div ref={messagesEndRef} className="h-px" />
         </div>
     )
 })
@@ -176,7 +283,8 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                 id: m.id,
                 role: m.role as any,
                 content: typeof m.content === 'string' ? m.content : (Array.isArray(m.content) && m.content[0]?.text) || JSON.stringify(m.content),
-                model: m.model // IF returned
+                model: m.model, // IF returned
+                created_at: m.created_at
             }));
             setMessages(mapped);
         }

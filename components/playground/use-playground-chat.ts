@@ -9,7 +9,8 @@ export type Message = {
     id: string
     role: "user" | "assistant" | "system"
     content: string
-    createdAt?: Date
+    created_at?: Date | string
+    createdAt?: Date | string
 }
 
 export function usePlaygroundChat({
@@ -140,7 +141,7 @@ export function usePlaygroundChat({
             id: crypto.randomUUID(),
             role: "user",
             content: userContent,
-            createdAt: new Date()
+            created_at: new Date()
         }
 
         // Placeholder assistant message
@@ -149,7 +150,7 @@ export function usePlaygroundChat({
             id: assistantMsgId,
             role: "assistant",
             content: "",
-            createdAt: new Date()
+            created_at: new Date()
         }
 
         setMessages(prev => [...prev, userMsg, assistantMsg])
