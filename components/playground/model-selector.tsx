@@ -14,8 +14,56 @@ import {
 import { Input } from "@/components/ui/input"
 import { useQuery } from "@tanstack/react-query"
 import { api } from "@/lib/api"
-import { ProviderIcon } from "@/components/ProviderIcon"
+import { cn } from "@/lib/utils"
 import { useSettingsStore } from "@/lib/stores/settings-store"
+
+// Lightweight provider icon for fast rendering in lists
+const PROVIDER_LOGOS: Record<string, string> = {
+    'openai': '/providers/openai.svg',
+    'claude': '/providers/claude.svg',
+    'anthropic': '/providers/claude.svg',
+    'gemini': '/providers/gemini.svg',
+    'google': '/providers/gemini.svg',
+    'vertexai': '/providers/vertexai.svg',
+    'vertex': '/providers/vertex.svg',
+    'deepseek': '/providers/deepseek.png',
+    'moonshot': '/providers/moonshot.png',
+    'zhipu': '/providers/zhipu.png',
+    'aliyun': '/providers/alibabacloud.png',
+    'alibabacloud': '/providers/alibabacloud.png',
+    'siliconflow': '/providers/siliconflow.svg',
+    'tei': '/providers/tei.svg',
+    'transformers': '/providers/transformers.svg',
+    'baichuan': '/providers/baichuan.png',
+    'volcengine': '/providers/volcengine.png',
+    'stepfun': '/providers/stepfun.png',
+}
+
+const DARK_INVERT_PROVIDERS = new Set(['openai', 'vertex', 'vertexai', 'siliconflow'])
+
+const ProviderIconLight = React.memo(({ provider }: { provider: string }) => {
+    const normalized = provider.toLowerCase().replace(/[^a-z0-9_]/g, '')
+    const src = PROVIDER_LOGOS[normalized]
+    const isDarkInvert = DARK_INVERT_PROVIDERS.has(normalized)
+
+    if (src) {
+        return (
+            <img
+                src={src}
+                alt=""
+                className={cn("h-4 w-4 object-contain", isDarkInvert && "dark:invert")}
+                loading="lazy"
+            />
+        )
+    }
+
+    return (
+        <span className="h-4 w-4 rounded bg-muted flex items-center justify-center text-[8px] font-bold">
+            {provider.substring(0, 2).toUpperCase()}
+        </span>
+    )
+})
+ProviderIconLight.displayName = "ProviderIconLight"
 
 const ModelItem = React.memo(({ model, isSelected, onSelect }: { model: any, isSelected: boolean, onSelect: (name: string) => void }) => {
     return (
@@ -26,14 +74,7 @@ const ModelItem = React.memo(({ model, isSelected, onSelect }: { model: any, isS
             data-model-id={model.name}
         >
             <div className="flex items-center gap-2 w-full overflow-hidden">
-                <div className="h-4 w-4 shrink-0 flex items-center justify-center">
-                    <ProviderIcon
-                        providerName={model.provider || "unknown"}
-                        className="h-4 w-4"
-                        width={16}
-                        height={16}
-                    />
-                </div>
+                <ProviderIconLight provider={model.provider || "unknown"} />
                 <span className="truncate">{model.name}</span>
             </div>
         </DropdownMenuCheckboxItem>
@@ -66,10 +107,14 @@ export function ModelSelector({ selectedModelIds, onModelSelect, side = "top", a
     const { data: modelsData, isLoading } = useQuery({
         queryKey: ["models"],
         queryFn: () => api.getModels(),
+        staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+        gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
     })
 
+    // Filter to only chat models
     const models = React.useMemo(() => {
-        return Array.isArray(modelsData) ? modelsData : []
+        const allModels = Array.isArray(modelsData) ? modelsData : []
+        return allModels.filter(m => m.type === "chat")
     }, [modelsData])
 
     // Auto-select default model if none selected
@@ -97,16 +142,14 @@ export function ModelSelector({ selectedModelIds, onModelSelect, side = "top", a
     // Scroll to first selection on open
     React.useEffect(() => {
         if (open && optimisticIds.length > 0) {
-            // Find the element with the data-model-id attribute matching the first selected id
-            // Use a microtask/immediate timeout to scroll instantly after mount
-            const timer = setTimeout(() => {
+            // Use requestAnimationFrame for immediate scroll after paint
+            requestAnimationFrame(() => {
                 const firstSelected = optimisticIds[0]
                 const element = document.querySelector(`[data-model-id="${firstSelected}"]`)
                 if (element) {
-                    element.scrollIntoView({ block: "center" })
+                    element.scrollIntoView({ block: "center", behavior: "instant" })
                 }
-            }, 10)
-            return () => clearTimeout(timer)
+            })
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open])
@@ -161,7 +204,7 @@ export function ModelSelector({ selectedModelIds, onModelSelect, side = "top", a
                 )}
             </DropdownMenuTrigger>
             <DropdownMenuContent
-                className="w-[300px]"
+                className="w-[300px] duration-0 animate-none"
                 align={align}
                 side={side}
                 onCloseAutoFocus={(e) => e.preventDefault()}
