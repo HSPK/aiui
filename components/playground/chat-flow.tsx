@@ -58,7 +58,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         id: m.id,
         role: m.role,
         content: typeof m.content === 'string' ? m.content : (Array.isArray(m.content) && m.content[0]?.text) || JSON.stringify(m.content),
-        model: m.model,
+        model_id: m.model_id,
         created_at: m.created_at
     }), [])
 
@@ -294,7 +294,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                     conversation_id: tab?.conversationId || "",
                     role: m.role as any,
                     content: [{ type: "text", text: String(contentVal) }],
-                    model: m.model,
+                    model_id: m.model_id,
                     is_active: true,
                     created_at: m.created_at || new Date().toISOString()
                 }

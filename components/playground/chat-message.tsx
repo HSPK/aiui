@@ -9,7 +9,7 @@ import ReactMarkdown from 'react-markdown'
 import { ProviderIcon } from "@/components/ProviderIcon"
 
 export const ChatMessage = React.memo(({ message, provider, isTyping }: { message: any, provider?: string, isTyping?: boolean }) => {
-    const { role, content, model, created_at, createdAt } = message
+    const { role, content, model_id, created_at, createdAt } = message
     const messageDate = created_at || createdAt
     const [copied, setCopied] = React.useState(false)
 
@@ -59,8 +59,8 @@ export const ChatMessage = React.memo(({ message, provider, isTyping }: { messag
 
             <div className="flex-1 space-y-1 overflow-hidden min-w-0">
                 <div className="flex items-center gap-2 min-w-0">
-                    <span className="font-semibold text-sm capitalize truncate">
-                        {role === 'assistant' ? (provider ? `${provider} / ${model || 'Assistant'}` : (model || 'Assistant')) : 'User'}
+                    <span className="font-semibold text-sm truncate">
+                        {role === 'assistant' ? (provider ? `${provider} / ${model_id || 'Assistant'}` : (model_id || 'Assistant')) : 'User'}
                     </span>
                     <span className="text-[10px] text-muted-foreground tabular-nums select-none opacity-50 group-hover:opacity-100 transition-opacity">
                         {formatMessageTime(messageDate)}

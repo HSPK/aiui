@@ -31,6 +31,7 @@ export const MessageList = React.memo(({ messages, isLoading }: { messages: any[
         if (Array.isArray(modelsData)) {
             modelsData.forEach((m: any) => {
                 if (m.name) map.set(m.name, m.provider)
+                if (m.model_id) map.set(m.model_id, m.provider)
             })
         }
         return map
@@ -56,7 +57,7 @@ export const MessageList = React.memo(({ messages, isLoading }: { messages: any[
                 <ChatMessage
                     key={m.id}
                     message={m}
-                    provider={m.model ? modelProviderMap.get(m.model) : undefined}
+                    provider={m.model_id ? modelProviderMap.get(m.model_id) : undefined}
                     isTyping={isLoading && index === messages.length - 1 && m.role === 'assistant'}
                 />
             )

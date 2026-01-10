@@ -18,6 +18,7 @@ export interface Message {
     role: MessageRole;
     content: any[]; // The user provided TextContent | ImageContent etc, simplifying for now
     reasoning_content?: string;
+    model_id?: string;
     generation_id?: string;
     parent_id?: string;
     meta?: Record<string, any>;

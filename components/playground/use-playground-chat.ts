@@ -9,6 +9,7 @@ export type Message = {
     id: string
     role: "user" | "assistant" | "system"
     content: string
+    model_id?: string
     created_at?: Date | string
     createdAt?: Date | string
 }
@@ -163,6 +164,7 @@ export function usePlaygroundChat({
             id: assistantMsgId,
             role: "assistant",
             content: "",
+            model_id: model,
             created_at: new Date()
         }
 
