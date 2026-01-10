@@ -164,7 +164,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
             // Convert 'ai' SDK messages to our Message type format roughly
             // We can't perfectly match because 'ai' SDK messages are simpler.
             // But for this "client-side history", it's enough.
-            const storeMessages = messages.map(m => {
+            const storeMessages = messages.map((m: any) => {
                 // Check if content is already wrapped or if it's a string
                 let contentVal = m.content;
                 // If it's already an array with type: text, don't wrap it again?
@@ -215,7 +215,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                             <p>Start a conversation...</p>
                         </div>
                     )}
-                    {messages.map((m, index) => (
+                    {messages.map((m: any, index: number) => (
                         <ChatMessage
                             key={m.id}
                             role={m.role}
