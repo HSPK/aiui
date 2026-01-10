@@ -37,14 +37,14 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         return tab?.messages?.map(m => ({
             ...m,
             id: m.id,
-            role: m.role as any, 
+            role: m.role as any,
             content: typeof m.content === 'string' ? m.content : (Array.isArray(m.content) && m.content[0]?.text) ? m.content[0].text : String(m.content)
         })) || []
     }, [tab?.messages])
 
     const { messages, input, handleInputChange, handleSubmit, isLoading, setMessages } = usePlaygroundChat({
         conversationId: tab?.conversationId,
-        initialMessages: normalizedMessages, 
+        initialMessages: normalizedMessages,
     })
 
     // Pagination State
@@ -74,7 +74,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         // If no messages at all, but we have an ID, fetch!
         if (tab?.conversationId && messages.length === 0 && isFirstLoadRef.current) {
             isFirstLoadRef.current = false;
-            
+
             const fetchInitial = async () => {
                 try {
                     const res = await api.getConversationMessages(tab.conversationId!, {
@@ -82,7 +82,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                         page_size: 20,
                         sort: "-created_at"
                     });
-                    
+
                     if (res.items.length > 0) {
                         const newMsgs = res.items.reverse().map(transformMessage);
                         setMessages(newMsgs);
