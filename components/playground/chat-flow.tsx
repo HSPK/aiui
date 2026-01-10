@@ -2,7 +2,7 @@
 
 import * as React from "react"
 // import { useChat } from "@ai-sdk/react" // Removed
-import { usePlaygroundChat } from "./use-playground-chat"
+import { usePlaygroundChat } from "@/components/playground/use-playground-chat"
 import { usePlaygroundStore, PlaygroundTab } from "@/lib/stores/playground-store"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -11,7 +11,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, Send, Bot, User, StopCircle, RefreshCw, Eraser, Settings2, Sliders } from "lucide-react"
 import { cn } from "@/lib/utils"
-// @ts-ignore
 import ReactMarkdown from 'react-markdown'
 import { api } from "@/lib/api"
 import { useQuery } from "@tanstack/react-query"
@@ -31,11 +30,11 @@ import { Label } from "@/components/ui/label"
 
 type CursorShape = 'bar' | 'block' | 'underscore' | 'dot'
 
-const CURSOR_STYLES: Record<CursorShape, string> = {
-    bar: "after:content-['|']",
-    block: "after:content-['▋']",
-    underscore: "after:content-['_']",
-    dot: "after:content-['●']"
+const CURSOR_CHARS: Record<CursorShape, string> = {
+    bar: '│',
+    block: '▋',
+    underscore: '_',
+    dot: '●'
 }
 
 function ChatMessage({ role, content, model, isTyping, cursorShape = 'block' }: { role: string, content: any, model?: string, isTyping?: boolean, cursorShape?: CursorShape }) {
@@ -55,6 +54,10 @@ function ChatMessage({ role, content, model, isTyping, cursorShape = 'block' }: 
 
     displayContent = typeof displayContent === 'string' ? displayContent : JSON.stringify(displayContent, null, 2)
 
+    if (isTyping) {
+        displayContent += (CURSOR_CHARS[cursorShape] || '▋');
+    }
+
     return (
         <div className={cn("flex gap-4 p-4", role === "assistant" ? "bg-muted/50" : "bg-background")}>
             <Avatar className="h-8 w-8 border">
@@ -69,23 +72,8 @@ function ChatMessage({ role, content, model, isTyping, cursorShape = 'block' }: 
                     <span className="font-semibold text-sm capitalize">{role}</span>
                     {model && <Badge variant="outline" className="text-xs font-normal text-muted-foreground">{model}</Badge>}
                 </div>
-                <div className={cn(
-                    "prose prose-sm dark:prose-invert max-w-none break-words relative",
-                    isTyping && [
-                        "[&>*:last-child]:after:ml-0.5",
-                        "[&>*:last-child]:after:animate-pulse",
-                        "[&>*:last-child]:after:inline-block",
-                        "[&>*:last-child]:after:align-baseline",
-                        CURSOR_STYLES[cursorShape]
-                    ]
-                )}>
+                <div className="prose prose-sm dark:prose-invert max-w-none break-words relative">
                     <ReactMarkdown>{displayContent}</ReactMarkdown>
-                    {/* Fallback for empty content start */}
-                    {isTyping && !displayContent && (
-                        <span className={cn("animate-pulse inline-block", cursorShape === 'block' ? "" : "ml-0.5")}>
-                            {cursorShape === 'bar' ? '|' : cursorShape === 'underscore' ? '_' : cursorShape === 'dot' ? '●' : '▋'}
-                        </span>
-                    )}
                 </div>
             </div>
         </div>
