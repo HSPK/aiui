@@ -26,7 +26,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
     const tab = tabs.find(t => t.id === tabId)
 
     // Local settings state (sync with store if needed)
-    const [temperature, setTemperature] = React.useState(tab?.temperature ?? 0.7)
+    const [temperature, setTemperature] = React.useState<number | undefined>(tab?.temperature)
     const [historyLimit, setHistoryLimit] = React.useState(tab?.historyLimit ?? 10)
 
     const handleModelSelect = (ids: string[]) => {
@@ -357,7 +357,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                         <Textarea
                             value={input}
                             onChange={handleInputChange}
-                            placeholder={`Message ${tab?.modelIds?.[0] || 'AI'}...`}
+                            placeholder={`Message ${(tab?.modelIds && tab.modelIds.length > 0) ? tab.modelIds.join(', ') : 'AI'}...`}
                             className="min-h-[32px] max-h-[200px] border-0 focus-visible:ring-0 resize-none p-0 py-[6px] bg-transparent dark:bg-transparent shadow-none flex-1 text-sm leading-[20px]"
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -374,8 +374,13 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                                 side="top"
                                 align="end"
                                 trigger={
-                                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground relative">
                                         <Bot className="h-5 w-5" />
+                                        {(tab?.modelIds?.length || 0) > 1 && (
+                                            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] text-primary-foreground font-bold leading-none">
+                                                {tab?.modelIds?.length}
+                                            </span>
+                                        )}
                                     </Button>
                                 }
                             />
