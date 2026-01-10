@@ -155,10 +155,41 @@ export function ChatFlow({ tabId }: { tabId: string }) {
 
     // Scroll management
     const viewportRef = React.useRef<HTMLDivElement>(null)
-    const scrollSaveTimeoutRef = React.useRef<NodeJS.Timeout | undefined>(undefined)
+    const currentScrollRef = React.useRef(0) // Track scroll without re-rendering
     const lastMessageIdRef = React.useRef<string | null>(null)
 
-    // Restore scroll position logic (+ suppress auto-scroll on mount)
+    // Save scroll position on unmount
+    React.useEffect(() => {
+        return () => {
+            if (currentScrollRef.current > 0) {
+                // accessing ref directly in cleanup is safe for this ref
+                // but we need to capture the stable updateTab/tabId function/value?
+                // Actually, due to closure stale-ness in cleanup of empty-dep effect, 
+                // we technically need a ref for updateTab too if we want to be 100% correct, 
+                // but usually tabId is constant for the component instance.
+                // However, updateTab comes from store hook, might change? 
+                // Let's use a specialized effect that updates a ref with the latest 'save' function.
+            }
+        }
+    }, [])
+
+    // Dedicated effect to handle saving on unmount
+    const saveScroll = React.useCallback(() => {
+        if (currentScrollRef.current > 0) {
+            updateTab(tabId, { scrollPosition: currentScrollRef.current })
+        }
+    }, [tabId, updateTab])
+
+    const saveScrollRef = React.useRef(saveScroll)
+    React.useLayoutEffect(() => {
+        saveScrollRef.current = saveScroll
+    })
+
+    React.useEffect(() => {
+        return () => {
+            saveScrollRef.current()
+        }
+    }, [])
     React.useLayoutEffect(() => {
         const viewport = viewportRef.current
 
@@ -212,17 +243,13 @@ export function ChatFlow({ tabId }: { tabId: string }) {
 
     const handleScroll = React.useCallback((e: React.UIEvent<HTMLDivElement>) => {
         const target = e.currentTarget
+        currentScrollRef.current = target.scrollTop // Update ref synchronously
 
         // Check for top reach to load more (threshold 50px)
         if (target.scrollTop < 50 && hasMore && !isLoadingMore && messages.length > 0) {
             loadMoreMessages()
         }
-
-        if (scrollSaveTimeoutRef.current) clearTimeout(scrollSaveTimeoutRef.current)
-        scrollSaveTimeoutRef.current = setTimeout(() => {
-            updateTab(tabId, { scrollPosition: target.scrollTop })
-        }, 100)
-    }, [tabId, updateTab, loadMoreMessages, hasMore, isLoadingMore, messages.length])
+    }, [hasMore, isLoadingMore, messages.length, loadMoreMessages])
 
     const onFormSubmit = (e: React.FormEvent) => {
         handleSubmit(e, {

@@ -13,26 +13,27 @@ export const ChatMessage = React.memo(({ message, provider, isTyping }: { messag
     const messageDate = created_at || createdAt
     const [copied, setCopied] = React.useState(false)
 
-    // Attempt to handle the case where content might be a stringified JSON object
-    let displayContent = content;
-    if (typeof content === 'string' && content.trim().startsWith('[') && content.includes('"type":"text"')) {
-        try {
-            const parsed = JSON.parse(content);
-            if (Array.isArray(parsed) && parsed[0]?.text) {
-                displayContent = parsed[0].text;
+    // Memoize the JSON parsing/display calculation to avoid doing it on every render
+    const displayContent = React.useMemo(() => {
+        let dc = content;
+        if (typeof content === 'string' && content.trim().startsWith('[') && content.includes('"type":"text"')) {
+            try {
+                const parsed = JSON.parse(content);
+                if (Array.isArray(parsed) && parsed[0]?.text) {
+                    dc = parsed[0].text;
+                }
+            } catch (e) {
+                // ignore
             }
-        } catch (e) {
-            // ignore
         }
-    }
+        return typeof dc === 'string' ? dc : JSON.stringify(dc, null, 2)
+    }, [content])
 
-    displayContent = typeof displayContent === 'string' ? displayContent : JSON.stringify(displayContent, null, 2)
-
-    const onCopy = () => {
+    const onCopy = React.useCallback(() => {
         navigator.clipboard.writeText(displayContent)
         setCopied(true)
         setTimeout(() => setCopied(false), 2000)
-    }
+    }, [displayContent])
 
     return (
         <div className={cn(
