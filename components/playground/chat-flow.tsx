@@ -100,7 +100,7 @@ const MessageList = React.memo(({ messages, isLoading }: { messages: any[], isLo
     }, [messages, isLoading])
 
     return (
-        <div className="pb-4">
+        <div className="pb-32">
             {messages.length === 0 && (
                 <div className="h-full flex flex-col items-center justify-center p-8 text-muted-foreground opacity-50 space-y-4 pt-20">
                     <Bot className="h-12 w-12" />
@@ -226,14 +226,14 @@ export function ChatFlow({ tabId }: { tabId: string }) {
 
 
     return (
-        <div className="flex flex-col h-full relative overflow-hidden">
-            <ScrollArea className="flex-1 min-h-0 w-full">
+        <div className="h-full relative overflow-hidden">
+            <ScrollArea className="h-full w-full">
                 <MessageList messages={messages} isLoading={isLoading} />
             </ScrollArea>
 
-            <div className="p-4 bg-background z-10 w-full flex-none">
-                <form onSubmit={onFormSubmit} className="flex flex-col gap-2 w-full mx-auto">
-                    <div className="flex items-end gap-2 bg-muted/20 border rounded-md px-2 py-2 focus-within:border-primary/20 transition-all">
+            <div className="absolute bottom-0 left-0 w-full p-4 z-10 bg-gradient-to-t from-background via-background/90 to-transparent pb-6">
+                <form onSubmit={onFormSubmit} className="flex flex-col gap-2 w-full mx-auto max-w-4xl">
+                    <div className="flex items-end gap-2 bg-background border rounded-2xl px-2 py-2 focus-within:ring-1 focus-within:ring-ring transition-all shadow-lg">
                         <Button
                             type="button"
                             variant="ghost"
