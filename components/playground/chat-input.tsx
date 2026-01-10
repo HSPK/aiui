@@ -43,11 +43,23 @@ export function ChatInput({
     reasoningEffort,
     onReasoningEffortChange,
 }: ChatInputProps) {
+    // Track IME composition state (for Chinese/Japanese/Korean input methods)
+    const isComposingRef = React.useRef(false)
+
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
+        // Ignore Enter during IME composition (e.g., selecting Chinese characters)
+        if (e.key === 'Enter' && !e.shiftKey && !isComposingRef.current) {
             e.preventDefault()
             onSubmit(e as any)
         }
+    }
+
+    const handleCompositionStart = () => {
+        isComposingRef.current = true
+    }
+
+    const handleCompositionEnd = () => {
+        isComposingRef.current = false
     }
 
     return (
@@ -69,6 +81,8 @@ export function ChatInput({
                     placeholder={`Message ${selectedModelIds.length > 0 ? selectedModelIds.join(', ') : 'AI'}...`}
                     className="min-h-[32px] max-h-[200px] border-0 focus-visible:ring-0 resize-none p-0 py-[6px] bg-transparent dark:bg-transparent shadow-none flex-1 text-sm leading-[20px]"
                     onKeyDown={handleKeyDown}
+                    onCompositionStart={handleCompositionStart}
+                    onCompositionEnd={handleCompositionEnd}
                 />
 
                 <div className="flex items-center gap-1 shrink-0">

@@ -33,6 +33,7 @@ function ConversationItem({
     const [editTitle, setEditTitle] = React.useState(conv.title)
     const [dropdownOpen, setDropdownOpen] = React.useState(false)
     const inputRef = React.useRef<HTMLInputElement>(null)
+    const isComposingRef = React.useRef(false)
 
     React.useEffect(() => {
         if (isEditing && inputRef.current) {
@@ -62,11 +63,19 @@ function ConversationItem({
     }
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === "Enter") {
+        if (e.key === "Enter" && !isComposingRef.current) {
             handleSaveEdit()
         } else if (e.key === "Escape") {
             handleCancelEdit()
         }
+    }
+
+    const handleCompositionStart = () => {
+        isComposingRef.current = true
+    }
+
+    const handleCompositionEnd = () => {
+        isComposingRef.current = false
     }
 
     const handleDelete = (e: React.MouseEvent) => {
@@ -84,6 +93,8 @@ function ConversationItem({
                     value={editTitle}
                     onChange={(e) => setEditTitle(e.target.value)}
                     onKeyDown={handleKeyDown}
+                    onCompositionStart={handleCompositionStart}
+                    onCompositionEnd={handleCompositionEnd}
                     onBlur={handleSaveEdit}
                     className="flex-1 bg-transparent text-xs outline-none border-b border-primary/50 py-0.5"
                     onClick={(e) => e.stopPropagation()}
