@@ -90,7 +90,7 @@ export default function ProvidersPage() {
             <h2 className="text-3xl font-bold tracking-tight">Providers & Models</h2>
 
             <Tabs defaultValue="providers" className="w-full" onValueChange={setActiveTab}>
-                <div className="flex items-center justify-between pb-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between pb-4 gap-4">
                     <div className="flex items-center gap-2">
                         <TabsList>
                             <TabsTrigger value="providers">Providers</TabsTrigger>
@@ -105,36 +105,8 @@ export default function ProvidersPage() {
                             <RefreshCcw className={`h-2 w-2 ${reloadMutation.isPending ? "animate-spin" : ""}`} />
                         </Button>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <div className="text-sm text-muted-foreground mr-2">
-                            {activeTab === "providers"
-                                ? `Showing ${filteredProviders.length} providers`
-                                : `Showing ${filteredModels.length} models`
-                            }
-                        </div>
-                        <Select value={sortOrder} onValueChange={setSortOrder}>
-                            <SelectTrigger className="w-[140px] h-9">
-                                <ArrowUpDown className="mr-2 h-4 w-4 text-muted-foreground" />
-                                <SelectValue placeholder="Sort by" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="default">Default</SelectItem>
-                                {activeTab === "providers" ? (
-                                    <>
-                                        <SelectItem value="name">Name</SelectItem>
-                                        <SelectItem value="models">Total Models</SelectItem>
-                                    </>
-                                ) : (
-                                    <>
-                                        <SelectItem value="name">Name</SelectItem>
-                                        <SelectItem value="type">Type</SelectItem>
-                                        <SelectItem value="provider">Provider</SelectItem>
-                                        <SelectItem value="context">Context Window</SelectItem>
-                                    </>
-                                )}
-                            </SelectContent>
-                        </Select>
-                        <div className="relative w-64">
+                    <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto md:items-center">
+                        <div className="relative w-full md:w-64 md:order-2">
                             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                             <Input
                                 placeholder="Search..."
@@ -142,6 +114,36 @@ export default function ProvidersPage() {
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 className="pl-8 h-9"
                             />
+                        </div>
+                        <div className="flex items-center justify-between md:justify-end gap-2 md:order-1">
+                            <div className="text-sm text-muted-foreground whitespace-nowrap">
+                                {activeTab === "providers"
+                                    ? `Showing ${filteredProviders.length} providers`
+                                    : `Showing ${filteredModels.length} models`
+                                }
+                            </div>
+                            <Select value={sortOrder} onValueChange={setSortOrder}>
+                                <SelectTrigger className="w-auto min-w-[130px] h-9">
+                                    <ArrowUpDown className="mr-2 h-4 w-4 text-muted-foreground" />
+                                    <SelectValue placeholder="Sort by" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="default">Default</SelectItem>
+                                    {activeTab === "providers" ? (
+                                        <>
+                                            <SelectItem value="name">Name</SelectItem>
+                                            <SelectItem value="models">Total Models</SelectItem>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <SelectItem value="name">Name</SelectItem>
+                                            <SelectItem value="type">Type</SelectItem>
+                                            <SelectItem value="provider">Provider</SelectItem>
+                                            <SelectItem value="context">Context Window</SelectItem>
+                                        </>
+                                    )}
+                                </SelectContent>
+                            </Select>
                         </div>
                     </div>
                 </div>

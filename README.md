@@ -44,23 +44,33 @@
         
     - 后端提供 `/v1/statistics` 接口，前端用 React Query 缓存数据，支持右上角选择“日期范围”。
 
-#### 模块二：Playground (多轮对话 & 思考过程)
+#### 模块二：Playground (多任务调试工作台)
 
-**目标**：提供比拟 ChatGPT/Claude 的调试体验，支持查看底层细节。
+**目标**：打造类似 IDE 的多标签页（Multi-Tab）调试环境，集成多种 AI 任务流。
 
-- **功能点**：
-    
-    - **模型选择器**：下拉菜单，支持分组（OpenAI, Anthropic, Google）。支持**多选**（对比模式）。
-        
-    - **参数配置**：右侧侧边栏调节 Temperature, Max Tokens, Top P。
-        
-    - **思考过程 (Chain of Thought)**：
-        
-        - 如果是推理模型（如 o1, deepseek-r1），后端流式返回时通常会有 `reasoning_content` 字段。
-            
-        - **UI 实现**：使用一个可折叠的 `<Accordion>` 或 `<Collapsible>` 组件，默认收起，标题显示“Thinking... (2.5s)”，点击展开显示灰色字体的思考过程，思考结束后显示正式回答。
-            
-    - **流式渲染**：使用 `ReactMarkdown` 渲染 Markdown，支持代码高亮。
+- **核心架构**：
+    - **Tab 标签页管理**：支持同时打开多个调试会话，类似浏览器 Tab。
+    - **任务类型支持**：新建 Tab 时可选择任务类型：
+        1.  **ChatFlow (默认)**：多轮对话调试。
+        2.  **Prompt Design**：提示词工程与单次测试。
+        3.  **Embedding**：向量生成与可视化测试。
+        4.  **Rerank**：重排序模型评分测试。
+    -- **历史记录保存**：新建 Tab 时可选择加载历史记录，方便复现问题。支持过滤和搜索历史对话。
+
+- **详细设计 - ChatFlow 模式**：
+    - **布局结构**：
+        - **顶部**：Tab 栏与模型选择器（支持**多选**进入对比模式）。
+        - **中间**：对话展示区（Message Stream），展示 User/Assistant 气泡。
+        - **底部**：增强型输入框（Textarea + Attachments）。
+        - **右侧栏**：参数配置（Temperature, MaxTokens）与 System Prompt 设置。
+    - **交互特性**：
+        - **多模型对比**：同时从多个模型接收流式响应，横向分栏对比效果。
+        - **思考过程 (CoT)**：折叠展示推理模型（o1/r1）的 `reasoning_content`。
+        - **流式渲染**：Markdown 实时渲染与代码高亮。
+
+- **其他模式规划**：
+    - **Prompt Design**：左侧变量编辑器 ({input})，右侧实时预览与批跑。
+    - **Embedding/Rerank**：输入文本列表，输出向量维度/相似度分数可视化。
         
 #### 模块三：日志审计 (Logs & Tracing)
 
@@ -153,3 +163,4 @@ hooks/
 3. **交互层**：利用 **Vercel AI SDK** 解决流式对话的复杂性，手动实现“思考过程”的可折叠 UI。
     
 4. **管理层**：**TanStack Table** 是处理海量日志过滤和展示的唯一真神。
+
