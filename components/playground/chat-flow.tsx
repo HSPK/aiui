@@ -28,7 +28,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
-function ChatMessage({ role, content, model }: { role: string, content: any, model?: string }) {
+function ChatMessage({ role, content, model, isTyping }: { role: string, content: any, model?: string, isTyping?: boolean }) {
     // Attempt to handle the case where content might be a stringified JSON object
     // (Workaround for potential data synchronization issues)
     let displayContent = content;
@@ -59,8 +59,11 @@ function ChatMessage({ role, content, model }: { role: string, content: any, mod
                     <span className="font-semibold text-sm capitalize">{role}</span>
                     {model && <Badge variant="outline" className="text-xs font-normal text-muted-foreground">{model}</Badge>}
                 </div>
-                <div className="prose prose-sm dark:prose-invert max-w-none break-words">
+                <div className="prose prose-sm dark:prose-invert max-w-none break-words relative">
                     <ReactMarkdown>{displayContent}</ReactMarkdown>
+                    {isTyping && (
+                        <span className="inline-block w-2 h-4 ml-1 bg-current animate-pulse align-middle" style={{ animationDuration: '0.6s' }} />
+                    )}
                 </div>
             </div>
         </div>
@@ -190,8 +193,14 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                             <p>Start a conversation...</p>
                         </div>
                     )}
-                    {messages.map(m => (
-                        <ChatMessage key={m.id} role={m.role} content={m.content} model={m.model} />
+                    {messages.map((m, index) => (
+                        <ChatMessage
+                            key={m.id}
+                            role={m.role}
+                            content={m.content}
+                            model={m.model}
+                            isTyping={isLoading && index === messages.length - 1 && m.role === 'assistant'}
+                        />
                     ))}
                     {isLoading && (
                         <div className="p-4 pl-16">

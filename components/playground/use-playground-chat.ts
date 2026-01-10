@@ -16,35 +16,76 @@ export function usePlaygroundChat({
     initialMessages = [],
     conversationId,
     onConversationCreated,
+    streamOptions = {
+        smooth: true,
+        delay: 15,
+        minChunkSize: 1
+    }
 }: {
     initialMessages?: any[],
     conversationId?: string,
-    onConversationCreated?: (id: string, groupId?: string) => void
+    onConversationCreated?: (id: string, groupId?: string) => void,
+    streamOptions?: {
+        smooth?: boolean,
+        delay?: number,
+        minChunkSize?: number
+    }
 }) {
     const [messages, setMessages] = useState<Message[]>([])
     const [input, setInput] = useState("")
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState<Error | null>(null)
 
+    // Smooth streaming state
+    const pendingStreamBufferRef = useRef<string>("")
+    const streamIntervalRef = useRef<NodeJS.Timeout | null>(null)
+    const isStreamingRef = useRef(false)
+
     // To handle aborts
     const abortControllerRef = useRef<AbortController | null>(null)
     const initializedRef = useRef<string | null>(null)
 
+    // Cleanup interval on unmount
+    useEffect(() => {
+        return () => {
+            if (streamIntervalRef.current) clearInterval(streamIntervalRef.current)
+        }
+    }, [])
+
+    const flushStreamBuffer = useCallback((targetMsgId: string) => {
+        if (!pendingStreamBufferRef.current) return
+
+        // Dynamic chunk size based on buffer backlog to maintain smoothness
+        // If backlog is huge, speed up typing, but avoid "dumping" all at once.
+        const backlog = pendingStreamBufferRef.current.length
+        let size = streamOptions.minChunkSize || 1
+
+        if (backlog > 200) size = 10     // Very far behind
+        else if (backlog > 100) size = 5 // Far behind
+        else if (backlog > 30) size = 2  // Slightly behind
+
+        const chunk = pendingStreamBufferRef.current.slice(0, size)
+        pendingStreamBufferRef.current = pendingStreamBufferRef.current.slice(size)
+
+        if (chunk) {
+            setMessages(prev => prev.map(m => {
+                if (m.id === targetMsgId) {
+                    const currentContent = typeof m.content === 'string' ? m.content : ""
+                    return { ...m, content: currentContent + chunk }
+                }
+                return m
+            }))
+        }
+    }, [streamOptions.minChunkSize])
+
     // Sync initial messages
     useEffect(() => {
-        // Prevent re-syncing if we're in the middle of a generation or if we've already synced this conversation
-        // This breaks the update cycle between store -> initialMessages -> localMessages -> store
         if (isLoading) return
 
-        // Simple equality check or ID check to avoid unnecessary updates
-        // If the conversation ID changed, we ALWAYS sync.
-        // If ID is same, we only sync if we haven't touched it, OR if the message count differs significantly (external update)
-
         const currentId = conversationId || "new"
-
-        // If we switched conversations, force update
         if (initializedRef.current !== currentId) {
             initializedRef.current = currentId
+            pendingStreamBufferRef.current = ""
             if (initialMessages && initialMessages.length > 0) {
                 setMessages(initialMessages.map(m => ({
                     ...m,
@@ -62,9 +103,15 @@ export function usePlaygroundChat({
         if (abortControllerRef.current) {
             abortControllerRef.current.abort()
             abortControllerRef.current = null
-            setIsLoading(false)
         }
+        if (streamIntervalRef.current) {
+            clearInterval(streamIntervalRef.current)
+            streamIntervalRef.current = null
+        }
+        isStreamingRef.current = false
+        setIsLoading(false)
     }, [])
+
 
     const handleSubmit = async (e?: React.FormEvent, options?: { models: string[], config: any }) => {
         e?.preventDefault()
@@ -110,6 +157,9 @@ export function usePlaygroundChat({
         // Abort controller
         abortControllerRef.current = new AbortController()
 
+        // Start stream consumer
+        startStreamConsumer(assistantMsgId)
+
         try {
             // Use local proxy/rewrite path
             const res = await fetch("/api/playground/chat", {
@@ -138,6 +188,9 @@ export function usePlaygroundChat({
             const decoder = new TextDecoder()
             let done = false
             let buffer = ""
+            let currentEvent = "message"
+            // To reduce TTFT (Time To First Token), we track the first chunk
+            let isFirstChunk = true
 
             while (!done) {
                 const { value, done: doneReading } = await reader.read()
@@ -152,12 +205,39 @@ export function usePlaygroundChat({
 
                     for (const line of lines) {
                         const trimmed = line.trim()
-                        if (!trimmed || !trimmed.startsWith("data: ")) continue
+
+                        // Empty line indicates end of event
+                        if (!trimmed) {
+                            currentEvent = "message"
+                            continue
+                        }
+
+                        if (trimmed.startsWith("event: ")) {
+                            currentEvent = trimmed.slice(7).trim()
+                            continue
+                        }
+
+                        if (!trimmed.startsWith("data: ")) continue
 
                         const dataStr = trimmed.slice(6) // Remove "data: "
                         if (dataStr === "[DONE]") {
                             done = true
                             break
+                        }
+
+                        // Handle explicit server-side stream errors
+                        if (currentEvent === "error") {
+                            try {
+                                const data = JSON.parse(dataStr)
+                                const errMsg = data.error?.message || "Stream error occurred"
+                                throw new Error(errMsg)
+                            } catch (e) {
+                                if (e instanceof Error && e.message !== "Unexpected end of JSON input") {
+                                    throw e
+                                }
+                                // If parse fails, maybe raw string?
+                                throw new Error(dataStr || "Stream error occurred")
+                            }
                         }
 
                         try {
@@ -167,24 +247,26 @@ export function usePlaygroundChat({
                             const content = data.choices?.[0]?.delta?.content
 
                             if (content) {
-                                setMessages(prev => {
-                                    return prev.map(m => {
-                                        if (m.id === assistantMsgId) {
-                                            // Ensure we are appending to a string
-                                            const currentContent = typeof m.content === 'string' ? m.content : ""
-                                            return { ...m, content: currentContent + content }
-                                        }
-                                        return m
-                                    })
-                                })
-                                // Yield to main thread to allow React to render (fix for "all at once" streaming)
-                                await new Promise(resolve => setTimeout(resolve, 10));
+                                // Instead of setting state immediately, we push to buffer
+                                pendingStreamBufferRef.current += content
+
+                                // If it's the very first chunk, flush immediately to avoid any delay
+                                if (isFirstChunk) {
+                                    isFirstChunk = false
+                                    flushStreamBuffer(assistantMsgId)
+                                }
                             }
                         } catch (e) {
                             // ignore parse errors for non-json data lines if any
                         }
                     }
                 }
+            }
+
+            // After stream is done, ensure buffer is fully flushed
+            while (pendingStreamBufferRef.current.length > 0) {
+                flushStreamBuffer(assistantMsgId)
+                await new Promise(r => setTimeout(r, streamOptions.delay || 15))
             }
 
         } catch (err: any) {
@@ -199,10 +281,30 @@ export function usePlaygroundChat({
                 ))
             }
         } finally {
+            if (streamIntervalRef.current) {
+                clearInterval(streamIntervalRef.current)
+                streamIntervalRef.current = null
+            }
             setIsLoading(false)
+            isStreamingRef.current = false
             abortControllerRef.current = null
         }
     }
+
+    // Start consumption loop when we start loading
+    const startStreamConsumer = useCallback((msgId: string) => {
+        if (streamIntervalRef.current) clearInterval(streamIntervalRef.current)
+
+        isStreamingRef.current = true
+        streamIntervalRef.current = setInterval(() => {
+            if (pendingStreamBufferRef.current.length > 0) {
+                flushStreamBuffer(msgId)
+            } else if (!isStreamingRef.current) {
+                // Buffer empty and stream done
+                if (streamIntervalRef.current) clearInterval(streamIntervalRef.current)
+            }
+        }, streamOptions.delay || 15)
+    }, [flushStreamBuffer, streamOptions.delay])
 
     const handleInputChangeCustom = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         setInput(e.target.value)
