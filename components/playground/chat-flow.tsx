@@ -29,7 +29,22 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
 function ChatMessage({ role, content, model }: { role: string, content: any, model?: string }) {
-    const displayContent = typeof content === 'string' ? content : JSON.stringify(content, null, 2)
+    // Attempt to handle the case where content might be a stringified JSON object
+    // (Workaround for potential data synchronization issues)
+    let displayContent = content;
+    if (typeof content === 'string' && content.trim().startsWith('[') && content.includes('"type":"text"')) {
+        try {
+            const parsed = JSON.parse(content);
+            if (Array.isArray(parsed) && parsed[0]?.text) {
+                displayContent = parsed[0].text;
+            }
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    displayContent = typeof displayContent === 'string' ? displayContent : JSON.stringify(displayContent, null, 2)
+
     return (
         <div className={cn("flex gap-4 p-4", role === "assistant" ? "bg-muted/50" : "bg-background")}>
             <Avatar className="h-8 w-8 border">
@@ -92,6 +107,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         handleSubmit(e, {
             models: tab?.modelIds || ["gpt-3.5-turbo"], // Default fallback
             config: {
+                stream: true,
                 temperature,
                 conv_history_limit: historyLimit
             }
@@ -154,10 +170,20 @@ export function ChatFlow({ tabId }: { tabId: string }) {
     }, [messages, updateTab, tabId, tab?.conversationId])
 
 
+    const messagesEndRef = React.useRef<HTMLDivElement>(null)
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    }
+
+    React.useEffect(() => {
+        scrollToBottom()
+    }, [messages, isLoading])
+
     return (
-        <div className="flex flex-col h-full relative">
-            <ScrollArea className="flex-1">
-                <div className="pb-20">
+        <div className="flex flex-col h-full relative overflow-hidden">
+            <ScrollArea className="flex-1 min-h-0 w-full">
+                <div className="pb-4">
                     {messages.length === 0 && (
                         <div className="h-full flex flex-col items-center justify-center p-8 text-muted-foreground opacity-50 space-y-4 pt-20">
                             <Bot className="h-12 w-12" />
@@ -174,10 +200,11 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                             </div>
                         </div>
                     )}
+                    <div ref={messagesEndRef} />
                 </div>
             </ScrollArea>
 
-            <div className="p-4 bg-background/95 backdrop-blur z-10 w-full max-w-4xl mx-auto">
+            <div className="p-4 bg-background/95 backdrop-blur z-10 w-full max-w-4xl mx-auto flex-none">
                 <form onSubmit={onFormSubmit} className="relative flex flex-col gap-0 border rounded-xl overflow-hidden shadow-sm bg-background focus-within:ring-1 focus-within:ring-ring">
                     <div className="flex items-center gap-1 p-2 border-b bg-muted/20">
                         <ModelSelector
@@ -278,7 +305,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                             <Button
                                 type="submit"
                                 size="icon"
-                                disabled={isLoading || !input.trim() || (tab?.modelIds?.length || 0) === 0}
+                                disabled={isLoading || !input?.trim() || (tab?.modelIds?.length || 0) === 0}
                                 className="h-8 w-8"
                             >
                                 {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}

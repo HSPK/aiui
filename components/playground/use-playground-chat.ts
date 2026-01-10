@@ -1,10 +1,16 @@
 // Proxy for the Chat backend
 // Ideally this should be in `lib/chat-hooks.ts` or similar, but putting here given the instructions
 
-import { useState, useCallback, useEffect } from "react"
-import { api } from "@/lib/api"
-import { Message } from "@/lib/types/playground"
+import { useEffect, useState, useRef, useCallback } from "react"
 import { toast } from "sonner"
+import { getAuthHeader } from "@/lib/api"
+
+export type Message = {
+    id: string
+    role: "user" | "assistant" | "system"
+    content: string
+    createdAt?: Date
+}
 
 export function usePlaygroundChat({
     initialMessages = [],
@@ -15,147 +21,202 @@ export function usePlaygroundChat({
     conversationId?: string,
     onConversationCreated?: (id: string, groupId?: string) => void
 }) {
-    const [messages, setMessages] = useState<any[]>(initialMessages)
+    const [messages, setMessages] = useState<Message[]>([])
     const [input, setInput] = useState("")
     const [isLoading, setIsLoading] = useState(false)
+    const [error, setError] = useState<Error | null>(null)
+
+    // To handle aborts
+    const abortControllerRef = useRef<AbortController | null>(null)
+    const initializedRef = useRef<string | null>(null)
 
     // Sync initial messages
     useEffect(() => {
-        if (initialMessages && initialMessages.length > 0) {
-            setMessages(initialMessages)
+        // Prevent re-syncing if we're in the middle of a generation or if we've already synced this conversation
+        // This breaks the update cycle between store -> initialMessages -> localMessages -> store
+        if (isLoading) return
+
+        // Simple equality check or ID check to avoid unnecessary updates
+        // If the conversation ID changed, we ALWAYS sync.
+        // If ID is same, we only sync if we haven't touched it, OR if the message count differs significantly (external update)
+
+        const currentId = conversationId || "new"
+
+        // If we switched conversations, force update
+        if (initializedRef.current !== currentId) {
+            initializedRef.current = currentId
+            if (initialMessages && initialMessages.length > 0) {
+                setMessages(initialMessages.map(m => ({
+                    ...m,
+                    id: m.id || crypto.randomUUID(),
+                    role: m.role || "user",
+                    content: m.content || ""
+                })))
+            } else {
+                setMessages([])
+            }
         }
-    }, [initialMessages])
+    }, [initialMessages, conversationId, isLoading])
+
+    const stop = useCallback(() => {
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort()
+            abortControllerRef.current = null
+            setIsLoading(false)
+        }
+    }, [])
 
     const handleSubmit = async (e?: React.FormEvent, options?: { models: string[], config: any }) => {
         e?.preventDefault()
-        if (!input.trim() || isLoading) return
+
+        const safeInput = input || ""
+        if (!safeInput.trim() && !e) return
+        if (isLoading) return
+
         if (!options?.models || options.models.length === 0) {
             toast.error("Please select a model first")
             return
         }
 
-        const userMsg = {
-            id: crypto.randomUUID(),
-            role: "user",
-            content: input,
-            created_at: new Date().toISOString()
+        const model = options.models[0]
+        if (options.models.length > 1) {
+            toast.info(`Comparing models is not fully supported in this mode yet. Using ${model}.`)
         }
 
-        const previousInput = input
-
-        // Optimistic update
-        setMessages(prev => [...prev, userMsg])
+        const userContent = safeInput
         setInput("")
+        setError(null)
         setIsLoading(true)
 
+        // Optimistic user update
+        const userMsg: Message = {
+            id: crypto.randomUUID(),
+            role: "user",
+            content: userContent,
+            createdAt: new Date()
+        }
+
+        // Placeholder assistant message
+        const assistantMsgId = crypto.randomUUID()
+        const assistantMsg: Message = {
+            id: assistantMsgId,
+            role: "assistant",
+            content: "",
+            createdAt: new Date()
+        }
+
+        setMessages(prev => [...prev, userMsg, assistantMsg])
+
+        // Abort controller
+        abortControllerRef.current = new AbortController()
+
         try {
-            // Handle Multiple Models (Comparison) or Single
-            const groupId = options.models.length > 1 ? crypto.randomUUID() : undefined
-            const currentConvId = conversationId
-
-            const promises = options.models.map(async model => {
-                const res = await api.playgroundChat({
-                    message: userMsg.content,
-                    conversation_id: currentConvId,
-                    group_id: groupId,
+            // Use local proxy/rewrite path
+            const res = await fetch("/api/playground/chat", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": getAuthHeader() || ""
+                },
+                body: JSON.stringify({
+                    conversation_id: conversationId,
                     model: model,
+                    message: userContent,
                     ...options.config
-                })
+                }),
+                signal: abortControllerRef.current.signal
+            })
 
-                // Create a placeholder message for this model if standard flow
-                // But we act after all promises? No, we should probably start showing them ASAP.
-                // Current logic waits for all. Let's keep it simple and accumulate text.
+            if (!res.ok) {
+                const text = await res.text()
+                throw new Error(text || res.statusText)
+            }
 
-                const reader = res.body?.getReader()
-                const decoder = new TextDecoder()
-                let fullText = ""
+            if (!res.body) throw new Error("No response body")
 
-                if (!reader) return { model, res: "" }
+            const reader = res.body.getReader()
+            const decoder = new TextDecoder()
+            let done = false
+            let buffer = ""
 
-                try {
-                    while (true) {
-                        const { done, value } = await reader.read()
-                        if (done) break
+            while (!done) {
+                const { value, done: doneReading } = await reader.read()
+                done = doneReading
+                if (value) {
+                    const chunk = decoder.decode(value, { stream: true })
+                    buffer += chunk
 
-                        const chunk = decoder.decode(value, { stream: true })
-                        const lines = chunk.split('\n')
+                    const lines = buffer.split("\n")
+                    // Keep the last line in buffer if incomplete
+                    buffer = lines.pop() || ""
 
-                        for (const line of lines) {
-                            if (line.startsWith('event: error')) {
-                                // The NEXT line should be data: containing the error
-                                continue
+                    for (const line of lines) {
+                        const trimmed = line.trim()
+                        if (!trimmed || !trimmed.startsWith("data: ")) continue
+
+                        const dataStr = trimmed.slice(6) // Remove "data: "
+                        if (dataStr === "[DONE]") {
+                            done = true
+                            break
+                        }
+
+                        try {
+                            const data = JSON.parse(dataStr)
+
+                            // Handle standard OpenAI chunk format: choices[0].delta.content
+                            const content = data.choices?.[0]?.delta?.content
+
+                            if (content) {
+                                setMessages(prev => {
+                                    return prev.map(m => {
+                                        if (m.id === assistantMsgId) {
+                                            // Ensure we are appending to a string
+                                            const currentContent = typeof m.content === 'string' ? m.content : ""
+                                            return { ...m, content: currentContent + content }
+                                        }
+                                        return m
+                                    })
+                                })
+                                // Yield to main thread to allow React to render (fix for "all at once" streaming)
+                                await new Promise(resolve => setTimeout(resolve, 10));
                             }
-                            if (line.startsWith('data: ')) {
-                                const dataStr = line.slice(6)
-                                if (dataStr.trim() === '[DONE]') continue
-
-                                let data;
-                                try {
-                                    data = JSON.parse(dataStr)
-                                } catch (e) {
-                                    console.warn("Failed to parse SSE data JSON", dataStr)
-                                    continue
-                                }
-
-                                if (data.error) {
-                                    throw new Error(data.error.message || "Stream Error")
-                                }
-
-                                // Normal data
-                                if (typeof data === 'string') {
-                                    fullText += data
-                                } else if (data.content) {
-                                    fullText += data.content
-                                } else if (data.delta?.content) {
-                                    fullText += data.delta.content
-                                } else if (data.response) {
-                                    fullText += data.response
-                                } else {
-                                    fullText += JSON.stringify(data)
-                                }
-                            }
+                        } catch (e) {
+                            // ignore parse errors for non-json data lines if any
                         }
                     }
-                } catch (e) {
-                    throw e
                 }
-
-                return { model, res: fullText }
-            })
-
-            const results = await Promise.all(promises)
-
-            // Handle Results
-            const newMessages = results.map(r => {
-                return {
-                    id: crypto.randomUUID(),
-                    role: "assistant",
-                    content: r.res,
-                    model: r.model
-                }
-            })
-
-            setMessages(prev => [...prev, ...newMessages])
+            }
 
         } catch (err: any) {
-            console.error(err)
-            toast.error(err.message || "Failed to send message")
-
-            // Restore state on error
-            setMessages(prev => prev.filter(m => m.id !== userMsg.id))
-            setInput(previousInput)
+            if (err.name === 'AbortError') {
+                console.log('Request aborted')
+            } else {
+                console.error("Chat Error:", err)
+                setError(err)
+                toast.error(err.message || "Failed to send message")
+                setMessages(prev => prev.map(m =>
+                    m.id === assistantMsgId ? { ...m, content: "Error: " + (err.message || "Failed to generate response") } : m
+                ))
+            }
         } finally {
             setIsLoading(false)
+            abortControllerRef.current = null
         }
+    }
+
+    const handleInputChangeCustom = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        setInput(e.target.value)
     }
 
     return {
         messages,
         input,
         setInput,
-        handleInputChange: (e: any) => setInput(e.target.value),
+        handleInputChange: handleInputChangeCustom,
         handleSubmit,
         isLoading,
-        setMessages
+        setMessages,
+        error,
+        stop
     }
 }

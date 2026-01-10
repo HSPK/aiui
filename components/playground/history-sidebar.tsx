@@ -96,12 +96,12 @@ export function HistorySidebar() {
                         <div className="flex items-center justify-center py-10">
                             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                         </div>
-                    ) : data?.data?.items.length === 0 ? (
+                    ) : data?.items.length === 0 ? (
                         <div className="text-center py-10 text-sm text-muted-foreground">
                             No conversations found
                         </div>
                     ) : (
-                        data?.data?.items.map((conv) => (
+                        data?.items.map((conv) => (
                             <div
                                 key={conv.id}
                                 className="group flex items-center justify-between p-2 rounded-md hover:bg-muted/50 cursor-pointer text-sm"
