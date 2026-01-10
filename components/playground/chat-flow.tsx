@@ -3,231 +3,23 @@
 import * as React from "react"
 // import { useChat } from "@ai-sdk/react" // Removed
 import { usePlaygroundChat } from "@/components/playground/use-playground-chat"
-import { usePlaygroundStore, PlaygroundTab } from "@/lib/stores/playground-store"
+import { usePlaygroundStore } from "@/lib/stores/playground-store"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
-import { Loader2, Send, Bot, User, StopCircle, RefreshCw, Eraser, Settings2, Sliders, Plus, ArrowUp, Copy, Check, MoreVertical } from "lucide-react"
-import { cn, formatMessageTime, formatRelativeDate, normalizeDate } from "@/lib/utils"
-import ReactMarkdown from 'react-markdown'
+import { Loader2, Bot, Eraser, Settings2, Plus, ArrowUp } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { api } from "@/lib/api"
 import { useQuery } from "@tanstack/react-query"
 import { ModelSelector } from "@/components/playground/model-selector"
-import { ProviderIcon } from "@/components/ProviderIcon"
+import { MessageList } from "@/components/playground/message-list"
 import {
     DropdownMenu,
     DropdownMenuTrigger,
     DropdownMenuContent,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuGroup,
-    DropdownMenuItem,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-
-
-type CursorShape = 'bar' | 'block' | 'underscore' | 'dot'
-
-const CURSOR_STYLES: Record<CursorShape, string> = {
-    bar: "bar",
-    block: "block",
-    underscore: "underscore",
-    dot: "dot"
-}
-
-const ChatMessage = React.memo(({ message, provider, isTyping }: { message: any, provider?: string, isTyping?: boolean }) => {
-    const { role, content, model, created_at, createdAt } = message
-    const messageDate = created_at || createdAt
-    const [copied, setCopied] = React.useState(false)
-
-    // Attempt to handle the case where content might be a stringified JSON object
-    let displayContent = content;
-    if (typeof content === 'string' && content.trim().startsWith('[') && content.includes('"type":"text"')) {
-        try {
-            const parsed = JSON.parse(content);
-            if (Array.isArray(parsed) && parsed[0]?.text) {
-                displayContent = parsed[0].text;
-            }
-        } catch (e) {
-            // ignore
-        }
-    }
-
-    displayContent = typeof displayContent === 'string' ? displayContent : JSON.stringify(displayContent, null, 2)
-
-    const onCopy = () => {
-        navigator.clipboard.writeText(displayContent)
-        setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
-    }
-
-    return (
-        <div className={cn(
-            "group relative flex gap-4 px-4 py-6 hover:bg-muted/40 transition-colors w-full",
-            role === "assistant" ? "" : ""
-        )}>
-            <Avatar className="h-8 w-8 shrink-0 bg-background border">
-                {role === "assistant" ? (
-                    <AvatarFallback className="bg-transparent">
-                        <ProviderIcon
-                            providerName={provider || "unknown"}
-                            className="h-5 w-5"
-                            width={20}
-                            height={20}
-                        />
-                    </AvatarFallback>
-                ) : (
-                    <AvatarFallback className="bg-muted text-muted-foreground">
-                        <User className="h-4 w-4" />
-                    </AvatarFallback>
-                )}
-            </Avatar>
-
-            <div className="flex-1 space-y-1 overflow-hidden min-w-0">
-                <div className="flex items-center gap-2 min-w-0">
-                    <span className="font-semibold text-sm capitalize truncate">
-                        {role === 'assistant' ? (provider ? `${provider} / ${model || 'Assistant'}` : (model || 'Assistant')) : 'User'}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground tabular-nums select-none opacity-50 group-hover:opacity-100 transition-opacity">
-                        {formatMessageTime(messageDate)}
-                    </span>
-                </div>
-
-                <div className={cn(
-                    "prose prose-sm dark:prose-invert max-w-none break-words relative leading-relaxed",
-                    isTyping && displayContent && [
-                        "[&>*:last-child]:after:content-['▋']",
-                        "[&>*:last-child]:after:ml-1",
-                        "[&>*:last-child]:after:animate-pulse",
-                        "[&>*:last-child]:after:inline-block"
-                    ]
-                )}>
-                    <ReactMarkdown components={{
-                        pre: ({ node, ...props }) => (
-                            <div className="overflow-auto w-full my-2 bg-muted/50 p-2 rounded-md">
-                                <pre {...props} />
-                            </div>
-                        ),
-                        code: ({ node, inline, className, children, ...props }: any) => {
-                            return (
-                                <code
-                                    className={cn("bg-muted/50 rounded px-1 py-0.5", className)}
-                                    {...props}
-                                >
-                                    {children}
-                                </code>
-                            )
-                        }
-                    }}>
-                        {displayContent}
-                    </ReactMarkdown>
-                    {isTyping && !displayContent && (
-                        <span className="animate-pulse">▋</span>
-                    )}
-                </div>
-            </div>
-
-            {/* Hover Actions */}
-            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 z-10 bg-background/80 backdrop-blur-sm p-1 rounded-md border shadow-sm">
-                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onCopy} title="Copy">
-                    {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
-                </Button>
-            </div>
-        </div>
-    )
-})
-ChatMessage.displayName = "ChatMessage"
-
-const DateSeparator = React.memo(({ date }: { date: string }) => (
-    <div className="relative flex items-center justify-center my-6">
-        <div className="absolute inset-0 flex items-center">
-            <span className="w-full border-t" />
-        </div>
-        <div className="relative bg-background px-3 text-xs text-muted-foreground font-medium rounded-full border">
-            {formatRelativeDate(date)}
-        </div>
-    </div>
-))
-DateSeparator.displayName = "DateSeparator"
-
-const MessageList = React.memo(({ messages, isLoading }: { messages: any[], isLoading: boolean }) => {
-    const messagesEndRef = React.useRef<HTMLDivElement>(null)
-    const { data: modelsData } = useQuery({
-        queryKey: ["models"],
-        queryFn: () => api.getModels(),
-        staleTime: 1000 * 60 * 5, // Cache for 5 mins
-    })
-
-    const modelProviderMap = React.useMemo(() => {
-        const map = new Map<string, string>()
-        if (Array.isArray(modelsData)) {
-            modelsData.forEach((m: any) => {
-                if (m.name) map.set(m.name, m.provider)
-            })
-        }
-        return map
-    }, [modelsData])
-
-    const scrollContainerRef = React.useRef<HTMLDivElement>(null)
-
-    // Initial scroll
-    React.useLayoutEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "instant" })
-    }, [])
-
-    // Auto crawl logic
-    React.useEffect(() => {
-        // Simple auto-scroll on new messages or loading state
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-    }, [messages.length, isLoading])
-
-    // Process messages to inject date separators
-    const renderItems = React.useMemo(() => {
-        const items: React.ReactNode[] = []
-        let lastDate: string | null = null
-
-        messages.forEach((m: any, index: number) => {
-            const mDate = m.created_at || m.createdAt
-            const dateObj = normalizeDate(mDate)
-            const currentDate = dateObj.toDateString() // "Mon Jan 01 2024" (Local)
-            
-            if (currentDate !== lastDate) {
-                items.push(<DateSeparator key={`date-${currentDate}-${index}`} date={mDate} />)
-                // UPDATE lastDate!
-                lastDate = currentDate
-            }
-
-            items.push(
-                <ChatMessage
-                    key={m.id}
-                    message={m}
-                    provider={m.model ? modelProviderMap.get(m.model) : undefined}
-                    isTyping={isLoading && index === messages.length - 1 && m.role === 'assistant'}
-                />
-            )
-        })
-        return items
-    }, [messages, isLoading, modelProviderMap])
-
-    return (
-        <div className="pb-36 pt-4">
-            {messages.length === 0 && (
-                <div className="h-full flex flex-col items-center justify-center p-8 text-muted-foreground opacity-50 space-y-4 pt-20">
-                    <Bot className="h-12 w-12" />
-                    <p>Start a conversation...</p>
-                </div>
-            )}
-
-            {renderItems}
-
-            <div ref={messagesEndRef} className="h-px" />
-        </div>
-    )
-})
-MessageList.displayName = "MessageList"
 
 export function ChatFlow({ tabId }: { tabId: string }) {
     const { tabs, updateTab } = usePlaygroundStore()
@@ -241,29 +33,196 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         updateTab(tabId, { modelIds: ids })
     }
 
-    // Fetch initial messages if we have a conversationId and no messages yet
-    // This is a bit tricky with useChat, so we'll use useQuery to fetch -> setInitialMessages
-    const { data: initialMessagesData } = useQuery({
-        queryKey: ["messages", tab?.conversationId],
-        queryFn: () => api.getConversationMessages(tab?.conversationId!),
-        enabled: !!tab?.conversationId && (!tab?.messages || tab.messages.length === 0),
-    })
-
     const normalizedMessages = React.useMemo(() => {
         return tab?.messages?.map(m => ({
             ...m,
-            content: typeof m.content === 'string'
-                ? m.content
-                : (Array.isArray(m.content) && m.content[0]?.text)
-                    ? m.content[0].text
-                    : typeof m.content === 'object' ? JSON.stringify(m.content) : String(m.content)
-        }))
+            id: m.id,
+            role: m.role as any, 
+            content: typeof m.content === 'string' ? m.content : (Array.isArray(m.content) && m.content[0]?.text) ? m.content[0].text : String(m.content)
+        })) || []
     }, [tab?.messages])
 
     const { messages, input, handleInputChange, handleSubmit, isLoading, setMessages } = usePlaygroundChat({
         conversationId: tab?.conversationId,
-        initialMessages: normalizedMessages,
+        initialMessages: normalizedMessages, 
     })
+
+    // Pagination State
+    const [isLoadingMore, setIsLoadingMore] = React.useState(false)
+    const [hasMore, setHasMore] = React.useState(true)
+    const pageRef = React.useRef(2) // Start fetching from page 2 (history)
+    const isFirstLoadRef = React.useRef(true)
+
+    // Helper to transform API message to UI message
+    const transformMessage = React.useCallback((m: any) => ({
+        id: m.id,
+        role: m.role,
+        content: typeof m.content === 'string' ? m.content : (Array.isArray(m.content) && m.content[0]?.text) || JSON.stringify(m.content),
+        model: m.model,
+        created_at: m.created_at
+    }), [])
+
+    // Initial Load / Sync
+    React.useEffect(() => {
+        // Sync pageRef based on loaded messages (if we loaded from store)
+        if (isFirstLoadRef.current && messages.length > 0) {
+            isFirstLoadRef.current = false
+            const p = Math.floor(messages.length / 20) + 1
+            pageRef.current = p
+        }
+
+        // If no messages at all, but we have an ID, fetch!
+        if (tab?.conversationId && messages.length === 0 && isFirstLoadRef.current) {
+            isFirstLoadRef.current = false;
+            
+            const fetchInitial = async () => {
+                try {
+                    const res = await api.getConversationMessages(tab.conversationId!, {
+                        page: 1,
+                        page_size: 20,
+                        sort: "-created_at"
+                    });
+                    
+                    if (res.items.length > 0) {
+                        const newMsgs = res.items.reverse().map(transformMessage);
+                        setMessages(newMsgs);
+                        setHasMore(res.items.length >= 20);
+                        pageRef.current = 2;
+                    } else {
+                        setHasMore(false);
+                    }
+                } catch (e) {
+                    console.error("Failed to load initial messages", e)
+                }
+            }
+            fetchInitial();
+        }
+    }, [tab?.conversationId, messages.length, setMessages, transformMessage])
+
+    // Load More Function
+    const loadMoreMessages = React.useCallback(async () => {
+        if (!hasMore || isLoadingMore || !tab?.conversationId) return
+
+        setIsLoadingMore(true)
+        const scrollContainer = viewportRef.current
+        const oldHeight = scrollContainer?.scrollHeight ?? 0
+        const oldTop = scrollContainer?.scrollTop ?? 0
+
+        try {
+            const res = await api.getConversationMessages(tab.conversationId, {
+                page: pageRef.current,
+                page_size: 20,
+                sort: '-created_at'
+            })
+
+            if (res.items.length < 20) setHasMore(false)
+            if (res.items.length > 0) {
+                pageRef.current += 1
+                const newMessages = res.items.reverse().map(transformMessage)
+
+                // Prepend messages with deduplication
+                setMessages(prev => {
+                    // Create a Set of existing IDs for O(1) lookup
+                    const existingIds = new Set(prev.map(m => m.id))
+                    // Filter out any new messages that already exist
+                    const uniqueNewMessages = newMessages.filter(m => !existingIds.has(m.id))
+
+                    if (uniqueNewMessages.length === 0) return prev
+
+                    return [...uniqueNewMessages, ...prev]
+                })
+
+                // Restore scroll position
+                // We need to wait for the DOM to update. 
+                // Using MessageList's internal ref might be better but here we control the scroll area.
+                requestAnimationFrame(() => {
+                    if (scrollContainer) {
+                        // The scroll height increases by the height of new content.
+                        // We want to keep the scrollTop at the same *relative* position to the content that was there.
+                        // New scrollTop = (newScrollHeight - oldScrollHeight) + oldTop
+                        const newHeight = scrollContainer.scrollHeight
+                        const heightDiff = newHeight - oldHeight
+                        scrollContainer.scrollTop = heightDiff + oldTop
+                    }
+                })
+            }
+        } catch (e) {
+            console.error("Failed to load more messages", e)
+        } finally {
+            setIsLoadingMore(false)
+        }
+    }, [hasMore, isLoadingMore, tab?.conversationId, setMessages, transformMessage])
+
+    // Scroll management
+    const viewportRef = React.useRef<HTMLDivElement>(null)
+    const scrollSaveTimeoutRef = React.useRef<NodeJS.Timeout | undefined>(undefined)
+    const lastMessageIdRef = React.useRef<string | null>(null)
+
+    // Restore scroll position logic (+ suppress auto-scroll on mount)
+    React.useLayoutEffect(() => {
+        const viewport = viewportRef.current
+
+        // Wait for messages to be populated if this is first load
+        if (!viewport) return
+
+        if (typeof tab?.scrollPosition === 'number') {
+            viewport.scrollTop = tab.scrollPosition
+        } else if (messages.length > 0) {
+            // Default to bottom if we have messages and no saved position
+            // This needs to happen AFTER messages are rendered.
+            // Since this effect runs on mount, and messages might be set asynchronously in useEffect,
+            // we need to trigger this again when messages change IF we haven't set a position yet.
+            viewport.scrollTop = viewport.scrollHeight
+        }
+    }, [tab?.scrollPosition]) // Depend on scrollPosition changing (unlikely) or just mount?
+
+    // Additional effect to handle "Initial Bottom Scroll" when messages first appear
+    // and no previous position was saved.
+    const hasScrolledToBottomRef = React.useRef(false)
+    React.useEffect(() => {
+        // Only if we haven't restored a specific position
+        if (typeof tab?.scrollPosition !== 'number' && !hasScrolledToBottomRef.current && messages.length > 0) {
+            if (viewportRef.current) {
+                viewportRef.current.scrollTop = viewportRef.current.scrollHeight
+                hasScrolledToBottomRef.current = true
+            }
+        }
+    }, [messages.length, tab?.scrollPosition])
+
+    // Initialize lastMessageIdRef to prevent auto-scrolling on mount if messages exist
+    React.useEffect(() => {
+        if (messages.length > 0 && !lastMessageIdRef.current) {
+            lastMessageIdRef.current = messages[messages.length - 1].id
+        }
+    }, [messages])
+
+    // Smart Auto-Scroll (Only for new messages at the bottom)
+    React.useEffect(() => {
+        const viewport = viewportRef.current
+        if (!viewport || messages.length === 0) return
+
+        const lastMsg = messages[messages.length - 1]
+
+        // If the last message ID changed, it implies a new message was added to the END.
+        if (lastMsg.id !== lastMessageIdRef.current) {
+            lastMessageIdRef.current = lastMsg.id
+            viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' })
+        }
+    }, [messages])
+
+    const handleScroll = React.useCallback((e: React.UIEvent<HTMLDivElement>) => {
+        const target = e.currentTarget
+
+        // Check for top reach to load more (threshold 50px)
+        if (target.scrollTop < 50 && hasMore && !isLoadingMore && messages.length > 0) {
+            loadMoreMessages()
+        }
+
+        if (scrollSaveTimeoutRef.current) clearTimeout(scrollSaveTimeoutRef.current)
+        scrollSaveTimeoutRef.current = setTimeout(() => {
+            updateTab(tabId, { scrollPosition: target.scrollTop })
+        }, 100)
+    }, [tabId, updateTab, loadMoreMessages, hasMore, isLoadingMore, messages.length])
 
     const onFormSubmit = (e: React.FormEvent) => {
         handleSubmit(e, {
@@ -275,20 +234,6 @@ export function ChatFlow({ tabId }: { tabId: string }) {
             }
         })
     }
-
-    // Sync React Query data to useChat
-    React.useEffect(() => {
-        if (initialMessagesData?.items && messages.length === 0) {
-            const mapped = initialMessagesData.items.map((m: any) => ({
-                id: m.id,
-                role: m.role as any,
-                content: typeof m.content === 'string' ? m.content : (Array.isArray(m.content) && m.content[0]?.text) || JSON.stringify(m.content),
-                model: m.model, // IF returned
-                created_at: m.created_at
-            }));
-            setMessages(mapped);
-        }
-    }, [initialMessagesData, setMessages, messages.length])
 
     // Sync local messages to store to persist when switching tabs
     // This might be performance heavy, so maybe debounce or only on unmount?
@@ -335,7 +280,11 @@ export function ChatFlow({ tabId }: { tabId: string }) {
 
     return (
         <div className="h-full relative overflow-hidden">
-            <ScrollArea className="h-full w-full">
+            <ScrollArea
+                className="h-full w-full"
+                viewportRef={viewportRef}
+                onScroll={handleScroll}
+            >
                 <MessageList messages={messages} isLoading={isLoading} />
             </ScrollArea>
 
@@ -454,5 +403,3 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         </div>
     )
 }
-
-ChatMessage.displayName = "ChatMessage"

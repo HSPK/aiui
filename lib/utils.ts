@@ -15,11 +15,11 @@ export function formatToLocal(dateStr: string, pattern: string = "MMM d, HH:mm:s
 export function normalizeDate(dateStr?: string | Date) {
     if (!dateStr) return new Date()
     if (dateStr instanceof Date) return dateStr
-    
+
     // Check if string contains timezone info (Z, +HH:mm, -HH:mm)
     // Simple check: Z at the end, or + / - followed by a digit near the end
     const hasTimezone = /Z$|([+-]\d{2}(:?\d{2})?)$/.test(dateStr)
-    
+
     return new Date(hasTimezone ? dateStr : `${dateStr}Z`)
 }
 

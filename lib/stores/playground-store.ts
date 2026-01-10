@@ -15,6 +15,7 @@ export interface PlaygroundTab {
     maxTokens?: number;
     historyLimit?: number; // Added
     messages: Message[]; // Initial messages if any
+    scrollPosition?: number;
 }
 
 interface PlaygroundState {

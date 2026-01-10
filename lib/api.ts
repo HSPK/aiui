@@ -134,13 +134,20 @@ export const api = {
         return fetcher<ConversationListResponse>(`/conversations?${params.toString()}`);
     },
 
-    getConversationMessages: async (convId: string) => {
-        const params = new URLSearchParams({
-            page: "1",
-            page_size: "100",
-            sort: "created_at",
+    getConversationMessages: async (
+        convId: string,
+        params?: {
+            page?: number;
+            page_size?: number;
+            sort?: string;
+        }
+    ) => {
+        const searchParams = new URLSearchParams({
+            page: (params?.page || 1).toString(),
+            page_size: (params?.page_size || 50).toString(),
+            sort: params?.sort || "-created_at", // Default to latest first
         });
-        return fetcher<MessageListResponse>(`/conversations/${convId}/messages?${params.toString()}`);
+        return fetcher<MessageListResponse>(`/conversations/${convId}/messages?${searchParams.toString()}`);
     },
 
     deleteConversation: async (convId: string) => {

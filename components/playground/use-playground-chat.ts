@@ -32,7 +32,19 @@ export function usePlaygroundChat({
         minChunkSize?: number
     }
 }) {
-    const [messages, setMessages] = useState<Message[]>([])
+    // Initialize state from props to avoid initial render flicker/scroll
+    const [messages, setMessages] = useState<Message[]>(() => {
+        if (initialMessages && initialMessages.length > 0) {
+            return initialMessages.map(m => ({
+                ...m,
+                id: m.id || ((typeof crypto !== 'undefined' && crypto.randomUUID && crypto.randomUUID()) || Math.random().toString(36).substring(2)),
+                role: m.role || "user",
+                content: m.content || ""
+            }))
+        }
+        return []
+    })
+
     const [input, setInput] = useState("")
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState<Error | null>(null)
@@ -44,7 +56,8 @@ export function usePlaygroundChat({
 
     // To handle aborts
     const abortControllerRef = useRef<AbortController | null>(null)
-    const initializedRef = useRef<string | null>(null)
+    // Initialize with current conversationId to prevent immediate effect re-run
+    const initializedRef = useRef<string | null>(conversationId || "new")
 
     // Cleanup interval on unmount
     useEffect(() => {
