@@ -22,26 +22,27 @@ interface ChatMessageProps {
     isLastAssistant?: boolean
     onRetry?: () => void
     isLoading?: boolean
-    // Sibling navigation (multiple responses with same parent)
-    siblingIndex?: number  // 0-based index in siblings array
-    siblingCount?: number  // total siblings
-    onNavigateSibling?: (direction: 'prev' | 'next') => void
+    // Sibling display
+    isSibling?: boolean
+    siblingCount?: number
+    isSelected?: boolean
+    onSelect?: () => void
 }
 
-export const ChatMessage = React.memo(({
-    message,
-    provider,
-    isTyping,
+export const ChatMessage = React.memo(({ 
+    message, 
+    provider, 
+    isTyping, 
     onViewGeneration,
     isLastAssistant,
     onRetry,
     isLoading,
-    siblingIndex,
+    isSibling,
     siblingCount,
-    onNavigateSibling
+    isSelected,
+    onSelect
 }: ChatMessageProps) => {
     const { role, content, reasoning_content, model_id, created_at, createdAt, generation_id, rating: initialRating } = message
-    const hasSiblings = siblingCount !== undefined && siblingCount > 1
     const messageDate = created_at || createdAt
     const [copied, setCopied] = React.useState(false)
     const [isReasoningOpen, setIsReasoningOpen] = React.useState(true)
@@ -101,10 +102,23 @@ export const ChatMessage = React.memo(({
     }, [generation_id, onViewGeneration])
 
     return (
-        <div className={cn(
-            "group relative flex gap-3 sm:gap-4 px-3 sm:px-4 py-4 sm:py-6 hover:bg-muted/30 transition-colors w-full"
-        )}>
-            <Avatar className="h-7 w-7 sm:h-8 sm:w-8 shrink-0 bg-background border">
+        <div 
+            onClick={onSelect}
+            className={cn(
+                "group relative flex gap-3 sm:gap-4 px-3 sm:px-4 transition-all",
+                // Non-sibling normal messages
+                !isSibling && "w-full py-4 sm:py-6 hover:bg-muted/30",
+                // Sibling card - 2个时自适应宽度(grid控制)，3个以上时固定宽度滚动
+                isSibling && "py-4 border rounded-xl shadow-sm bg-card",
+                isSibling && siblingCount === 2 && "w-full",
+                isSibling && (siblingCount ?? 0) > 2 && "min-w-[300px] sm:min-w-[400px] flex-shrink-0",
+                isSibling && isSelected && "ring-2 ring-primary border-primary/30 bg-card",
+                isSibling && !isSelected && "border-border/50 bg-muted/30 hover:bg-card hover:shadow-md",
+                isSibling && onSelect && "cursor-pointer",
+                isSibling && !onSelect && "cursor-default"
+            )}
+        >
+            <Avatar className="h-7 w-7 sm:h-8 sm:w-8 shrink-0 bg-background border shadow-sm">
                 {role === "assistant" ? (
                     <AvatarFallback className="bg-transparent">
                         <ProviderIcon
@@ -130,6 +144,16 @@ export const ChatMessage = React.memo(({
                         <span suppressHydrationWarning className="text-[10px] text-muted-foreground tabular-nums select-none opacity-50 group-hover:opacity-100 transition-opacity">
                             {formatMessageTime(messageDate)}
                         </span>
+                        {isSibling && isSelected && onSelect && (
+                            <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium border border-primary/20">
+                                Active Context
+                            </span>
+                        )}
+                         {isSibling && isSelected && !onSelect && (
+                            <span className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full font-medium border">
+                                Used Context
+                            </span>
+                        )}
                     </div>
 
                     {/* Reasoning Block */}
@@ -214,7 +238,10 @@ export const ChatMessage = React.memo(({
             </div>
 
             {/* Message Actions - Always at bottom border */}
-            <div className="absolute bottom-0 left-[4.5rem] translate-y-1/2 flex items-center gap-1.5 z-10">
+            <div className={cn(
+                "absolute bottom-0 translate-y-1/2 flex items-center gap-1.5 z-10",
+                isSibling ? "left-4" : "left-[4.5rem]"
+            )}>
                 {/* Copy button - always visible on mobile, hover on desktop */}
                 <Button
                     variant="ghost"
@@ -272,40 +299,14 @@ export const ChatMessage = React.memo(({
                         variant="ghost"
                         size="sm"
                         className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground bg-background border border-border/50 shadow-sm rounded-md hover:bg-muted/50 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150"
-                        onClick={onRetry}
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            onRetry()
+                        }}
                         title="Regenerate response"
                     >
                         <RotateCcw className="h-3.5 w-3.5" />
                     </Button>
-                )}
-
-                {/* Sibling navigation - show when multiple responses exist */}
-                {role === "assistant" && hasSiblings && onNavigateSibling && (
-                    <div className="flex items-center gap-0.5 bg-background border border-border/50 shadow-sm rounded-md sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150">
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-l-md rounded-r-none"
-                            onClick={() => onNavigateSibling('prev')}
-                            disabled={(siblingIndex ?? 0) === 0}
-                            title="Previous response"
-                        >
-                            <ChevronLeft className="h-3.5 w-3.5" />
-                        </Button>
-                        <span className="text-xs text-muted-foreground px-1 tabular-nums select-none">
-                            {(siblingIndex ?? 0) + 1}/{siblingCount}
-                        </span>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-r-md rounded-l-none"
-                            onClick={() => onNavigateSibling('next')}
-                            disabled={(siblingIndex ?? 0) >= (siblingCount ?? 1) - 1}
-                            title="Next response"
-                        >
-                            <ChevronRight className="h-3.5 w-3.5" />
-                        </Button>
-                    </div>
                 )}
 
                 {/* View generation details - only show on hover */}
@@ -314,7 +315,10 @@ export const ChatMessage = React.memo(({
                         variant="ghost"
                         size="sm"
                         className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground bg-background border border-border/50 shadow-sm rounded-md hover:bg-muted/50 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150"
-                        onClick={handleViewGeneration}
+                        onClick={(e) => {
+                            e.stopPropagation()
+                            handleViewGeneration()
+                        }}
                         title="View generation details"
                     >
                         <Info className="h-3.5 w-3.5" />

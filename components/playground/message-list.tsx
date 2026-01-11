@@ -126,18 +126,23 @@ export const MessageList = React.memo(({
             if (m.role === 'assistant' && m.parent_id) {
                 const siblings = siblingGroups.get(m.parent_id)
                 if (siblings && siblings.length > 1) {
-                    // Only render the selected sibling (default to latest)
+                    // Render all siblings side-by-side
                     if (seenParentIds.has(m.parent_id)) {
-                        return // Skip - already rendered a sibling for this parent
+                        return // Skip - already rendered this group
                     }
                     seenParentIds.add(m.parent_id)
-
+                    
                     const selectedIdx = selectedSiblings?.get(m.parent_id) ?? siblings.length - 1
-                    const selectedMessage = siblings[selectedIdx]
-
-                    const mDate = selectedMessage.created_at || selectedMessage.createdAt
+                    // Use date of the LAST sibling for separator logic (to keep it consistent)
+                    const lastSibling = siblings[siblings.length - 1]
+                    const mDate = lastSibling.created_at || lastSibling.createdAt
                     const dateObj = normalizeDate(mDate)
                     const currentDate = dateObj.toDateString()
+
+                    // Check if this is the latest message group (no user messages after it)
+                    // We only allow selection on the head of the conversation
+                    const hasNextUserMessage = messages.slice(index + 1).some(msg => msg.role === 'user')
+                    const canSelect = !hasNextUserMessage
 
                     if (currentDate !== lastDate) {
                         items.push(<DateSeparator key={`date-${currentDate}-${index}`} date={mDate} />)
@@ -145,24 +150,33 @@ export const MessageList = React.memo(({
                     }
 
                     items.push(
-                        <ChatMessage
-                            key={selectedMessage.id}
-                            message={selectedMessage}
-                            provider={selectedMessage.model_id ? modelProviderMap.get(selectedMessage.model_id) : undefined}
-                            isTyping={isLoading && selectedMessage.id === lastAssistantIndex}
-                            onViewGeneration={onViewGeneration}
-                            isLastAssistant={selectedMessage.id === lastAssistantIndex}
-                            onRetry={onRetry}
-                            isLoading={isLoading}
-                            siblingIndex={selectedIdx}
-                            siblingCount={siblings.length}
-                            onNavigateSibling={(direction) => {
-                                const newIdx = direction === 'prev'
-                                    ? Math.max(0, selectedIdx - 1)
-                                    : Math.min(siblings.length - 1, selectedIdx + 1)
-                                onSelectSibling?.(m.parent_id, newIdx)
-                            }}
-                        />
+                        <div key={`group-${m.parent_id}`} className={cn(
+                            "w-full px-3 sm:px-4 pb-4",
+                            siblings.length > 2 && "overflow-x-auto scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent hover:scrollbar-thumb-muted-foreground/50"
+                        )}>
+                            <div className={cn(
+                                siblings.length === 2 
+                                    ? "grid grid-cols-2 gap-3" 
+                                    : "flex gap-3 w-max"
+                            )}>
+                                {siblings.map((sibling, idx) => (
+                                    <ChatMessage
+                                        key={sibling.id}
+                                        message={sibling}
+                                        provider={sibling.model_id ? modelProviderMap.get(sibling.model_id) : undefined}
+                                        isTyping={isLoading && sibling.id === lastAssistantIndex}
+                                        onViewGeneration={onViewGeneration}
+                                        isLastAssistant={sibling.id === lastAssistantIndex}
+                                        onRetry={onRetry}
+                                        isLoading={isLoading}
+                                        isSibling={true}
+                                        siblingCount={siblings.length}
+                                        isSelected={idx === selectedIdx}
+                                        onSelect={canSelect ? () => onSelectSibling?.(m.parent_id, idx) : undefined}
+                                    />
+                                ))}
+                            </div>
+                        </div>
                     )
                     return
                 }
