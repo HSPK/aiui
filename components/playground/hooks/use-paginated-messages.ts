@@ -21,7 +21,8 @@ export function transformMessage(m: any) {
         created_at: m.created_at,
         rating: m.rating,
         generation_id: m.generation_id,
-        feedback: m.feedback
+        feedback: m.feedback,
+        parent_id: m.parent_id
     }
 }
 

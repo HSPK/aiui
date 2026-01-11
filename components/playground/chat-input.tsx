@@ -3,7 +3,7 @@
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Bot, Eraser, Plus, ArrowUp } from "lucide-react"
+import { Bot, Eraser, Plus, ArrowUp, RotateCcw } from "lucide-react"
 import { ModelSelector } from "@/components/playground/model-selector"
 import { ChatConfigDropdown } from "@/components/playground/chat-config-dropdown"
 
@@ -11,12 +11,14 @@ interface ChatInputProps {
     input: string
     onInputChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void
     onSubmit: (e: React.FormEvent) => void
+    onRetry?: () => void
     isLoading: boolean
     onStop: () => void
     selectedModelIds: string[]
     onModelSelect: (ids: string[]) => void
     onClearMessages: () => void
     hasMessages: boolean
+    lastMessageIsUser?: boolean
     // Config props
     temperature?: number
     onTemperatureChange: (value: number | undefined) => void
@@ -30,12 +32,14 @@ export const ChatInput = React.memo(function ChatInput({
     input,
     onInputChange,
     onSubmit,
+    onRetry,
     isLoading,
     onStop,
     selectedModelIds,
     onModelSelect,
     onClearMessages,
     hasMessages,
+    lastMessageIsUser,
     temperature,
     onTemperatureChange,
     historyLimit,
@@ -128,6 +132,20 @@ export const ChatInput = React.memo(function ChatInput({
                             className="h-8 w-8 rounded-full ml-1 bg-secondary text-secondary-foreground hover:bg-secondary/80"
                         >
                             <div className="h-2.5 w-2.5 bg-current rounded-[1px]" />
+                        </Button>
+                    ) : lastMessageIsUser ? (
+                        // Show retry button when last message is from user
+                        <Button
+                            type="button"
+                            size="icon"
+                            onClick={(e) => {
+                                e.preventDefault()
+                                onRetry?.()
+                            }}
+                            className="h-8 w-8 rounded-full ml-1 bg-orange-500 text-white hover:bg-orange-600"
+                            title="Retry last message"
+                        >
+                            <RotateCcw className="h-4 w-4" />
                         </Button>
                     ) : (input?.trim() && (
                         <Button

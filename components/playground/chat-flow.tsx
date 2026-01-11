@@ -26,6 +26,9 @@ export function ChatFlow({ tabId }: { tabId: string }) {
     // Generation detail drawer state
     const [selectedGenerationId, setSelectedGenerationId] = React.useState<string | null>(null)
 
+    // Sibling navigation state - map of parent_id to selected index
+    const [selectedSiblings, setSelectedSiblings] = React.useState<Map<string, number>>(new Map())
+
     // Local settings state - use user defaults from settings store
     const [temperature, setTemperature] = React.useState<number | undefined>(
         tab?.temperature ?? settings.defaultTemperature
@@ -50,7 +53,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
     }, [tab?.messages])
 
     // Chat hook
-    const { messages, input, handleInputChange, handleSubmit, isLoading, setMessages, stop } = usePlaygroundChat({
+    const { messages, input, handleInputChange, handleSubmit, handleRetry, handleRegenerate, isLoading, setMessages, stop, lastMessageIsUser } = usePlaygroundChat({
         conversationId: tab?.conversationId,
         initialMessages: normalizedMessages,
     })
@@ -87,6 +90,34 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         updateTab(tabId, { modelIds: ids })
     }, [tabId, updateTab])
 
+    // Determine which assistant message is selected as context for the next user message
+    const contextAssistantId = React.useMemo(() => {
+        // Find the last user message
+        let lastUser: any | null = null
+        for (let i = messages.length - 1; i >= 0; i--) {
+            if (messages[i].role === 'user') {
+                lastUser = messages[i]
+                break
+            }
+        }
+
+        if (!lastUser) {
+            // Fallback: last assistant in the list
+            const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant')
+            return lastAssistant?.id
+        }
+
+        const siblings = messages.filter(m => m.role === 'assistant' && m.parent_id === lastUser.id)
+        if (siblings.length === 0) {
+            const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant')
+            return lastAssistant?.id
+        }
+
+        const selectedIdx = selectedSiblings.get(lastUser.id) ?? siblings.length - 1
+        const safeIdx = Math.min(selectedIdx, siblings.length - 1)
+        return siblings[safeIdx]?.id
+    }, [messages, selectedSiblings])
+
     // Memoize config change handlers
     const handleTemperatureChange = React.useCallback((val: number | undefined) => {
         setTemperature(val)
@@ -107,20 +138,50 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         setSelectedGenerationId(generationId)
     }, [])
 
-    // Handle form submit
-    const onFormSubmit = React.useCallback((e: React.FormEvent) => {
+    // Handle sibling selection
+    const handleSelectSibling = React.useCallback((parentId: string, index: number) => {
+        setSelectedSiblings(prev => {
+            const next = new Map(prev)
+            next.set(parentId, index)
+            return next
+        })
+    }, [])
+
+    // Build chat config
+    const buildChatConfig = React.useCallback(() => {
         const config: any = {
             stream: true,
             conv_history_limit: historyLimit
         }
         if (temperature !== undefined) config.temperature = temperature
         if (reasoningEffort) config.reasoning_effort = reasoningEffort
+        return config
+    }, [temperature, historyLimit, reasoningEffort])
 
+    // Handle form submit
+    const onFormSubmit = React.useCallback((e: React.FormEvent) => {
         handleSubmit(e, {
             models: tab?.modelIds || ["gpt-3.5-turbo"],
-            config
+            config: buildChatConfig(),
+            contextMessageId: contextAssistantId || undefined
         })
-    }, [temperature, historyLimit, reasoningEffort, handleSubmit, tab?.modelIds])
+    }, [buildChatConfig, handleSubmit, tab?.modelIds, contextAssistantId])
+
+    // Handle retry (when last message is user - no assistant response yet)
+    const onRetry = React.useCallback(() => {
+        handleRetry({
+            models: tab?.modelIds || [],
+            config: buildChatConfig()
+        })
+    }, [buildChatConfig, handleRetry, tab?.modelIds])
+
+    // Handle regenerate (create a sibling response for last assistant message)
+    const onRegenerate = React.useCallback(() => {
+        handleRegenerate({
+            models: tab?.modelIds || [],
+            config: buildChatConfig()
+        })
+    }, [buildChatConfig, handleRegenerate, tab?.modelIds])
 
     // Sync messages to store (debounced)
     React.useEffect(() => {
@@ -146,7 +207,8 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                     created_at: m.created_at || new Date().toISOString(),
                     rating: m.rating,
                     generation_id: m.generation_id,
-                    feedback: m.feedback
+                    feedback: m.feedback,
+                    parent_id: m.parent_id
                 }
             })
             updateTab(tabId, { messages: storeMessages as any })
@@ -227,6 +289,9 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                     messages={messages}
                     isLoading={isLoading}
                     onViewGeneration={handleViewGeneration}
+                    onRetry={onRegenerate}
+                    selectedSiblings={selectedSiblings}
+                    onSelectSibling={handleSelectSibling}
                 />
             </ScrollArea>
 
@@ -246,12 +311,14 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                     input={input}
                     onInputChange={handleInputChange}
                     onSubmit={onFormSubmit}
+                    onRetry={onRetry}
                     isLoading={isLoading}
                     onStop={stop}
                     selectedModelIds={tab?.modelIds || []}
                     onModelSelect={handleModelSelect}
                     onClearMessages={handleClearMessages}
                     hasMessages={messages.length > 0}
+                    lastMessageIsUser={lastMessageIsUser}
                     temperature={temperature}
                     onTemperatureChange={handleTemperatureChange}
                     historyLimit={historyLimit}

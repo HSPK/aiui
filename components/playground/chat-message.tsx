@@ -3,7 +3,7 @@
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Check, Copy, ChevronDown, ChevronRight, ThumbsUp, ThumbsDown, Info } from "lucide-react"
+import { Check, Copy, ChevronDown, ChevronRight, ChevronLeft, ThumbsUp, ThumbsDown, Info, RotateCcw } from "lucide-react"
 import { cn, formatMessageTime } from "@/lib/utils"
 import ReactMarkdown from 'react-markdown'
 import { ProviderIcon } from "@/components/ProviderIcon"
@@ -18,10 +18,30 @@ interface ChatMessageProps {
     provider?: string
     isTyping?: boolean
     onViewGeneration?: (generationId: string) => void
+    // Retry/regenerate support
+    isLastAssistant?: boolean
+    onRetry?: () => void
+    isLoading?: boolean
+    // Sibling navigation (multiple responses with same parent)
+    siblingIndex?: number  // 0-based index in siblings array
+    siblingCount?: number  // total siblings
+    onNavigateSibling?: (direction: 'prev' | 'next') => void
 }
 
-export const ChatMessage = React.memo(({ message, provider, isTyping, onViewGeneration }: ChatMessageProps) => {
+export const ChatMessage = React.memo(({
+    message,
+    provider,
+    isTyping,
+    onViewGeneration,
+    isLastAssistant,
+    onRetry,
+    isLoading,
+    siblingIndex,
+    siblingCount,
+    onNavigateSibling
+}: ChatMessageProps) => {
     const { role, content, reasoning_content, model_id, created_at, createdAt, generation_id, rating: initialRating } = message
+    const hasSiblings = siblingCount !== undefined && siblingCount > 1
     const messageDate = created_at || createdAt
     const [copied, setCopied] = React.useState(false)
     const [isReasoningOpen, setIsReasoningOpen] = React.useState(true)
@@ -107,7 +127,7 @@ export const ChatMessage = React.memo(({ message, provider, isTyping, onViewGene
                         <span className="font-semibold text-sm md:truncate md:whitespace-nowrap break-all">
                             {role === 'assistant' ? (provider ? `${provider} / ${model_id || 'Assistant'}` : (model_id || 'Assistant')) : userName}
                         </span>
-                        <span className="text-[10px] text-muted-foreground tabular-nums select-none opacity-50 group-hover:opacity-100 transition-opacity">
+                        <span suppressHydrationWarning className="text-[10px] text-muted-foreground tabular-nums select-none opacity-50 group-hover:opacity-100 transition-opacity">
                             {formatMessageTime(messageDate)}
                         </span>
                     </div>
@@ -244,6 +264,48 @@ export const ChatMessage = React.memo(({ message, provider, isTyping, onViewGene
                             <ThumbsDown className={cn("h-3.5 w-3.5", rating === "down" && "fill-current")} />
                         </Button>
                     </>
+                )}
+
+                {/* Retry button - only for last assistant message when not loading */}
+                {role === "assistant" && isLastAssistant && onRetry && !isLoading && generation_id && (
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground bg-background border border-border/50 shadow-sm rounded-md hover:bg-muted/50 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150"
+                        onClick={onRetry}
+                        title="Regenerate response"
+                    >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                    </Button>
+                )}
+
+                {/* Sibling navigation - show when multiple responses exist */}
+                {role === "assistant" && hasSiblings && onNavigateSibling && (
+                    <div className="flex items-center gap-0.5 bg-background border border-border/50 shadow-sm rounded-md sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-l-md rounded-r-none"
+                            onClick={() => onNavigateSibling('prev')}
+                            disabled={(siblingIndex ?? 0) === 0}
+                            title="Previous response"
+                        >
+                            <ChevronLeft className="h-3.5 w-3.5" />
+                        </Button>
+                        <span className="text-xs text-muted-foreground px-1 tabular-nums select-none">
+                            {(siblingIndex ?? 0) + 1}/{siblingCount}
+                        </span>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-r-md rounded-l-none"
+                            onClick={() => onNavigateSibling('next')}
+                            disabled={(siblingIndex ?? 0) >= (siblingCount ?? 1) - 1}
+                            title="Next response"
+                        >
+                            <ChevronRight className="h-3.5 w-3.5" />
+                        </Button>
+                    </div>
                 )}
 
                 {/* View generation details - only show on hover */}
