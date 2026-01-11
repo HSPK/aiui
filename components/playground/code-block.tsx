@@ -38,7 +38,7 @@ export const CodeBlock = React.memo(({ language, value, className }: CodeBlockPr
     const { resolvedTheme } = useTheme()
     const isDark = resolvedTheme === "dark"
 
-    const customTheme = React.useMemo(() => 
+    const customTheme = React.useMemo(() =>
         createCustomTheme(isDark ? oneDark : oneLight, isDark),
         [isDark]
     )
@@ -94,8 +94,8 @@ export const CodeBlock = React.memo(({ language, value, className }: CodeBlockPr
                     size="sm"
                     className={cn(
                         "h-6 px-2",
-                        isDark 
-                            ? "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800" 
+                        isDark
+                            ? "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
                             : "text-zinc-500 hover:text-zinc-700 hover:bg-zinc-200"
                     )}
                     onClick={onCopy}

@@ -43,12 +43,12 @@ export default function DashboardLayout({
                     <div className="flex items-center gap-1">
                         {/* Search icon (UI only) */}
                         <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4 text-muted-foreground"><circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="2"/><path d="M15 15L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
+                            <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4 text-muted-foreground"><circle cx="9" cy="9" r="7" stroke="currentColor" strokeWidth="2" /><path d="M15 15L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
                             <span className="sr-only">Search</span>
                         </Button>
                         {/* User settings icon (UI only) */}
                         <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4 text-muted-foreground"><circle cx="10" cy="7" r="3" stroke="currentColor" strokeWidth="2"/><path d="M3 17c0-2.21 3.134-4 7-4s7 1.79 7 4" stroke="currentColor" strokeWidth="2"/></svg>
+                            <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4 text-muted-foreground"><circle cx="10" cy="7" r="3" stroke="currentColor" strokeWidth="2" /><path d="M3 17c0-2.21 3.134-4 7-4s7 1.79 7 4" stroke="currentColor" strokeWidth="2" /></svg>
                             <span className="sr-only">User settings</span>
                         </Button>
                     </div>
