@@ -82,10 +82,9 @@ export const ChatMessage = React.memo(({ message, provider, isTyping, onViewGene
 
     return (
         <div className={cn(
-            "group relative flex gap-4 px-4 py-6 hover:bg-muted/30 transition-colors w-full",
-            role === "assistant" ? "" : ""
+            "group relative flex gap-3 sm:gap-4 px-3 sm:px-4 py-4 sm:py-6 hover:bg-muted/30 transition-colors w-full"
         )}>
-            <Avatar className="h-8 w-8 shrink-0 bg-background border">
+            <Avatar className="h-7 w-7 sm:h-8 sm:w-8 shrink-0 bg-background border">
                 {role === "assistant" ? (
                     <AvatarFallback className="bg-transparent">
                         <ProviderIcon
@@ -102,10 +101,10 @@ export const ChatMessage = React.memo(({ message, provider, isTyping, onViewGene
                 )}
             </Avatar>
 
-            <div className="flex-1 overflow-hidden min-w-0">
+            <div className="flex-1 min-w-0 overflow-hidden">
                 <div className="space-y-1">
                     <div className="flex items-center gap-2 min-w-0">
-                        <span className="font-semibold text-sm truncate">
+                        <span className="font-semibold text-sm md:truncate md:whitespace-nowrap break-all">
                             {role === 'assistant' ? (provider ? `${provider} / ${model_id || 'Assistant'}` : (model_id || 'Assistant')) : userName}
                         </span>
                         <span className="text-[10px] text-muted-foreground tabular-nums select-none opacity-50 group-hover:opacity-100 transition-opacity">
@@ -160,44 +159,46 @@ export const ChatMessage = React.memo(({ message, provider, isTyping, onViewGene
                         </Collapsible>
                     )}
 
-                    <div className={cn(
-                        "prose prose-sm dark:prose-invert max-w-none break-words relative leading-relaxed",
-                        isTyping && displayContent && "typing-active"
-                    )}>
-                        <ReactMarkdown components={{
-                            pre: ({ children }) => <>{children}</>,
-                            code: ({ node, inline, className, children, ...props }: any) => {
-                                const match = /language-(\w+)/.exec(className || '')
-                                const codeString = String(children).replace(/\n$/, '')
+                    <div className="w-full min-w-0 overflow-x-auto">
+                        <div className={cn(
+                            "prose prose-sm dark:prose-invert max-w-none break-words relative leading-relaxed min-w-0",
+                            isTyping && displayContent && "typing-active"
+                        )}>
+                            <ReactMarkdown components={{
+                                pre: ({ children }) => <>{children}</>,
+                                code: ({ node, inline, className, children, ...props }: any) => {
+                                    const match = /language-(\w+)/.exec(className || '')
+                                    const codeString = String(children).replace(/\n$/, '')
 
-                                if (!inline && match) {
-                                    return <CodeBlock language={match[1]} value={codeString} />
+                                    if (!inline && match) {
+                                        return <CodeBlock language={match[1]} value={codeString} />
+                                    }
+
+                                    // Check if it's a code block without language (multi-line)
+                                    if (!inline && codeString.includes('\n')) {
+                                        return <CodeBlock language="text" value={codeString} />
+                                    }
+
+                                    return <InlineCode {...props}>{children}</InlineCode>
                                 }
-
-                                // Check if it's a code block without language (multi-line)
-                                if (!inline && codeString.includes('\n')) {
-                                    return <CodeBlock language="text" value={codeString} />
-                                }
-
-                                return <InlineCode {...props}>{children}</InlineCode>
-                            }
-                        }}>
-                            {displayContent}
-                        </ReactMarkdown>
-                        {isTyping && !displayContent && (
-                            <span className="typing-cursor text-primary">▋</span>
-                        )}
+                            }}>
+                                {displayContent}
+                            </ReactMarkdown>
+                            {isTyping && !displayContent && (
+                                <span className="typing-cursor text-primary">▋</span>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
 
-            {/* Message Actions - Floating at bottom border */}
-            <div className="absolute bottom-0 left-[4.5rem] translate-y-1/2 flex items-center gap-1.5 z-10">
-                {/* Copy button - only show on hover */}
+            {/* Message Actions - Always at bottom border */}
+            <div className="absolute bottom-0 left-12 sm:left-[4.5rem] translate-y-1/2 flex items-center gap-1.5 z-10">
+                {/* Copy button - always visible on mobile, hover on desktop */}
                 <Button
                     variant="ghost"
                     size="sm"
-                    className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground bg-background border border-border/50 shadow-sm rounded-md hover:bg-muted/50 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
+                    className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground bg-background border border-border/50 shadow-sm rounded-md hover:bg-muted/50 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150"
                     onClick={onCopy}
                     title="Copy"
                 >
@@ -218,7 +219,7 @@ export const ChatMessage = React.memo(({ message, provider, isTyping, onViewGene
                                 "h-6 w-6 p-0 rounded-md border border-border/50 shadow-sm transition-opacity duration-150",
                                 rating === "up"
                                     ? "text-green-500 bg-green-500/10 hover:bg-green-500/20 border-green-500/30 opacity-100"
-                                    : "text-muted-foreground hover:text-foreground bg-background hover:bg-muted/50 opacity-0 group-hover:opacity-100"
+                                    : "text-muted-foreground hover:text-foreground bg-background hover:bg-muted/50 sm:opacity-0 sm:group-hover:opacity-100"
                             )}
                             onClick={() => handleRate("up")}
                             disabled={isRating}
@@ -233,7 +234,7 @@ export const ChatMessage = React.memo(({ message, provider, isTyping, onViewGene
                                 "h-6 w-6 p-0 rounded-md border border-border/50 shadow-sm transition-opacity duration-150",
                                 rating === "down"
                                     ? "text-red-500 bg-red-500/10 hover:bg-red-500/20 border-red-500/30 opacity-100"
-                                    : "text-muted-foreground hover:text-foreground bg-background hover:bg-muted/50 opacity-0 group-hover:opacity-100"
+                                    : "text-muted-foreground hover:text-foreground bg-background hover:bg-muted/50 sm:opacity-0 sm:group-hover:opacity-100"
                             )}
                             onClick={() => handleRate("down")}
                             disabled={isRating}
@@ -249,7 +250,7 @@ export const ChatMessage = React.memo(({ message, provider, isTyping, onViewGene
                     <Button
                         variant="ghost"
                         size="sm"
-                        className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground bg-background border border-border/50 shadow-sm rounded-md hover:bg-muted/50 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
+                        className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground bg-background border border-border/50 shadow-sm rounded-md hover:bg-muted/50 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150"
                         onClick={handleViewGeneration}
                         title="View generation details"
                     >

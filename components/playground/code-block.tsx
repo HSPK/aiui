@@ -73,7 +73,8 @@ export const CodeBlock = React.memo(({ language, value, className }: CodeBlockPr
 
     return (
         <div className={cn(
-            "relative group/code my-3 rounded-lg border overflow-hidden",
+            "relative group/code my-3 rounded-lg border",
+            "w-full min-w-0 overflow-hidden",
             isDark ? "bg-zinc-900 border-zinc-800" : "bg-zinc-50 border-zinc-200",
             className
         )}>
@@ -122,13 +123,18 @@ export const CodeBlock = React.memo(({ language, value, className }: CodeBlockPr
                         padding: 0,
                         background: 'transparent',
                         fontSize: '12px',
+                        whiteSpace: 'pre',
+                        overflowX: 'auto',
                     }}
                     codeTagProps={{
                         style: {
                             fontSize: '12px',
                             fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                            whiteSpace: 'pre',
                         }
                     }}
+                    wrapLines={false}
+                    wrapLongLines={false}
                 >
                     {value}
                 </SyntaxHighlighter>
