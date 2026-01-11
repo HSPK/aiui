@@ -5,7 +5,8 @@ import { Check, Copy } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism"
+import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism"
+import { useTheme } from "next-themes"
 
 interface CodeBlockProps {
     language?: string
@@ -13,11 +14,11 @@ interface CodeBlockProps {
     className?: string
 }
 
-// Custom theme based on oneDark but adjusted for better readability
-const customTheme = {
-    ...oneDark,
+// Create theme variants
+const createCustomTheme = (baseTheme: any, isDark: boolean) => ({
+    ...baseTheme,
     'pre[class*="language-"]': {
-        ...oneDark['pre[class*="language-"]'],
+        ...baseTheme['pre[class*="language-"]'],
         background: 'transparent',
         margin: 0,
         padding: 0,
@@ -25,15 +26,22 @@ const customTheme = {
         lineHeight: '1.5',
     },
     'code[class*="language-"]': {
-        ...oneDark['code[class*="language-"]'],
+        ...baseTheme['code[class*="language-"]'],
         background: 'transparent',
         fontSize: '12px',
         lineHeight: '1.5',
     },
-}
+})
 
 export const CodeBlock = React.memo(({ language, value, className }: CodeBlockProps) => {
     const [copied, setCopied] = React.useState(false)
+    const { resolvedTheme } = useTheme()
+    const isDark = resolvedTheme === "dark"
+
+    const customTheme = React.useMemo(() => 
+        createCustomTheme(isDark ? oneDark : oneLight, isDark),
+        [isDark]
+    )
 
     const onCopy = React.useCallback(() => {
         navigator.clipboard.writeText(value)
@@ -64,16 +72,31 @@ export const CodeBlock = React.memo(({ language, value, className }: CodeBlockPr
     }, [language])
 
     return (
-        <div className={cn("relative group/code my-3 rounded-lg border bg-zinc-950 dark:bg-zinc-900 overflow-hidden", className)}>
+        <div className={cn(
+            "relative group/code my-3 rounded-lg border overflow-hidden",
+            isDark ? "bg-zinc-900 border-zinc-800" : "bg-zinc-50 border-zinc-200",
+            className
+        )}>
             {/* Header with language and copy button */}
-            <div className="flex items-center justify-between px-3 py-1.5 border-b border-zinc-800 bg-zinc-900/50">
-                <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-wide">
+            <div className={cn(
+                "flex items-center justify-between px-3 py-1.5 border-b",
+                isDark ? "border-zinc-800 bg-zinc-900/50" : "border-zinc-200 bg-zinc-100/50"
+            )}>
+                <span className={cn(
+                    "text-[10px] font-medium uppercase tracking-wide",
+                    isDark ? "text-zinc-400" : "text-zinc-500"
+                )}>
                     {normalizedLanguage}
                 </span>
                 <Button
                     variant="ghost"
                     size="sm"
-                    className="h-6 px-2 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+                    className={cn(
+                        "h-6 px-2",
+                        isDark 
+                            ? "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800" 
+                            : "text-zinc-500 hover:text-zinc-700 hover:bg-zinc-200"
+                    )}
                     onClick={onCopy}
                 >
                     {copied ? (

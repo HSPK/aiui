@@ -140,15 +140,15 @@ export const ChatMessage = React.memo(({ message, provider, isTyping, onViewGene
                                             code: ({ node, inline, className, children, ...props }: any) => {
                                                 const match = /language-(\w+)/.exec(className || '')
                                                 const codeString = String(children).replace(/\n$/, '')
-                                                
+
                                                 if (!inline && match) {
                                                     return <CodeBlock language={match[1]} value={codeString} />
                                                 }
-                                                
+
                                                 if (!inline && codeString.includes('\n')) {
                                                     return <CodeBlock language="text" value={codeString} />
                                                 }
-                                                
+
                                                 return <InlineCode {...props}>{children}</InlineCode>
                                             }
                                         }}
@@ -169,16 +169,16 @@ export const ChatMessage = React.memo(({ message, provider, isTyping, onViewGene
                             code: ({ node, inline, className, children, ...props }: any) => {
                                 const match = /language-(\w+)/.exec(className || '')
                                 const codeString = String(children).replace(/\n$/, '')
-                                
+
                                 if (!inline && match) {
                                     return <CodeBlock language={match[1]} value={codeString} />
                                 }
-                                
+
                                 // Check if it's a code block without language (multi-line)
                                 if (!inline && codeString.includes('\n')) {
                                     return <CodeBlock language="text" value={codeString} />
                                 }
-                                
+
                                 return <InlineCode {...props}>{children}</InlineCode>
                             }
                         }}>
