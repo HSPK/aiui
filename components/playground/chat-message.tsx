@@ -101,7 +101,7 @@ export const ChatMessage = React.memo(({ message, provider, isTyping, onViewGene
                 )}
             </Avatar>
 
-            <div className="flex-1 min-w-0 overflow-hidden">
+            <div className="flex-1 min-w-0">
                 <div className="space-y-1">
                     <div className="flex items-center gap-2 min-w-0">
                         <span className="font-semibold text-sm md:truncate md:whitespace-nowrap break-all">
@@ -159,9 +159,10 @@ export const ChatMessage = React.memo(({ message, provider, isTyping, onViewGene
                         </Collapsible>
                     )}
 
-                    <div className="w-full min-w-0 overflow-x-auto">
+                    <div className="w-full min-w-0">
                         <div className={cn(
-                            "prose prose-sm dark:prose-invert max-w-none break-words relative leading-relaxed min-w-0",
+                            "prose prose-sm dark:prose-invert max-w-none break-words relative leading-relaxed",
+                            "[&_pre]:m-0 [&_pre]:p-0 [&_pre]:bg-transparent",
                             isTyping && displayContent && "typing-active"
                         )}>
                             <ReactMarkdown components={{
@@ -193,7 +194,7 @@ export const ChatMessage = React.memo(({ message, provider, isTyping, onViewGene
             </div>
 
             {/* Message Actions - Always at bottom border */}
-            <div className="absolute bottom-0 left-12 sm:left-[4.5rem] translate-y-1/2 flex items-center gap-1.5 z-10">
+            <div className="absolute bottom-0 left-[4.5rem] translate-y-1/2 flex items-center gap-1.5 z-10">
                 {/* Copy button - always visible on mobile, hover on desktop */}
                 <Button
                     variant="ghost"
