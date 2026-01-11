@@ -11,6 +11,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { useSettingsStore } from "@/lib/stores/settings-store"
 import { api } from "@/lib/api"
 import { toast } from "sonner"
+import { CodeBlock, InlineCode } from "./code-block"
 
 interface ChatMessageProps {
     message: any
@@ -135,20 +136,20 @@ export const ChatMessage = React.memo(({ message, provider, isTyping, onViewGene
                                 )}>
                                     <ReactMarkdown
                                         components={{
-                                            pre: ({ node, ...props }) => (
-                                                <div className="overflow-auto w-full my-2 bg-background/50 p-2 rounded-md border text-xs">
-                                                    <pre {...props} />
-                                                </div>
-                                            ),
+                                            pre: ({ children }) => <>{children}</>,
                                             code: ({ node, inline, className, children, ...props }: any) => {
-                                                return (
-                                                    <code
-                                                        className={cn("bg-background/50 rounded px-1 py-0.5 text-xs", className)}
-                                                        {...props}
-                                                    >
-                                                        {children}
-                                                    </code>
-                                                )
+                                                const match = /language-(\w+)/.exec(className || '')
+                                                const codeString = String(children).replace(/\n$/, '')
+                                                
+                                                if (!inline && match) {
+                                                    return <CodeBlock language={match[1]} value={codeString} />
+                                                }
+                                                
+                                                if (!inline && codeString.includes('\n')) {
+                                                    return <CodeBlock language="text" value={codeString} />
+                                                }
+                                                
+                                                return <InlineCode {...props}>{children}</InlineCode>
                                             }
                                         }}
                                     >
@@ -164,20 +165,21 @@ export const ChatMessage = React.memo(({ message, provider, isTyping, onViewGene
                         isTyping && displayContent && "typing-active"
                     )}>
                         <ReactMarkdown components={{
-                            pre: ({ node, ...props }) => (
-                                <div className="overflow-auto w-full my-2 bg-muted/50 p-2 rounded-md">
-                                    <pre {...props} />
-                                </div>
-                            ),
+                            pre: ({ children }) => <>{children}</>,
                             code: ({ node, inline, className, children, ...props }: any) => {
-                                return (
-                                    <code
-                                        className={cn("bg-muted/50 rounded px-1 py-0.5", className)}
-                                        {...props}
-                                    >
-                                        {children}
-                                    </code>
-                                )
+                                const match = /language-(\w+)/.exec(className || '')
+                                const codeString = String(children).replace(/\n$/, '')
+                                
+                                if (!inline && match) {
+                                    return <CodeBlock language={match[1]} value={codeString} />
+                                }
+                                
+                                // Check if it's a code block without language (multi-line)
+                                if (!inline && codeString.includes('\n')) {
+                                    return <CodeBlock language="text" value={codeString} />
+                                }
+                                
+                                return <InlineCode {...props}>{children}</InlineCode>
                             }
                         }}>
                             {displayContent}
