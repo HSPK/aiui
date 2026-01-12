@@ -12,7 +12,7 @@ export interface UserSettings {
 
     // Chat Settings
     defaultSystemPrompt: string
-    defaultTemperature: number
+    defaultTemperature: number | undefined  // undefined = use model default
     defaultMaxTokens: number
     defaultHistoryLimit: number
 
@@ -39,7 +39,7 @@ const defaultSettings: UserSettings = {
 
     // Chat Settings
     defaultSystemPrompt: 'You are a helpful assistant.',
-    defaultTemperature: 0.7,
+    defaultTemperature: undefined,  // undefined = use model default
     defaultMaxTokens: 4096,
     defaultHistoryLimit: 10,
 

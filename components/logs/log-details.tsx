@@ -95,7 +95,7 @@ function ContentViewer({ title, content, colorClass }: { title: string, content:
             </div>
 
             <div className="border rounded-md overflow-hidden bg-muted/20">
-                <div className="p-3 text-sm min-h-[100px] max-h-[500px] overflow-y-auto custom-scrollbar">
+                <div className="p-3 text-sm min-h-[100px] max-h-[500px] overflow-y-auto scrollbar-thin">
                     {viewMode === "preview" ? (
                         <div className="prose prose-sm dark:prose-invert max-w-none break-words leading-relaxed">
                             <ReactMarkdown>{content}</ReactMarkdown>

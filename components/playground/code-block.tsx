@@ -114,7 +114,7 @@ export const CodeBlock = React.memo(({ language, value, className }: CodeBlockPr
                 </Button>
             </div>
             {/* Code content */}
-            <div className="overflow-x-auto p-3 w-full min-w-0">
+            <div className="overflow-x-auto scrollbar-thin p-3 w-full min-w-0">
                 <SyntaxHighlighter
                     language={normalizedLanguage}
                     style={customTheme}

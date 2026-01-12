@@ -7,16 +7,8 @@ import { useSettingsStore } from "@/lib/stores/settings-store"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select"
 import {
     Card,
     CardContent,
@@ -24,11 +16,110 @@ import {
     CardHeader,
     CardTitle,
 } from "@/components/ui/card"
-import { ProviderIcon } from "@/components/ProviderIcon"
-import { Settings, Bot, User, MessageSquare, Palette, RotateCcw, Check } from "lucide-react"
+import { RotateCcw, Check, Bot, User, MessageSquare, Palette, Settings, ChevronDown, Search } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { ProviderIcon } from "@/components/provider-icons"
 
 const AVATAR_OPTIONS = ['👤', '😀', '😎', '🤖', '🦊', '🐱', '🐶', '🦁', '🐼', '🐨', '🐸', '🦄', '🌟', '💫', '🎯', '🚀']
+
+// Fast model selector using native dropdown
+const ModelSelect = React.memo(({ 
+    value, 
+    onValueChange, 
+    models, 
+    isLoading, 
+    placeholder 
+}: { 
+    value: string
+    onValueChange: (v: string) => void
+    models: Array<{ name: string; provider?: string }>
+    isLoading: boolean
+    placeholder: string
+}) => {
+    const [open, setOpen] = React.useState(false)
+    const [search, setSearch] = React.useState("")
+    const containerRef = React.useRef<HTMLDivElement>(null)
+
+    const filtered = React.useMemo(() => {
+        if (!search) return models
+        const q = search.toLowerCase()
+        return models.filter(m => m.name.toLowerCase().includes(q))
+    }, [models, search])
+
+    // Close on click outside
+    React.useEffect(() => {
+        if (!open) return
+        const handler = (e: MouseEvent) => {
+            if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+                setOpen(false)
+            }
+        }
+        document.addEventListener('mousedown', handler)
+        return () => document.removeEventListener('mousedown', handler)
+    }, [open])
+
+    React.useEffect(() => {
+        if (!open) setSearch("")
+    }, [open])
+
+    return (
+        <div ref={containerRef} className="relative">
+            <button
+                type="button"
+                onClick={() => !isLoading && setOpen(!open)}
+                className={cn(
+                    "flex items-center justify-between w-full h-9 px-3 rounded-md border bg-transparent text-sm",
+                    "hover:bg-muted/50 transition-colors",
+                    isLoading && "opacity-50 cursor-not-allowed"
+                )}
+                disabled={isLoading}
+            >
+                <span className="truncate">{value || placeholder}</span>
+                <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
+            </button>
+            {open && (
+                <div className="absolute z-50 w-full mt-1 rounded-md border bg-popover shadow-md">
+                    <div className="p-2 border-b">
+                        <div className="relative">
+                            <Search className="absolute left-2 top-1.5 h-3.5 w-3.5 text-muted-foreground" />
+                            <Input
+                                placeholder="Search..."
+                                className="pl-7 h-7 text-xs"
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                autoFocus
+                            />
+                        </div>
+                    </div>
+                    <div className="max-h-[240px] overflow-y-auto scrollbar-thin p-1">
+                        {filtered.length === 0 ? (
+                            <div className="p-2 text-sm text-muted-foreground">No models</div>
+                        ) : (
+                            filtered.map((model) => (
+                                <button
+                                    key={model.name}
+                                    type="button"
+                                    onClick={() => {
+                                        onValueChange(model.name)
+                                        setOpen(false)
+                                    }}
+                                    className={cn(
+                                        "w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-sm text-left",
+                                        value === model.name ? "bg-accent" : "hover:bg-muted/50"
+                                    )}
+                                >
+                                    <ProviderIcon provider={model.provider || "?"} />
+                                    <span className="truncate">{model.name}</span>
+                                </button>
+                            ))
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+})
+ModelSelect.displayName = "ModelSelect"
 
 function SettingsSection({ icon: Icon, title, description, children }: {
     icon: React.ElementType
@@ -95,7 +186,7 @@ export default function SettingsPage() {
     }
 
     return (
-        <div className="h-full overflow-y-auto">
+        <div className="h-full overflow-y-auto scrollbar-thin">
             <div className="max-w-3xl mx-auto p-6 space-y-6">
                 {/* Header */}
                 <div className="flex items-center justify-between">
@@ -172,57 +263,23 @@ export default function SettingsPage() {
                     description="Set default models for different tasks"
                 >
                     <SettingsField label="Chat Model" description="Default model for conversations">
-                        <Select
+                        <ModelSelect
                             value={settings.defaultModel}
                             onValueChange={(v) => settings.updateSettings({ defaultModel: v })}
-                            disabled={modelsLoading}
-                        >
-                            <SelectTrigger>
-                                <SelectValue placeholder={modelsLoading ? "Loading..." : "Select model"} />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {models.map((model) => (
-                                    <SelectItem key={model.name} value={model.name}>
-                                        <div className="flex items-center gap-2">
-                                            <ProviderIcon
-                                                providerName={model.provider || "unknown"}
-                                                className="h-4 w-4"
-                                                width={16}
-                                                height={16}
-                                            />
-                                            <span>{model.name}</span>
-                                        </div>
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                            models={models}
+                            isLoading={modelsLoading}
+                            placeholder={modelsLoading ? "Loading..." : "Select model"}
+                        />
                     </SettingsField>
 
                     <SettingsField label="Summary Model" description="Model for generating titles & summaries">
-                        <Select
+                        <ModelSelect
                             value={settings.defaultSummaryModel}
                             onValueChange={(v) => settings.updateSettings({ defaultSummaryModel: v })}
-                            disabled={modelsLoading}
-                        >
-                            <SelectTrigger>
-                                <SelectValue placeholder={modelsLoading ? "Loading..." : "Select model"} />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {models.map((model) => (
-                                    <SelectItem key={model.name} value={model.name}>
-                                        <div className="flex items-center gap-2">
-                                            <ProviderIcon
-                                                providerName={model.provider || "unknown"}
-                                                className="h-4 w-4"
-                                                width={16}
-                                                height={16}
-                                            />
-                                            <span>{model.name}</span>
-                                        </div>
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                            models={models}
+                            isLoading={modelsLoading}
+                            placeholder={modelsLoading ? "Loading..." : "Select model"}
+                        />
                     </SettingsField>
                 </SettingsSection>
 
@@ -244,20 +301,22 @@ export default function SettingsPage() {
 
                     <SettingsField
                         label="Temperature"
-                        description={`Controls randomness (${settings.defaultTemperature.toFixed(1)})`}
+                        description={settings.defaultTemperature !== undefined ? `Controls randomness (${settings.defaultTemperature.toFixed(1)})` : 'Use model default'}
                     >
                         <div className="flex items-center gap-3">
-                            <Slider
-                                value={[settings.defaultTemperature]}
-                                onValueChange={([v]) => settings.updateSettings({ defaultTemperature: v })}
+                            <Input
+                                type="number"
                                 min={0}
                                 max={2}
                                 step={0.1}
+                                value={settings.defaultTemperature ?? ''}
+                                onChange={(e) => {
+                                    const val = e.target.value === '' ? undefined : parseFloat(e.target.value)
+                                    settings.updateSettings({ defaultTemperature: val })
+                                }}
+                                placeholder="Default (empty)"
                                 className="flex-1"
                             />
-                            <span className="text-sm text-muted-foreground w-8 text-right">
-                                {settings.defaultTemperature.toFixed(1)}
-                            </span>
                         </div>
                     </SettingsField>
 

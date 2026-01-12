@@ -74,7 +74,7 @@ export default function ProviderDetailPage() {
     }
 
     return (
-        <div className="h-full overflow-y-auto space-y-8 p-4">
+        <div className="h-full overflow-y-auto scrollbar-thin space-y-8 p-4">
             {/* Header / Nav */}
             <div className="flex items-center justify-between">
                 <Button variant="ghost" className="pl-0 hover:bg-transparent" onClick={() => router.push("/providers")}>
