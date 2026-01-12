@@ -24,6 +24,8 @@ import { formatToLocal, cn } from "@/lib/utils"
 // @ts-ignore
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
 import { useTheme } from "next-themes"
 
 const ReactJson = dynamic(() => import('react-json-view'), { ssr: false })
@@ -204,7 +206,8 @@ function ContentViewer({ title, content, colorClass }: { title: string, content:
                     {viewMode === "preview" ? (
                         <div className="prose prose-sm dark:prose-invert max-w-none break-words leading-relaxed">
                             <ReactMarkdown
-                                remarkPlugins={[remarkGfm]}
+                                remarkPlugins={[remarkMath, remarkGfm]}
+                                rehypePlugins={[rehypeKatex]}
                                 components={logMarkdownComponents}
                             >
                                 {content}

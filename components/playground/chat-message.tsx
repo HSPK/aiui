@@ -7,6 +7,8 @@ import { Check, Copy, ChevronDown, ChevronRight, ChevronLeft, ThumbsUp, ThumbsDo
 import { cn, formatMessageTime } from "@/lib/utils"
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
 import { ProviderIcon } from "@/components/ProviderIcon"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { useSettingsStore } from "@/lib/stores/settings-store"
@@ -296,7 +298,8 @@ export const ChatMessage = React.memo(({
                                 "text-xs text-muted-foreground"
                             )}>
                                 <ReactMarkdown
-                                    remarkPlugins={[remarkGfm]}
+                                    remarkPlugins={[remarkMath, remarkGfm]}
+                                    rehypePlugins={[rehypeKatex]}
                                     components={markdownComponents}
                                 >
                                     {reasoning_content}
@@ -313,7 +316,8 @@ export const ChatMessage = React.memo(({
                         isTyping && displayContent && "typing-active"
                     )}>
                         <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
+                            remarkPlugins={[remarkMath, remarkGfm]}
+                            rehypePlugins={[rehypeKatex]}
                             components={markdownComponents}
                         >
                             {displayContent}
