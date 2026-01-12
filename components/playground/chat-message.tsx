@@ -110,7 +110,7 @@ export const ChatMessage = React.memo(({
                 !isSibling && "w-full py-4 sm:py-6 hover:bg-muted/30",
                 // Sibling card - 固定宽度支持横向滚动
                 isSibling && "py-4 border rounded-xl shadow-sm bg-card w-[280px] sm:w-[380px] flex-shrink-0",
-                isSibling && isSelected && "ring-1 ring-primary/20 border-primary/30 bg-card",
+                isSibling && isSelected && "ring-0 ring-primary/20 border-primary/30 bg-card",
                 isSibling && !isSelected && "border-border/50 bg-muted/30 hover:bg-card hover:shadow-md",
                 isSibling && onSelect && "cursor-pointer",
                 isSibling && !onSelect && "cursor-default"

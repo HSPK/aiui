@@ -3,19 +3,18 @@
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Bot, Eraser, Plus, ArrowUp, RotateCcw } from "lucide-react"
-import { ModelSelector } from "@/components/playground/model-selector"
+import { Eraser, Plus, ArrowUp, RotateCcw } from "lucide-react"
+import { ConnectedModelSelector } from "@/components/playground/model-selector"
 import { ChatConfigDropdown } from "@/components/playground/chat-config-dropdown"
 
 interface ChatInputProps {
+    tabId: string
     input: string
     onInputChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void
     onSubmit: (e: React.FormEvent) => void
     onRetry?: () => void
     isLoading: boolean
     onStop: () => void
-    selectedModelIds: string[]
-    onModelSelect: (ids: string[]) => void
     onClearMessages: () => void
     hasMessages: boolean
     lastMessageIsUser?: boolean
@@ -29,14 +28,13 @@ interface ChatInputProps {
 }
 
 export const ChatInput = React.memo(function ChatInput({
+    tabId,
     input,
     onInputChange,
     onSubmit,
     onRetry,
     isLoading,
     onStop,
-    selectedModelIds,
-    onModelSelect,
     onClearMessages,
     hasMessages,
     lastMessageIsUser,
@@ -82,7 +80,7 @@ export const ChatInput = React.memo(function ChatInput({
                 <Textarea
                     value={input}
                     onChange={onInputChange}
-                    placeholder={`Message ${selectedModelIds.length > 0 ? selectedModelIds.join(', ') : 'AI'}...`}
+                    placeholder="Message AI..."
                     className="min-h-[32px] max-h-[200px] border-0 focus-visible:ring-0 resize-none p-0 py-[6px] bg-transparent dark:bg-transparent shadow-none flex-1 text-sm leading-[20px]"
                     onKeyDown={handleKeyDown}
                     onCompositionStart={handleCompositionStart}
@@ -90,27 +88,7 @@ export const ChatInput = React.memo(function ChatInput({
                 />
 
                 <div className="flex items-center gap-1 shrink-0">
-                    <ModelSelector
-                        selectedModelIds={selectedModelIds}
-                        onModelSelect={onModelSelect}
-                        side="top"
-                        align="end"
-                        trigger={
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8 text-muted-foreground hover:text-foreground relative"
-                            >
-                                <Bot className="h-5 w-5" />
-                                {selectedModelIds.length > 1 && (
-                                    <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] text-primary-foreground font-bold leading-none">
-                                        {selectedModelIds.length}
-                                    </span>
-                                )}
-                            </Button>
-                        }
-                    />
+                    <ConnectedModelSelector tabId={tabId} />
 
                     <ChatConfigDropdown
                         temperature={temperature}

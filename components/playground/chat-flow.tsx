@@ -13,12 +13,28 @@ import { ChatInput } from "@/components/playground/chat-input"
 import { useChatScroll, usePaginatedMessages } from "@/components/playground/hooks"
 import { api } from "@/lib/api"
 import { LogDetails } from "@/components/logs/log-details"
+import { useShallow } from "zustand/react/shallow"
 
 export function ChatFlow({ tabId }: { tabId: string }) {
-    const { tabs, updateTab, updateTabTitle } = usePlaygroundStore()
+    // Use getState() for reading tab data to avoid subscription
+    const storeRef = React.useRef(usePlaygroundStore)
+    const getTab = React.useCallback(() => storeRef.current.getState().tabs.find(t => t.id === tabId), [tabId])
+    
+    // Only subscribe to specific fields that need reactivity - NOT modelIds (handled by ConnectedModelSelector)
+    const conversationId = usePlaygroundStore(
+        (state) => state.tabs.find(t => t.id === tabId)?.conversationId
+    )
+    const tabMessages = usePlaygroundStore(
+        useShallow((state) => state.tabs.find(t => t.id === tabId)?.messages || [])
+    )
+    const tabTitle = usePlaygroundStore(
+        (state) => state.tabs.find(t => t.id === tabId)?.title
+    )
+    
+    const updateTab = usePlaygroundStore((state) => state.updateTab)
+    const updateTabTitle = usePlaygroundStore((state) => state.updateTabTitle)
     const settings = useSettingsStore()
     const queryClient = useQueryClient()
-    const tab = tabs.find(t => t.id === tabId)
 
     // Track if we've generated a title for this conversation
     const titleGeneratedRef = React.useRef<Set<string>>(new Set())
@@ -30,17 +46,18 @@ export function ChatFlow({ tabId }: { tabId: string }) {
     const [selectedSiblings, setSelectedSiblings] = React.useState<Map<string, number>>(new Map())
 
     // Local settings state - use user defaults from settings store
+    const initialTab = getTab()
     const [temperature, setTemperature] = React.useState<number | undefined>(
-        tab?.temperature ?? settings.defaultTemperature
+        initialTab?.temperature ?? settings.defaultTemperature
     )
     const [historyLimit, setHistoryLimit] = React.useState(
-        tab?.historyLimit ?? settings.defaultHistoryLimit
+        initialTab?.historyLimit ?? settings.defaultHistoryLimit
     )
     const [reasoningEffort, setReasoningEffort] = React.useState<string | null>(null)
 
     // Normalize messages from store
     const normalizedMessages = React.useMemo(() => {
-        return tab?.messages?.map(m => ({
+        return tabMessages.map(m => ({
             ...m,
             id: m.id,
             role: m.role as any,
@@ -49,18 +66,18 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                 : (Array.isArray(m.content) && m.content[0]?.text)
                     ? m.content[0].text
                     : String(m.content)
-        })) || []
-    }, [tab?.messages])
+        }))
+    }, [tabMessages])
 
     // Chat hook
     const { messages, input, handleInputChange, handleSubmit, handleRetry, handleRegenerate, isLoading, setMessages, stop, lastMessageIsUser } = usePlaygroundChat({
-        conversationId: tab?.conversationId,
+        conversationId,
         initialMessages: normalizedMessages,
     })
 
     // Pagination hook
     const { isLoadingMore, hasMore, loadMore } = usePaginatedMessages({
-        conversationId: tab?.conversationId,
+        conversationId,
         initialMessages: messages,
         setMessages,
     })
@@ -81,14 +98,9 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         },
         hasMore,
         isLoadingMore,
-        savedScrollPosition: tab?.scrollPosition,
+        savedScrollPosition: getTab()?.scrollPosition,
         onSaveScrollPosition: (pos) => updateTab(tabId, { scrollPosition: pos }),
     })
-
-    // Handle model selection - memoized to prevent ChatInput re-renders
-    const handleModelSelect = React.useCallback((ids: string[]) => {
-        updateTab(tabId, { modelIds: ids })
-    }, [tabId, updateTab])
 
     // Determine which assistant message is selected as context for the next user message
     const contextAssistantId = React.useMemo(() => {
@@ -158,30 +170,33 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         return config
     }, [temperature, historyLimit, reasoningEffort])
 
-    // Handle form submit
+    // Handle form submit - read modelIds from store at submit time
     const onFormSubmit = React.useCallback((e: React.FormEvent) => {
+        const currentModelIds = getTab()?.modelIds || []
         handleSubmit(e, {
-            models: tab?.modelIds || ["gpt-3.5-turbo"],
+            models: currentModelIds.length > 0 ? currentModelIds : ["gpt-3.5-turbo"],
             config: buildChatConfig(),
             contextMessageId: contextAssistantId || undefined
         })
-    }, [buildChatConfig, handleSubmit, tab?.modelIds, contextAssistantId])
+    }, [buildChatConfig, handleSubmit, getTab, contextAssistantId])
 
     // Handle retry (when last message is user - no assistant response yet)
     const onRetry = React.useCallback(() => {
+        const currentModelIds = getTab()?.modelIds || []
         handleRetry({
-            models: tab?.modelIds || [],
+            models: currentModelIds,
             config: buildChatConfig()
         })
-    }, [buildChatConfig, handleRetry, tab?.modelIds])
+    }, [buildChatConfig, handleRetry, getTab])
 
     // Handle regenerate (create a sibling response for last assistant message)
     const onRegenerate = React.useCallback(() => {
+        const currentModelIds = getTab()?.modelIds || []
         handleRegenerate({
-            models: tab?.modelIds || [],
+            models: currentModelIds,
             config: buildChatConfig()
         })
-    }, [buildChatConfig, handleRegenerate, tab?.modelIds])
+    }, [buildChatConfig, handleRegenerate, getTab])
 
     // Sync messages to store (debounced)
     React.useEffect(() => {
@@ -198,7 +213,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
 
                 return {
                     id: m.id,
-                    conversation_id: tab?.conversationId || "",
+                    conversation_id: conversationId || "",
                     role: m.role as any,
                     content: [{ type: "text", text: String(contentVal) }],
                     model_id: m.model_id,
@@ -214,7 +229,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
             updateTab(tabId, { messages: storeMessages as any })
         }, 1000)
         return () => clearTimeout(timeout)
-    }, [messages, updateTab, tabId, tab?.conversationId])
+    }, [messages, updateTab, tabId, conversationId])
 
     // Refresh sidebar when message sending completes (to update order by updated_at)
     const prevIsLoadingRef = React.useRef(isLoading)
@@ -228,8 +243,8 @@ export function ChatFlow({ tabId }: { tabId: string }) {
 
     // Auto-generate title after first response
     React.useEffect(() => {
-        const convId = tab?.conversationId
-        const currentTitle = tab?.title
+        const convId = conversationId
+        const currentTitle = tabTitle
         if (!convId) return
 
         // Only generate title once per conversation
@@ -259,7 +274,8 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         titleGeneratedRef.current.add(convId)
 
         // Get summary model from settings, fallback to default model or first available
-        const summaryModel = settings.defaultSummaryModel || settings.defaultModel || tab?.modelIds?.[0]
+        const currentModelIds = getTab()?.modelIds || []
+        const summaryModel = settings.defaultSummaryModel || settings.defaultModel || currentModelIds[0]
         if (!summaryModel) return
 
         // Generate title in background
@@ -276,7 +292,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
             .catch(err => {
                 console.error('Failed to generate title:', err)
             })
-    }, [messages, isLoading, tab?.conversationId, tab?.title, tab?.modelIds, settings.defaultSummaryModel, settings.defaultModel, tabId, updateTabTitle])
+    }, [messages, isLoading, conversationId, tabTitle, getTab, settings.defaultSummaryModel, settings.defaultModel, tabId, updateTabTitle, queryClient])
 
     return (
         <div className="h-full relative overflow-hidden w-full max-w-full">
@@ -310,14 +326,13 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                 )}
 
                 <ChatInput
+                    tabId={tabId}
                     input={input}
                     onInputChange={handleInputChange}
                     onSubmit={onFormSubmit}
                     onRetry={onRetry}
                     isLoading={isLoading}
                     onStop={stop}
-                    selectedModelIds={tab?.modelIds || []}
-                    onModelSelect={handleModelSelect}
                     onClearMessages={handleClearMessages}
                     hasMessages={messages.length > 0}
                     lastMessageIsUser={lastMessageIsUser}

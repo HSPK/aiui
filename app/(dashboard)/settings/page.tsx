@@ -23,13 +23,13 @@ import { ProviderIcon } from "@/components/provider-icons"
 const AVATAR_OPTIONS = ['👤', '😀', '😎', '🤖', '🦊', '🐱', '🐶', '🦁', '🐼', '🐨', '🐸', '🦄', '🌟', '💫', '🎯', '🚀']
 
 // Fast model selector using native dropdown
-const ModelSelect = React.memo(({ 
-    value, 
-    onValueChange, 
-    models, 
-    isLoading, 
-    placeholder 
-}: { 
+const ModelSelect = React.memo(({
+    value,
+    onValueChange,
+    models,
+    isLoading,
+    placeholder
+}: {
     value: string
     onValueChange: (v: string) => void
     models: Array<{ name: string; provider?: string }>

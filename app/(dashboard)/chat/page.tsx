@@ -14,8 +14,10 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { useShallow } from "zustand/react/shallow"
 
-function TabHeader({ tab, isActive, onClick, onClose, onCloseOthers, onCloseAll }: {
+// Memoize TabHeader to prevent re-renders
+const TabHeader = React.memo(function TabHeader({ tab, isActive, onClick, onClose, onCloseOthers, onCloseAll }: {
     tab: PlaygroundTab
     isActive: boolean
     onClick: () => void
@@ -105,18 +107,21 @@ function TabHeader({ tab, isActive, onClick, onClose, onCloseOthers, onCloseAll 
             </div>
         </div>
     )
-}
+})
+
+// Memoize ChatFlow wrapper to prevent unnecessary re-mounts
+const MemoizedChatFlow = React.memo(ChatFlow)
+const MemoizedPlaygroundHome = React.memo(PlaygroundHome)
 
 export default function PlaygroundPage() {
-    const {
-        tabs,
-        activeTabId,
-        setActiveTab,
-        removeTab,
-        addTab,
-        closeOtherTabs,
-        closeAllTabs
-    } = usePlaygroundStore()
+    // Use selectors for better performance - only re-render when specific values change
+    const tabs = usePlaygroundStore(useShallow((state) => state.tabs))
+    const activeTabId = usePlaygroundStore((state) => state.activeTabId)
+    const setActiveTab = usePlaygroundStore((state) => state.setActiveTab)
+    const removeTab = usePlaygroundStore((state) => state.removeTab)
+    const addTab = usePlaygroundStore((state) => state.addTab)
+    const closeOtherTabs = usePlaygroundStore((state) => state.closeOtherTabs)
+    const closeAllTabs = usePlaygroundStore((state) => state.closeAllTabs)
 
     const tabsContainerRef = React.useRef<HTMLDivElement>(null)
     const [showLeftArrow, setShowLeftArrow] = React.useState(false)
@@ -213,23 +218,23 @@ export default function PlaygroundPage() {
                 {/* Main Content Area - Keep all tabs mounted but hidden */}
                 <div className="flex-1 flex overflow-hidden relative">
                     {tabs.length === 0 ? (
-                        <PlaygroundHome />
+                        <MemoizedPlaygroundHome />
                     ) : (
                         tabs.map(tab => (
                             <div
                                 key={tab.id}
                                 className={cn(
-                                    "absolute inset-0 flex flex-col bg-background transition-opacity",
+                                    "absolute inset-0 flex flex-col bg-background",
                                     tab.id === activeTabId
                                         ? "opacity-100 z-10 pointer-events-auto"
                                         : "opacity-0 z-0 pointer-events-none"
                                 )}
                             >
                                 {tab.type === 'chat' && (
-                                    <ChatFlow tabId={tab.id} />
+                                    <MemoizedChatFlow tabId={tab.id} />
                                 )}
                                 {tab.type === 'new' && (
-                                    <PlaygroundHome tabId={tab.id} />
+                                    <MemoizedPlaygroundHome tabId={tab.id} />
                                 )}
                             </div>
                         ))

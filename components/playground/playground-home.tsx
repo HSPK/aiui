@@ -1,24 +1,31 @@
 "use client"
 
+import * as React from "react"
 import { usePlaygroundStore, TabType } from "@/lib/stores/playground-store"
 import { MessageSquare, Terminal, FileJson, Database, Sparkles } from "lucide-react"
 import { TemplateCard, Template } from "./template-card"
 import { RecentActivity } from "./recent-activity"
 
 export function PlaygroundHome({ tabId }: { tabId?: string }) {
-    const { addTab, updateTab, tabs, setActiveTab } = usePlaygroundStore()
+    // Only subscribe to actions, not the whole state
+    const addTab = usePlaygroundStore((state) => state.addTab)
+    const updateTab = usePlaygroundStore((state) => state.updateTab)
+    const setActiveTab = usePlaygroundStore((state) => state.setActiveTab)
+    // Get tabs reference for checking existing tab - use getState() to avoid subscription
+    const storeRef = React.useRef(usePlaygroundStore)
 
-    const handleSelect = (types: TabType) => {
+    const handleSelect = React.useCallback((types: TabType) => {
         const conversationId = crypto.randomUUID()
         if (tabId) {
             updateTab(tabId, { type: types, title: "Chat", conversationId })
         } else {
             addTab({ type: types, title: "Chat", conversationId })
         }
-    }
+    }, [tabId, updateTab, addTab])
 
-    const handleOpenHistory = (conv: any) => {
-        const existingTab = tabs.find(t => t.conversationId === conv.id)
+    const handleOpenHistory = React.useCallback((conv: any) => {
+        // Use getState() to get current tabs without subscribing
+        const existingTab = storeRef.current.getState().tabs.find(t => t.conversationId === conv.id)
         if (existingTab) {
             setActiveTab(existingTab.id)
             return
@@ -37,7 +44,7 @@ export function PlaygroundHome({ tabId }: { tabId?: string }) {
                 conversationId: conv.id
             })
         }
-    }
+    }, [tabId, updateTab, addTab, setActiveTab])
 
     const templates: Template[] = [
         {
