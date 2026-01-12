@@ -4,14 +4,14 @@ import { Conversation, Message } from '@/lib/types/playground';
 
 export type TabType = "chat" | "prompt" | "embedding" | "rerank" | "new";
 
-// Per-model configuration
+// Per-model configuration - all fields optional (undefined = use API default)
 export interface ModelConfig {
     temperature?: number;
     maxTokens?: number;
     topP?: number;
     frequencyPenalty?: number;
     presencePenalty?: number;
-    reasoningEffort?: "low" | "medium" | "high" | null;
+    reasoningEffort?: "low" | "medium" | "high";
 }
 
 export interface PlaygroundTab {
