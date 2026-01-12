@@ -150,8 +150,8 @@ export const MessageList = React.memo(({
                     }
 
                     items.push(
-                        <div key={`group-${m.parent_id}`} className="w-full overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent hover:scrollbar-thumb-muted-foreground/50">
-                            <div className="flex gap-3 px-3 sm:px-4" style={{ minWidth: 'min-content' }}>
+                        <div key={`group-${m.parent_id}`} className="w-0 min-w-full overflow-x-auto pb-4 scrollbar-none">
+                            <div className="inline-flex gap-3 px-3 sm:px-4">
                                 {siblings.map((sibling, idx) => (
                                     <ChatMessage
                                         key={sibling.id}
@@ -201,7 +201,7 @@ export const MessageList = React.memo(({
     }, [messages, isLoading, modelProviderMap, onViewGeneration, siblingGroups, selectedSiblings, onSelectSibling, lastAssistantIndex, onRetry])
 
     return (
-        <div className={cn("pb-36 pt-4", messages.length === 0 && "min-h-[calc(100vh-200px)] flex flex-col")}>
+        <div className={cn("pb-36 pt-4 max-w-full overflow-hidden", messages.length === 0 && "min-h-[calc(100vh-200px)] flex flex-col")}>
             {messages.length === 0 && (
                 <div className="flex-1 flex flex-col items-center justify-center p-8 text-muted-foreground opacity-50 space-y-4">
                     <Bot className="h-12 w-12" />

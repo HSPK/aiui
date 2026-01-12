@@ -279,20 +279,22 @@ export function ChatFlow({ tabId }: { tabId: string }) {
     }, [messages, isLoading, tab?.conversationId, tab?.title, tab?.modelIds, settings.defaultSummaryModel, settings.defaultModel, tabId, updateTabTitle])
 
     return (
-        <div className="h-full relative overflow-hidden">
+        <div className="h-full relative overflow-hidden w-full max-w-full">
             <ScrollArea
                 className="h-full w-full"
                 viewportRef={viewportRef}
                 onScroll={handleScroll}
             >
-                <MessageList
-                    messages={messages}
-                    isLoading={isLoading}
-                    onViewGeneration={handleViewGeneration}
-                    onRetry={onRegenerate}
-                    selectedSiblings={selectedSiblings}
-                    onSelectSibling={handleSelectSibling}
-                />
+                <div className="w-full max-w-full overflow-hidden">
+                    <MessageList
+                        messages={messages}
+                        isLoading={isLoading}
+                        onViewGeneration={handleViewGeneration}
+                        onRetry={onRegenerate}
+                        selectedSiblings={selectedSiblings}
+                        onSelectSibling={handleSelectSibling}
+                    />
+                </div>
             </ScrollArea>
 
             <div className="absolute bottom-0 left-0 w-full p-4 z-10 bg-gradient-to-t from-background via-background/90 to-transparent pb-6">
