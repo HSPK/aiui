@@ -19,7 +19,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
     // Use getState() for reading tab data to avoid subscription
     const storeRef = React.useRef(usePlaygroundStore)
     const getTab = React.useCallback(() => storeRef.current.getState().tabs.find(t => t.id === tabId), [tabId])
-    
+
     // Only subscribe to specific fields that need reactivity - NOT modelIds (handled by ConnectedModelSelector)
     const conversationId = usePlaygroundStore(
         (state) => state.tabs.find(t => t.id === tabId)?.conversationId
@@ -30,7 +30,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
     const tabTitle = usePlaygroundStore(
         (state) => state.tabs.find(t => t.id === tabId)?.title
     )
-    
+
     const updateTab = usePlaygroundStore((state) => state.updateTab)
     const updateTabTitle = usePlaygroundStore((state) => state.updateTabTitle)
     const settings = useSettingsStore()

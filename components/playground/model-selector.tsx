@@ -43,10 +43,10 @@ const ModelItem = React.memo(({
     </button>
 ), (prev, next) => {
     // Custom comparison - only re-render if these specific props change
-    return prev.name === next.name && 
-           prev.provider === next.provider && 
-           prev.isSelected === next.isSelected &&
-           prev.onToggle === next.onToggle
+    return prev.name === next.name &&
+        prev.provider === next.provider &&
+        prev.isSelected === next.isSelected &&
+        prev.onToggle === next.onToggle
 })
 ModelItem.displayName = "ModelItem"
 
@@ -63,7 +63,7 @@ export function ModelSelector({ selectedModelIds, onModelSelect, side = "top", a
     const [searchQuery, setSearchQuery] = React.useState("")
     const containerRef = React.useRef<HTMLDivElement>(null)
     const { defaultModel } = useSettingsStore()
-    
+
     // Use refs to keep stable callback references
     const selectedIdsRef = React.useRef(selectedModelIds)
     const onModelSelectRef = React.useRef(onModelSelect)
@@ -125,7 +125,7 @@ export function ModelSelector({ selectedModelIds, onModelSelect, side = "top", a
             onModelSelectRef.current([...currentIds, name])
         }
     }, [])
-    
+
     // Convert to Set for O(1) lookup
     const selectedSet = React.useMemo(() => new Set(selectedModelIds), [selectedModelIds])
 
@@ -217,11 +217,11 @@ export function ConnectedModelSelector({ tabId }: { tabId: string }) {
     const [searchQuery, setSearchQuery] = React.useState("")
     const containerRef = React.useRef<HTMLDivElement>(null)
     const { defaultModel } = useSettingsStore()
-    
+
     // Direct store access - stable refs
     const storeRef = React.useRef(usePlaygroundStore)
     const updateTab = usePlaygroundStore((state) => state.updateTab)
-    
+
     // Only subscribe to modelIds for badge count
     const modelCount = usePlaygroundStore(
         (state) => state.tabs.find(t => t.id === tabId)?.modelIds?.length || 0
@@ -324,7 +324,7 @@ export function ConnectedModelSelector({ tabId }: { tabId: string }) {
                             <SelectedModelTags ids={selectedIds} onRemove={handleToggle} />
                         )}
                     </div>
-                    <ModelList 
+                    <ModelList
                         models={filteredModels}
                         selectedSet={selectedSet}
                         isLoading={isLoading}

@@ -49,10 +49,10 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     // Local input state - isolated from parent to prevent re-renders
     const [input, setInput] = React.useState("")
     const textareaRef = React.useRef<HTMLTextAreaElement>(null)
-    
+
     // Track IME composition state (for Chinese/Japanese/Korean input methods)
     const isComposingRef = React.useRef(false)
-    
+
     // Expose methods to parent
     React.useImperativeHandle(ref, () => ({
         focus: () => textareaRef.current?.focus(),
