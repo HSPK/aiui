@@ -37,7 +37,7 @@ export class ApiError extends Error {
     }
 }
 
-async function fetcher<T>(url: string, options?: RequestInit): Promise<T> {
+async function fetcher<T>(url: string, options?: RequestInit & { skipAuthRedirect?: boolean }): Promise<T> {
     const headers: Record<string, string> = {
         "Content-Type": "application/json",
         ...(options?.headers as Record<string, string>),
@@ -54,12 +54,19 @@ async function fetcher<T>(url: string, options?: RequestInit): Promise<T> {
     });
 
     if (!res.ok) {
-        // Handle 401 specifically
-        if (res.status === 401) {
-            // Only redirect if NOT on the login page already
-            if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-                const currentPath = window.location.pathname + window.location.search;
-                window.location.href = `/login?from=${encodeURIComponent(currentPath)}`;
+        // Handle 401 specifically - but skip for login/auth endpoints
+        if (res.status === 401 && !options?.skipAuthRedirect) {
+            // Clear invalid auth token
+            if (typeof window !== 'undefined') {
+                localStorage.removeItem(AUTH_STORAGE_KEY);
+
+                // Only redirect if NOT on the login page already
+                if (!window.location.pathname.includes('/login')) {
+                    const currentPath = window.location.pathname + window.location.search;
+                    window.location.href = `/login?from=${encodeURIComponent(currentPath)}`;
+                    // Throw to stop execution while redirecting
+                    throw new ApiError("Unauthorized - redirecting to login", 401);
+                }
             }
         }
 
@@ -87,10 +94,11 @@ async function fetcher<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
-    // Auth
+    // Auth - skipAuthRedirect to prevent infinite loop on login failure
     login: (data: AuthParams) => fetcher<void>("/login", {
         method: "POST",
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
+        skipAuthRedirect: true
     }),
     getMe: () => fetcher<User>("/users/me"),
 
