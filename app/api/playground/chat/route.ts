@@ -1,17 +1,27 @@
 import { NextRequest } from "next/server"
 
-export const runtime = "edge"
+// 使用 nodejs runtime 以支持运行时环境变量
+export const runtime = "nodejs"
+// 禁用响应缓存
+export const dynamic = "force-dynamic"
 
 // 获取后端 API 基础地址
-// 使用服务端环境变量 API_URL 或回退到 NEXT_PUBLIC_API_URL
+// 优先使用 BACKEND_URL（服务端），回退到 NEXT_PUBLIC_API_URL
 function getBackendBaseUrl(): string {
-    // 优先使用服务端环境变量
-    const apiUrl = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "/api"
+    // BACKEND_URL: 直接的后端地址，如 http://backend:8000 或 http://backend:8000/v2
+    // NEXT_PUBLIC_API_URL: 前端 API 前缀，如 /api 或 /api/v2
+    const backendUrl = process.env.BACKEND_URL
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api"
 
-    // 如果是相对路径 /api 或 /api/xxx，需要转换为实际后端地址
+    // 如果配置了 BACKEND_URL，直接使用
+    if (backendUrl) {
+        return backendUrl.replace(/\/$/, "")
+    }
+
+    // 否则从 NEXT_PUBLIC_API_URL 推断后端地址
+    // /api -> http://localhost:8000
+    // /api/v2 -> http://localhost:8000/v2
     if (apiUrl.startsWith("/api")) {
-        // /api -> http://localhost:8000
-        // /api/v2 -> http://localhost:8000/v2
         const suffix = apiUrl.replace(/^\/api/, "")
         return `http://localhost:8000${suffix}`
     }
@@ -21,7 +31,7 @@ function getBackendBaseUrl(): string {
         return `http://localhost:8000${apiUrl}`
     }
 
-    // 如果是完整 URL，直接使用（移除末尾斜杠）
+    // 如果是完整 URL，直接使用
     return apiUrl.replace(/\/$/, "")
 }
 
