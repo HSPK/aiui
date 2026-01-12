@@ -4,6 +4,9 @@ import { getAuthHeader } from "@/lib/api"
 import { SSEParser } from "./stream-parser"
 import type { StreamConfig, StreamCallbacks } from "./types"
 
+// 获取 API 基础路径
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api"
+
 export class StreamClient {
     private abortController: AbortController | null = null
 
@@ -18,7 +21,7 @@ export class StreamClient {
         let accumulatedReasoning = ""
 
         try {
-            const res = await fetch("/api/playground/chat", {
+            const res = await fetch(`${API_BASE}/playground/chat`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
