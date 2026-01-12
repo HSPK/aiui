@@ -6,12 +6,122 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Check, Copy, ChevronDown, ChevronRight, ChevronLeft, ThumbsUp, ThumbsDown, Info, RotateCcw } from "lucide-react"
 import { cn, formatMessageTime } from "@/lib/utils"
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { ProviderIcon } from "@/components/ProviderIcon"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { useSettingsStore } from "@/lib/stores/settings-store"
 import { api } from "@/lib/api"
 import { toast } from "sonner"
 import { CodeBlock, InlineCode } from "./code-block"
+
+// Markdown components with full GFM support (tables, lists, checkboxes, etc.)
+const markdownComponents = {
+    pre: ({ children }: any) => <>{children}</>,
+    code: ({ node, inline, className, children, ...props }: any) => {
+        const match = /language-(\w+)/.exec(className || '')
+        const codeString = String(children).replace(/\n$/, '')
+
+        if (!inline && match) {
+            return <CodeBlock language={match[1]} value={codeString} />
+        }
+
+        if (!inline && codeString.includes('\n')) {
+            return <CodeBlock language="text" value={codeString} />
+        }
+
+        return <InlineCode {...props}>{children}</InlineCode>
+    },
+    // Table styling
+    table: ({ children }: any) => (
+        <div className="my-4 overflow-x-auto rounded-lg border border-border">
+            <table className="w-full border-collapse text-sm">{children}</table>
+        </div>
+    ),
+    thead: ({ children }: any) => (
+        <thead className="bg-muted/50">{children}</thead>
+    ),
+    tbody: ({ children }: any) => (
+        <tbody className="divide-y divide-border">{children}</tbody>
+    ),
+    tr: ({ children }: any) => (
+        <tr className="border-b border-border last:border-0">{children}</tr>
+    ),
+    th: ({ children }: any) => (
+        <th className="px-4 py-2 text-left font-semibold text-foreground border-r border-border last:border-r-0">{children}</th>
+    ),
+    td: ({ children }: any) => (
+        <td className="px-4 py-2 text-muted-foreground border-r border-border last:border-r-0">{children}</td>
+    ),
+    // List styling
+    ul: ({ children, className }: any) => {
+        // Check if it's a task list (contains checkboxes)
+        const isTaskList = className?.includes('contains-task-list')
+        return (
+            <ul className={cn(
+                "my-2 ml-4",
+                isTaskList ? "list-none space-y-1" : "list-disc space-y-1"
+            )}>{children}</ul>
+        )
+    },
+    ol: ({ children }: any) => (
+        <ol className="my-2 ml-4 list-decimal space-y-1">{children}</ol>
+    ),
+    li: ({ children, className }: any) => {
+        const isTaskItem = className?.includes('task-list-item')
+        return (
+            <li className={cn(
+                "leading-relaxed",
+                isTaskItem && "flex items-start gap-2 list-none"
+            )}>{children}</li>
+        )
+    },
+    // Task list checkbox
+    input: ({ type, checked, ...props }: any) => {
+        if (type === 'checkbox') {
+            return (
+                <input
+                    type="checkbox"
+                    checked={checked}
+                    readOnly
+                    className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                    {...props}
+                />
+            )
+        }
+        return <input type={type} {...props} />
+    },
+    // Blockquote styling
+    blockquote: ({ children }: any) => (
+        <blockquote className="my-3 border-l-4 border-primary/30 pl-4 italic text-muted-foreground">{children}</blockquote>
+    ),
+    // Horizontal rule
+    hr: () => <hr className="my-4 border-border" />,
+    // Links
+    a: ({ href, children }: any) => (
+        <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2 hover:text-primary/80">{children}</a>
+    ),
+    // Strikethrough (GFM)
+    del: ({ children }: any) => (
+        <del className="text-muted-foreground line-through">{children}</del>
+    ),
+    // Strong/Bold
+    strong: ({ children }: any) => (
+        <strong className="font-semibold text-foreground">{children}</strong>
+    ),
+    // Emphasis/Italic
+    em: ({ children }: any) => (
+        <em className="italic">{children}</em>
+    ),
+    // Headings
+    h1: ({ children }: any) => <h1 className="mt-6 mb-3 text-2xl font-bold">{children}</h1>,
+    h2: ({ children }: any) => <h2 className="mt-5 mb-2 text-xl font-bold">{children}</h2>,
+    h3: ({ children }: any) => <h3 className="mt-4 mb-2 text-lg font-semibold">{children}</h3>,
+    h4: ({ children }: any) => <h4 className="mt-3 mb-1 text-base font-semibold">{children}</h4>,
+    h5: ({ children }: any) => <h5 className="mt-2 mb-1 text-sm font-semibold">{children}</h5>,
+    h6: ({ children }: any) => <h6 className="mt-2 mb-1 text-sm font-medium text-muted-foreground">{children}</h6>,
+    // Paragraph
+    p: ({ children }: any) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+}
 
 interface ChatMessageProps {
     message: any
@@ -176,23 +286,8 @@ export const ChatMessage = React.memo(({
                                     "text-xs text-muted-foreground"
                                 )}>
                                     <ReactMarkdown
-                                        components={{
-                                            pre: ({ children }) => <>{children}</>,
-                                            code: ({ node, inline, className, children, ...props }: any) => {
-                                                const match = /language-(\w+)/.exec(className || '')
-                                                const codeString = String(children).replace(/\n$/, '')
-
-                                                if (!inline && match) {
-                                                    return <CodeBlock language={match[1]} value={codeString} />
-                                                }
-
-                                                if (!inline && codeString.includes('\n')) {
-                                                    return <CodeBlock language="text" value={codeString} />
-                                                }
-
-                                                return <InlineCode {...props}>{children}</InlineCode>
-                                            }
-                                        }}
+                                        remarkPlugins={[remarkGfm]}
+                                        components={markdownComponents}
                                     >
                                         {reasoning_content}
                                     </ReactMarkdown>
@@ -207,24 +302,10 @@ export const ChatMessage = React.memo(({
                             "[&_pre]:m-0 [&_pre]:p-0 [&_pre]:bg-transparent",
                             isTyping && displayContent && "typing-active"
                         )}>
-                            <ReactMarkdown components={{
-                                pre: ({ children }) => <>{children}</>,
-                                code: ({ node, inline, className, children, ...props }: any) => {
-                                    const match = /language-(\w+)/.exec(className || '')
-                                    const codeString = String(children).replace(/\n$/, '')
-
-                                    if (!inline && match) {
-                                        return <CodeBlock language={match[1]} value={codeString} />
-                                    }
-
-                                    // Check if it's a code block without language (multi-line)
-                                    if (!inline && codeString.includes('\n')) {
-                                        return <CodeBlock language="text" value={codeString} />
-                                    }
-
-                                    return <InlineCode {...props}>{children}</InlineCode>
-                                }
-                            }}>
+                            <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
+                                components={markdownComponents}
+                            >
                                 {displayContent}
                             </ReactMarkdown>
                             {isTyping && !displayContent && (

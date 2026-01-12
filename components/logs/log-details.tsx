@@ -23,9 +23,114 @@ import { Loader2, Copy, Check, FileText, Terminal, AlignLeft, Code } from "lucid
 import { formatToLocal, cn } from "@/lib/utils"
 // @ts-ignore
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { useTheme } from "next-themes"
 
 const ReactJson = dynamic(() => import('react-json-view'), { ssr: false })
+
+// Markdown components for log details with full GFM support
+const logMarkdownComponents = {
+    // Code blocks
+    pre: ({ children }: any) => <>{children}</>,
+    code: ({ node, inline, className, children, ...props }: any) => {
+        const codeString = String(children).replace(/\n$/, '')
+        if (!inline) {
+            return (
+                <pre className="my-2 p-3 bg-muted/50 rounded-md overflow-x-auto border">
+                    <code className="text-xs font-mono">{codeString}</code>
+                </pre>
+            )
+        }
+        return (
+            <code className="px-1.5 py-0.5 bg-muted rounded text-xs font-mono" {...props}>
+                {children}
+            </code>
+        )
+    },
+    // Table styling
+    table: ({ children }: any) => (
+        <div className="my-4 overflow-x-auto rounded-lg border border-border">
+            <table className="w-full border-collapse text-sm">{children}</table>
+        </div>
+    ),
+    thead: ({ children }: any) => (
+        <thead className="bg-muted/50">{children}</thead>
+    ),
+    tbody: ({ children }: any) => (
+        <tbody className="divide-y divide-border">{children}</tbody>
+    ),
+    tr: ({ children }: any) => (
+        <tr className="border-b border-border last:border-0">{children}</tr>
+    ),
+    th: ({ children }: any) => (
+        <th className="px-4 py-2 text-left font-semibold text-foreground border-r border-border last:border-r-0">{children}</th>
+    ),
+    td: ({ children }: any) => (
+        <td className="px-4 py-2 text-muted-foreground border-r border-border last:border-r-0">{children}</td>
+    ),
+    // List styling
+    ul: ({ children, className }: any) => {
+        const isTaskList = className?.includes('contains-task-list')
+        return (
+            <ul className={cn(
+                "my-2 ml-4",
+                isTaskList ? "list-none space-y-1" : "list-disc space-y-1"
+            )}>{children}</ul>
+        )
+    },
+    ol: ({ children }: any) => (
+        <ol className="my-2 ml-4 list-decimal space-y-1">{children}</ol>
+    ),
+    li: ({ children, className }: any) => {
+        const isTaskItem = className?.includes('task-list-item')
+        return (
+            <li className={cn(
+                "leading-relaxed",
+                isTaskItem && "flex items-start gap-2 list-none"
+            )}>{children}</li>
+        )
+    },
+    // Task list checkbox
+    input: ({ type, checked, ...props }: any) => {
+        if (type === 'checkbox') {
+            return (
+                <input
+                    type="checkbox"
+                    checked={checked}
+                    readOnly
+                    className="mt-1 h-4 w-4 rounded border-border text-primary"
+                    {...props}
+                />
+            )
+        }
+        return <input type={type} {...props} />
+    },
+    // Blockquote
+    blockquote: ({ children }: any) => (
+        <blockquote className="my-3 border-l-4 border-primary/30 pl-4 italic text-muted-foreground">{children}</blockquote>
+    ),
+    // Horizontal rule
+    hr: () => <hr className="my-4 border-border" />,
+    // Links
+    a: ({ href, children }: any) => (
+        <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2 hover:text-primary/80">{children}</a>
+    ),
+    // Strikethrough
+    del: ({ children }: any) => (
+        <del className="text-muted-foreground line-through">{children}</del>
+    ),
+    // Strong/Bold
+    strong: ({ children }: any) => (
+        <strong className="font-semibold text-foreground">{children}</strong>
+    ),
+    // Headings
+    h1: ({ children }: any) => <h1 className="mt-4 mb-2 text-xl font-bold">{children}</h1>,
+    h2: ({ children }: any) => <h2 className="mt-3 mb-2 text-lg font-bold">{children}</h2>,
+    h3: ({ children }: any) => <h3 className="mt-3 mb-1 text-base font-semibold">{children}</h3>,
+    h4: ({ children }: any) => <h4 className="mt-2 mb-1 text-sm font-semibold">{children}</h4>,
+    // Paragraph
+    p: ({ children }: any) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+}
 
 interface LogDetailsProps {
     logId: string | null;
@@ -98,7 +203,12 @@ function ContentViewer({ title, content, colorClass }: { title: string, content:
                 <div className="p-3 text-sm min-h-[100px] max-h-[500px] overflow-y-auto scrollbar-thin">
                     {viewMode === "preview" ? (
                         <div className="prose prose-sm dark:prose-invert max-w-none break-words leading-relaxed">
-                            <ReactMarkdown>{content}</ReactMarkdown>
+                            <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
+                                components={logMarkdownComponents}
+                            >
+                                {content}
+                            </ReactMarkdown>
                         </div>
                     ) : (
                         <pre className="text-xs font-mono whitespace-pre-wrap break-all text-muted-foreground">
