@@ -2,16 +2,13 @@
 
 import * as React from "react"
 import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
 import { Eraser, Plus, ArrowUp, RotateCcw } from "lucide-react"
 import { ConnectedModelSelector } from "@/components/playground/model-selector"
 import { ChatConfigDropdown } from "@/components/playground/chat-config-dropdown"
 
 interface ChatInputProps {
     tabId: string
-    input: string
-    onInputChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void
-    onSubmit: (e: React.FormEvent) => void
+    onSubmit: (input: string) => void
     onRetry?: () => void
     isLoading: boolean
     onStop: () => void
@@ -27,10 +24,14 @@ interface ChatInputProps {
     onReasoningEffortChange: (value: string | null) => void
 }
 
-export const ChatInput = React.memo(function ChatInput({
+export interface ChatInputRef {
+    focus: () => void
+    clear: () => void
+    getValue: () => string
+}
+
+export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProps>(function ChatInput({
     tabId,
-    input,
-    onInputChange,
     onSubmit,
     onRetry,
     isLoading,
@@ -44,29 +45,52 @@ export const ChatInput = React.memo(function ChatInput({
     onHistoryLimitChange,
     reasoningEffort,
     onReasoningEffortChange,
-}: ChatInputProps) {
+}, ref) {
+    // Local input state - isolated from parent to prevent re-renders
+    const [input, setInput] = React.useState("")
+    const textareaRef = React.useRef<HTMLTextAreaElement>(null)
+    
     // Track IME composition state (for Chinese/Japanese/Korean input methods)
     const isComposingRef = React.useRef(false)
+    
+    // Expose methods to parent
+    React.useImperativeHandle(ref, () => ({
+        focus: () => textareaRef.current?.focus(),
+        clear: () => setInput(""),
+        getValue: () => input,
+    }), [input])
 
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const handleSubmit = React.useCallback((e?: React.FormEvent) => {
+        e?.preventDefault()
+        const value = input.trim()
+        if (value) {
+            onSubmit(value)
+            setInput("")
+        }
+    }, [input, onSubmit])
+
+    const handleKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         // Ignore Enter during IME composition (e.g., selecting Chinese characters)
         if (e.key === 'Enter' && !e.shiftKey && !isComposingRef.current) {
             e.preventDefault()
-            onSubmit(e as any)
+            handleSubmit()
         }
-    }
+    }, [handleSubmit])
 
-    const handleCompositionStart = () => {
+    const handleCompositionStart = React.useCallback(() => {
         isComposingRef.current = true
-    }
+    }, [])
 
-    const handleCompositionEnd = () => {
+    const handleCompositionEnd = React.useCallback(() => {
         isComposingRef.current = false
-    }
+    }, [])
+
+    // Show submit button based on local input state
+    const showSubmit = !isLoading && !lastMessageIsUser && input.trim().length > 0
 
     return (
-        <form onSubmit={onSubmit} className="flex flex-col gap-2 w-full mx-auto max-w-4xl relative">
-            <div className="flex items-end gap-2 bg-background border rounded-2xl px-2 py-2 focus-within:ring-1 focus-within:ring-ring transition-all shadow-lg">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-2 w-full mx-auto max-w-4xl relative">
+            <div className="flex items-end gap-2 bg-background border rounded-2xl px-2 py-2 focus-within:ring-1 focus-within:ring-ring shadow-lg">
                 <Button
                     type="button"
                     variant="ghost"
@@ -77,14 +101,16 @@ export const ChatInput = React.memo(function ChatInput({
                     <Plus className="h-5 w-5" />
                 </Button>
 
-                <Textarea
+                <textarea
+                    ref={textareaRef}
                     value={input}
-                    onChange={onInputChange}
+                    onChange={(e) => setInput(e.target.value)}
                     placeholder="Message AI..."
-                    className="min-h-[32px] max-h-[200px] border-0 focus-visible:ring-0 resize-none p-0 py-[6px] bg-transparent dark:bg-transparent shadow-none flex-1 text-sm leading-[20px]"
+                    className="min-h-[32px] max-h-[200px] border-0 focus-visible:outline-none resize-none p-0 py-[6px] bg-transparent flex-1 text-sm leading-[20px]"
                     onKeyDown={handleKeyDown}
                     onCompositionStart={handleCompositionStart}
                     onCompositionEnd={handleCompositionEnd}
+                    rows={1}
                 />
 
                 <div className="flex items-center gap-1 shrink-0">
@@ -125,7 +151,7 @@ export const ChatInput = React.memo(function ChatInput({
                         >
                             <RotateCcw className="h-4 w-4" />
                         </Button>
-                    ) : (input?.trim() && (
+                    ) : showSubmit && (
                         <Button
                             type="submit"
                             size="icon"
@@ -133,9 +159,9 @@ export const ChatInput = React.memo(function ChatInput({
                         >
                             <ArrowUp className="h-5 w-5" />
                         </Button>
-                    ))}
+                    )}
                 </div>
             </div>
         </form>
     )
-})
+}))

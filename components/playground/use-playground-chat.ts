@@ -40,7 +40,6 @@ export function usePlaygroundChat({
         return []
     })
 
-    const [input, setInput] = useState("")
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState<Error | null>(null)
 
@@ -75,11 +74,9 @@ export function usePlaygroundChat({
         setIsLoading(false)
     }, [])
 
-    const handleSubmit = async (e?: React.FormEvent, options?: { models: string[]; config: any; contextMessageId?: string }) => {
-        e?.preventDefault()
-
-        const safeInput = input || ""
-        if (!safeInput.trim() && !e) return
+    const handleSubmit = async (inputText: string, options?: { models: string[]; config: any; contextMessageId?: string }) => {
+        const userContent = inputText?.trim() || ""
+        if (!userContent) return
         if (isLoading) return
 
         if (!options?.models || options.models.length === 0) {
@@ -87,8 +84,6 @@ export function usePlaygroundChat({
             return
         }
         const models = options.models
-        const userContent = safeInput
-        setInput("")
         setError(null)
         setIsLoading(true)
 
@@ -321,10 +316,6 @@ export function usePlaygroundChat({
             abortControllersRef.current = []
         }
     }
-
-    const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-        setInput(e.target.value)
-    }, [])
 
     // Check if last message is from user (needs retry, can't send new message)
     const lastMessageIsUser = messages.length > 0 && messages[messages.length - 1].role === "user"
@@ -819,9 +810,6 @@ export function usePlaygroundChat({
 
     return {
         messages,
-        input,
-        setInput,
-        handleInputChange,
         handleSubmit,
         handleRetry,
         handleRegenerate,

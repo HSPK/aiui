@@ -69,8 +69,8 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         }))
     }, [tabMessages])
 
-    // Chat hook
-    const { messages, input, handleInputChange, handleSubmit, handleRetry, handleRegenerate, isLoading, setMessages, stop, lastMessageIsUser } = usePlaygroundChat({
+    // Chat hook - no longer need input/handleInputChange from here
+    const { messages, handleSubmit, handleRetry, handleRegenerate, isLoading, setMessages, stop, lastMessageIsUser } = usePlaygroundChat({
         conversationId,
         initialMessages: normalizedMessages,
     })
@@ -170,10 +170,10 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         return config
     }, [temperature, historyLimit, reasoningEffort])
 
-    // Handle form submit - read modelIds from store at submit time
-    const onFormSubmit = React.useCallback((e: React.FormEvent) => {
+    // Handle form submit - receives input text directly from ChatInput
+    const onFormSubmit = React.useCallback((inputText: string) => {
         const currentModelIds = getTab()?.modelIds || []
-        handleSubmit(e, {
+        handleSubmit(inputText, {
             models: currentModelIds.length > 0 ? currentModelIds : ["gpt-3.5-turbo"],
             config: buildChatConfig(),
             contextMessageId: contextAssistantId || undefined
@@ -327,8 +327,6 @@ export function ChatFlow({ tabId }: { tabId: string }) {
 
                 <ChatInput
                     tabId={tabId}
-                    input={input}
-                    onInputChange={handleInputChange}
                     onSubmit={onFormSubmit}
                     onRetry={onRetry}
                     isLoading={isLoading}
