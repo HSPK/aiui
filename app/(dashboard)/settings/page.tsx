@@ -177,7 +177,11 @@ export default function SettingsPage() {
     })
 
     const models = React.useMemo(() => {
-        return Array.isArray(modelsData) ? modelsData : []
+        if (!Array.isArray(modelsData)) return []
+        return modelsData.map(m => ({
+            name: m.name,
+            provider: m.provider ?? undefined
+        }))
     }, [modelsData])
 
     const handleSave = () => {
