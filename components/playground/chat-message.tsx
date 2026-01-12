@@ -211,41 +211,50 @@ export const ChatMessage = React.memo(({
         }
     }, [generation_id, onViewGeneration])
 
+    // Responsive width for sibling cards
+    const siblingWidthClass = React.useMemo(() => {
+        if (!isSibling) return ""
+        // <640px: occupy ~90% viewport width. >=640px: enforce generous min width 576px (unless viewport smaller), allow moderate growth.
+        return cn(
+            "max-sm:w-[85vw]",
+            "sm:min-w-[400px] sm:w-[600px] sm:max-w-[85vw]"
+        )
+    }, [isSibling])
+
     return (
         <div
             onClick={onSelect}
             className={cn(
-                "group relative flex gap-3 sm:gap-4 px-3 sm:px-4 transition-all m-0.5",
-                // Non-sibling normal messages
-                !isSibling && "w-full py-4 sm:py-6 hover:bg-muted/30",
-                // Sibling card - 固定宽度支持横向滚动
-                isSibling && "py-4 border rounded-xl shadow-sm bg-card w-[280px] sm:w-[380px] flex-shrink-0",
+                "group relative transition-all m-0.5",
+                !isSibling && "flex gap-3 sm:gap-4 px-3 sm:px-4 w-full py-4 sm:py-6 hover:bg-muted/30",
+                isSibling && "flex flex-col gap-3 border rounded-xl shadow-sm bg-card flex-shrink-0 px-4 py-4",
+                isSibling && siblingWidthClass,
                 isSibling && isSelected && "ring-0 ring-primary/20 border-primary/30 bg-card",
                 isSibling && !isSelected && "border-border/50 bg-muted/30 hover:bg-card hover:shadow-md",
                 isSibling && onSelect && "cursor-pointer",
                 isSibling && !onSelect && "cursor-default"
             )}
         >
-            <Avatar className="h-7 w-7 sm:h-8 sm:w-8 shrink-0 bg-background border shadow-sm">
-                {role === "assistant" ? (
-                    <AvatarFallback className="bg-transparent">
-                        <ProviderIcon
-                            providerName={provider || "unknown"}
-                            className="h-5 w-5"
-                            width={20}
-                            height={20}
-                        />
-                    </AvatarFallback>
-                ) : (
-                    <AvatarFallback className="bg-muted text-lg">
-                        {userAvatar}
-                    </AvatarFallback>
-                )}
-            </Avatar>
+            <div className="flex flex-col gap-3 w-full">
+                <div className="flex items-center gap-3 sm:gap-4 w-full">
+                    <Avatar className="h-7 w-7 sm:h-8 sm:w-8 shrink-0 bg-background border shadow-sm">
+                        {role === "assistant" ? (
+                            <AvatarFallback className="bg-transparent">
+                                <ProviderIcon
+                                    providerName={provider || "unknown"}
+                                    className="h-5 w-5"
+                                    width={20}
+                                    height={20}
+                                />
+                            </AvatarFallback>
+                        ) : (
+                            <AvatarFallback className="bg-muted text-lg">
+                                {userAvatar}
+                            </AvatarFallback>
+                        )}
+                    </Avatar>
 
-            <div className="flex-1 min-w-0">
-                <div className="space-y-1">
-                    <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
                         <span className="font-semibold text-sm md:truncate md:whitespace-nowrap break-all">
                             {role === 'assistant' ? (provider ? `${provider} / ${model_id || 'Assistant'}` : (model_id || 'Assistant')) : userName}
                         </span>
@@ -263,55 +272,55 @@ export const ChatMessage = React.memo(({
                             </span>
                         )}
                     </div>
+                </div>
 
-                    {/* Reasoning Block */}
-                    {reasoning_content && (
-                        <Collapsible
-                            open={isReasoningOpen}
-                            onOpenChange={setIsReasoningOpen}
-                            className="mb-2"
+                {/* Reasoning Block */}
+                {reasoning_content && (
+                    <Collapsible
+                        open={isReasoningOpen}
+                        onOpenChange={setIsReasoningOpen}
+                        className="mb-2"
+                    >
+                        <CollapsibleTrigger asChild>
+                            <Button variant="ghost" size="sm" className="h-6 p-2 hover:bg-transparent text-muted-foreground text-xs flex items-center gap-2 w-auto justify-start font-normal opacity-70 hover:opacity-100 transition-opacity">
+                                <span className="flex items-center justify-center w-4 h-4 rounded bg-muted/50">
+                                    {isReasoningOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                                </span>
+                                {isTyping && (!content || content.length === 0) ? "Reasoning..." : "Reasoning process"}
+                            </Button>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                            <div className={cn(
+                                "mt-2 pl-4 border-l-2 border-border/40 ml-2",
+                                "prose prose-sm prose-neutral dark:prose-invert max-w-none break-words leading-relaxed",
+                                "text-xs text-muted-foreground"
+                            )}>
+                                <ReactMarkdown
+                                    remarkPlugins={[remarkGfm]}
+                                    components={markdownComponents}
+                                >
+                                    {reasoning_content}
+                                </ReactMarkdown>
+                            </div>
+                        </CollapsibleContent>
+                    </Collapsible>
+                )}
+
+                <div className="w-full min-w-0">
+                    <div className={cn(
+                        "prose prose-sm dark:prose-invert max-w-none break-words relative leading-relaxed",
+                        "[&_pre]:m-0 [&_pre]:p-0 [&_pre]:bg-transparent",
+                        isTyping && displayContent && "typing-active"
+                    )}>
+                        <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            components={markdownComponents}
                         >
-                            <CollapsibleTrigger asChild>
-                                <Button variant="ghost" size="sm" className="h-6 p-2 hover:bg-transparent text-muted-foreground text-xs flex items-center gap-2 w-auto justify-start font-normal opacity-70 hover:opacity-100 transition-opacity">
-                                    <span className="flex items-center justify-center w-4 h-4 rounded bg-muted/50">
-                                        {isReasoningOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                                    </span>
-                                    {isTyping && (!content || content.length === 0) ? "Reasoning..." : "Reasoning process"}
-                                </Button>
-                            </CollapsibleTrigger>
-                            <CollapsibleContent>
-                                <div className={cn(
-                                    "mt-2 pl-4 border-l-2 border-border/40 ml-2",
-                                    "prose prose-sm prose-neutral dark:prose-invert max-w-none break-words leading-relaxed",
-                                    "text-xs text-muted-foreground"
-                                )}>
-                                    <ReactMarkdown
-                                        remarkPlugins={[remarkGfm]}
-                                        components={markdownComponents}
-                                    >
-                                        {reasoning_content}
-                                    </ReactMarkdown>
-                                </div>
-                            </CollapsibleContent>
-                        </Collapsible>
-                    )}
-
-                    <div className="w-full min-w-0">
-                        <div className={cn(
-                            "prose prose-sm dark:prose-invert max-w-none break-words relative leading-relaxed",
-                            "[&_pre]:m-0 [&_pre]:p-0 [&_pre]:bg-transparent",
-                            isTyping && displayContent && "typing-active"
-                        )}>
-                            <ReactMarkdown
-                                remarkPlugins={[remarkGfm]}
-                                components={markdownComponents}
-                            >
-                                {displayContent}
-                            </ReactMarkdown>
-                            {isTyping && !displayContent && (
-                                <span className="typing-cursor text-primary">▋</span>
-                            )}
-                        </div>
+                            {displayContent}
+                        </ReactMarkdown>
+                        {isTyping && !displayContent && (
+                            <span className="typing-cursor text-primary">▋</span>
+                        )}
                     </div>
                 </div>
             </div>
