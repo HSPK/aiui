@@ -131,7 +131,7 @@ export const MessageList = React.memo(({
                         return // Skip - already rendered this group
                     }
                     seenParentIds.add(m.parent_id)
-                    
+
                     const selectedIdx = selectedSiblings?.get(m.parent_id) ?? siblings.length - 1
                     // Use date of the LAST sibling for separator logic (to keep it consistent)
                     const lastSibling = siblings[siblings.length - 1]
@@ -150,21 +150,14 @@ export const MessageList = React.memo(({
                     }
 
                     items.push(
-                        <div key={`group-${m.parent_id}`} className={cn(
-                            "w-full px-3 sm:px-4 pb-4",
-                            siblings.length > 2 && "overflow-x-auto scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent hover:scrollbar-thumb-muted-foreground/50"
-                        )}>
-                            <div className={cn(
-                                siblings.length === 2 
-                                    ? "grid grid-cols-2 gap-3" 
-                                    : "flex gap-3 w-max"
-                            )}>
+                        <div key={`group-${m.parent_id}`} className="w-full overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent hover:scrollbar-thumb-muted-foreground/50">
+                            <div className="flex gap-3 px-3 sm:px-4" style={{ minWidth: 'min-content' }}>
                                 {siblings.map((sibling, idx) => (
                                     <ChatMessage
                                         key={sibling.id}
                                         message={sibling}
                                         provider={sibling.model_id ? modelProviderMap.get(sibling.model_id) : undefined}
-                                        isTyping={isLoading && sibling.id === lastAssistantIndex}
+                                        isTyping={isLoading && !sibling.generation_id}
                                         onViewGeneration={onViewGeneration}
                                         isLastAssistant={sibling.id === lastAssistantIndex}
                                         onRetry={onRetry}
@@ -196,7 +189,7 @@ export const MessageList = React.memo(({
                     key={m.id}
                     message={m}
                     provider={m.model_id ? modelProviderMap.get(m.model_id) : undefined}
-                    isTyping={isLoading && index === messages.length - 1 && m.role === 'assistant'}
+                    isTyping={isLoading && m.role === 'assistant' && !m.generation_id}
                     onViewGeneration={onViewGeneration}
                     isLastAssistant={m.id === lastAssistantIndex && m.role === 'assistant'}
                     onRetry={m.role === 'assistant' ? onRetry : undefined}

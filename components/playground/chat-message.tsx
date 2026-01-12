@@ -29,10 +29,10 @@ interface ChatMessageProps {
     onSelect?: () => void
 }
 
-export const ChatMessage = React.memo(({ 
-    message, 
-    provider, 
-    isTyping, 
+export const ChatMessage = React.memo(({
+    message,
+    provider,
+    isTyping,
     onViewGeneration,
     isLastAssistant,
     onRetry,
@@ -102,17 +102,15 @@ export const ChatMessage = React.memo(({
     }, [generation_id, onViewGeneration])
 
     return (
-        <div 
+        <div
             onClick={onSelect}
             className={cn(
-                "group relative flex gap-3 sm:gap-4 px-3 sm:px-4 transition-all",
+                "group relative flex gap-3 sm:gap-4 px-3 sm:px-4 transition-all m-0.5",
                 // Non-sibling normal messages
                 !isSibling && "w-full py-4 sm:py-6 hover:bg-muted/30",
-                // Sibling card - 2个时自适应宽度(grid控制)，3个以上时固定宽度滚动
-                isSibling && "py-4 border rounded-xl shadow-sm bg-card",
-                isSibling && siblingCount === 2 && "w-full",
-                isSibling && (siblingCount ?? 0) > 2 && "min-w-[300px] sm:min-w-[400px] flex-shrink-0",
-                isSibling && isSelected && "ring-2 ring-primary border-primary/30 bg-card",
+                // Sibling card - 固定宽度支持横向滚动
+                isSibling && "py-4 border rounded-xl shadow-sm bg-card w-[280px] sm:w-[380px] flex-shrink-0",
+                isSibling && isSelected && "ring-1 ring-primary/20 border-primary/30 bg-card",
                 isSibling && !isSelected && "border-border/50 bg-muted/30 hover:bg-card hover:shadow-md",
                 isSibling && onSelect && "cursor-pointer",
                 isSibling && !onSelect && "cursor-default"
@@ -145,11 +143,11 @@ export const ChatMessage = React.memo(({
                             {formatMessageTime(messageDate)}
                         </span>
                         {isSibling && isSelected && onSelect && (
-                            <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium border border-primary/20">
+                            <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium border border-primary/10">
                                 Active Context
                             </span>
                         )}
-                         {isSibling && isSelected && !onSelect && (
+                        {isSibling && isSelected && !onSelect && (
                             <span className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full font-medium border">
                                 Used Context
                             </span>
