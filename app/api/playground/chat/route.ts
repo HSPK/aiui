@@ -3,13 +3,10 @@ import { NextRequest } from "next/server"
 export const runtime = "edge"
 
 // 获取后端 API 基础地址
-// NEXT_PUBLIC_API_URL 可能是:
-// - "/api" (默认，通过 Next.js rewrites 代理到 localhost:8000)
-// - "/api/v2" (代理路径，实际后端是 localhost:8000/v2)
-// - "http://backend:8000" (完整 URL)
-// - "http://backend:8000/v2" (带路径的完整 URL)
+// 使用服务端环境变量 API_URL 或回退到 NEXT_PUBLIC_API_URL
 function getBackendBaseUrl(): string {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "/api"
+    // 优先使用服务端环境变量
+    const apiUrl = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "/api"
 
     // 如果是相对路径 /api 或 /api/xxx，需要转换为实际后端地址
     if (apiUrl.startsWith("/api")) {
@@ -19,8 +16,13 @@ function getBackendBaseUrl(): string {
         return `http://localhost:8000${suffix}`
     }
 
-    // 如果是完整 URL，直接使用
-    return apiUrl
+    // 如果只是路径前缀如 /v2，添加默认 host
+    if (apiUrl.startsWith("/")) {
+        return `http://localhost:8000${apiUrl}`
+    }
+
+    // 如果是完整 URL，直接使用（移除末尾斜杠）
+    return apiUrl.replace(/\/$/, "")
 }
 
 export async function POST(req: NextRequest) {
@@ -28,7 +30,14 @@ export async function POST(req: NextRequest) {
     const authHeader = req.headers.get("Authorization") || ""
 
     const backendUrl = getBackendBaseUrl()
-    const response = await fetch(`${backendUrl}/playground/chat`, {
+    const targetUrl = `${backendUrl}/playground/chat`
+    
+    console.log("[Playground Chat] API_URL:", process.env.API_URL)
+    console.log("[Playground Chat] NEXT_PUBLIC_API_URL:", process.env.NEXT_PUBLIC_API_URL)
+    console.log("[Playground Chat] Backend URL:", backendUrl)
+    console.log("[Playground Chat] Target URL:", targetUrl)
+
+    const response = await fetch(targetUrl, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
