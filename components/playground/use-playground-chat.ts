@@ -110,7 +110,8 @@ export function usePlaygroundChat({
                 userContent,
                 parentMessageId: userParentId,
                 models,
-                config: options?.config
+                config: options?.config,
+                getModelConfig: options?.getModelConfig
             })
         } catch (err: any) {
             console.error("Chat Error:", err)
@@ -141,7 +142,8 @@ export function usePlaygroundChat({
                 userContent: lastUserMessage.content,
                 parentMessageId: lastUserMessage.parent_id,
                 models,
-                config: options?.config
+                config: options?.config,
+                getModelConfig: options?.getModelConfig
             })
         } catch (err: any) {
             console.error("Chat Retry Error:", err)
@@ -185,7 +187,8 @@ export function usePlaygroundChat({
                 userContent: userMessage.content,
                 parentMessageId: userMessage.parent_id,
                 models,
-                config: options?.config
+                config: options?.config,
+                getModelConfig: options?.getModelConfig
             })
         } catch (err: any) {
             console.error("Chat Regenerate Error:", err)

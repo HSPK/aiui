@@ -4,6 +4,16 @@ import { Conversation, Message } from '@/lib/types/playground';
 
 export type TabType = "chat" | "prompt" | "embedding" | "rerank" | "new";
 
+// Per-model configuration
+export interface ModelConfig {
+    temperature?: number;
+    maxTokens?: number;
+    topP?: number;
+    frequencyPenalty?: number;
+    presencePenalty?: number;
+    reasoningEffort?: "low" | "medium" | "high" | null;
+}
+
 export interface PlaygroundTab {
     id: string;
     type: TabType;
@@ -11,11 +21,12 @@ export interface PlaygroundTab {
     conversationId?: string;
     modelId?: string; // Kept for legacy
     modelIds?: string[]; // Use this for Multi-Model Support
+    modelConfigs?: Record<string, ModelConfig>; // Per-model configs
     systemPrompt?: string;
-    temperature?: number;
+    temperature?: number; // Global fallback
     maxTokens?: number;
-    historyLimit?: number; // Added
-    messages: Message[]; // Initial messages if any
+    historyLimit?: number;
+    messages: Message[];
     scrollPosition?: number;
 }
 

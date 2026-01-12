@@ -4,18 +4,14 @@ import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Plus, ArrowUp, RotateCcw } from "lucide-react"
 import { ConnectedModelSelector } from "@/components/playground/model-selector"
-import { ChatConfigDropdown } from "@/components/playground/chat-config-dropdown"
+import { ModelChipsWithConfig } from "@/components/playground/model-chips-with-config"
 
 export interface ChatInputConfig {
-    temperature?: number
     historyLimit: number
-    reasoningEffort: string | null
 }
 
 export interface ChatInputCallbacks {
-    onTemperatureChange: (value: number | undefined) => void
     onHistoryLimitChange: (value: number) => void
-    onReasoningEffortChange: (value: string | null) => void
 }
 
 interface ChatInputProps {
@@ -115,6 +111,16 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
 
     return (
         <form onSubmit={handleSubmit} className="flex flex-col gap-2 w-full mx-auto max-w-4xl relative">
+            {/* Model chips row - shows above input when models selected */}
+            <div className="flex items-center gap-2 px-2">
+                <ConnectedModelSelector tabId={tabId} />
+                <ModelChipsWithConfig
+                    tabId={tabId}
+                    historyLimit={configRef.current?.historyLimit ?? 20}
+                    onHistoryLimitChange={callbacksRef.current?.onHistoryLimitChange ?? (() => { })}
+                />
+            </div>
+
             <div className="flex items-end gap-2 bg-background border rounded-2xl px-2 py-2 focus-within:ring-1 focus-within:ring-ring shadow-lg">
                 <Button
                     type="button"
@@ -138,13 +144,6 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
                     rows={1}
                 />
                 <div className="flex items-center gap-1 shrink-0">
-                    <ConnectedModelSelector tabId={tabId} />
-
-                    <ChatConfigDropdown
-                        configRef={configRef}
-                        callbacksRef={callbacksRef}
-                    />
-
                     {isLoading ? (
                         <Button
                             type="button"

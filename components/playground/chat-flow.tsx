@@ -15,7 +15,8 @@ import {
     useSiblingNavigation,
     useContextAssistant,
     useTitleGeneration,
-    useMessageSync
+    useMessageSync,
+    useModelConfigs
 } from "@/components/playground/hooks"
 import { LogDetails } from "@/components/logs/log-details"
 import { useShallow } from "zustand/react/shallow"
@@ -40,8 +41,11 @@ export function ChatFlow({ tabId }: { tabId: string }) {
 
     // --- Custom Hooks ---
 
-    // Config management (temperature, historyLimit, reasoningEffort)
-    const { configRef, callbacksRef, buildChatConfig } = useChatConfig(tabId)
+    // Global config (historyLimit)
+    const { configRef, callbacksRef, historyLimit } = useChatConfig(tabId)
+
+    // Per-model configs
+    const { buildConfigForModel } = useModelConfigs(tabId)
 
     // Sibling navigation state
     const { selectedSiblings, onSelectSibling } = useSiblingNavigation()
@@ -124,31 +128,36 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         setSelectedGenerationId(generationId)
     }, [])
 
+    // Build per-model config for API calls
+    const buildPerModelConfig = React.useCallback((modelId: string) => {
+        return buildConfigForModel(modelId, historyLimit)
+    }, [buildConfigForModel, historyLimit])
+
     // Form submit - receives input text directly from ChatInput
     const onFormSubmit = React.useCallback((inputText: string) => {
         const modelIds = getModelIds()
         handleSubmit(inputText, {
             models: modelIds.length > 0 ? modelIds : ["gpt-3.5-turbo"],
-            config: buildChatConfig(),
+            getModelConfig: buildPerModelConfig,
             contextMessageId: contextAssistantIdRef.current
         })
-    }, [buildChatConfig, handleSubmit, getModelIds, contextAssistantIdRef])
+    }, [buildPerModelConfig, handleSubmit, getModelIds, contextAssistantIdRef])
 
     // Retry (when last message is user - no assistant response yet)
     const onRetry = React.useCallback(() => {
         handleRetry({
             models: getModelIds(),
-            config: buildChatConfig()
+            getModelConfig: buildPerModelConfig
         })
-    }, [buildChatConfig, handleRetry, getModelIds])
+    }, [buildPerModelConfig, handleRetry, getModelIds])
 
     // Regenerate (create sibling response for last assistant message)
     const onRegenerate = React.useCallback(() => {
         handleRegenerate({
             models: getModelIds(),
-            config: buildChatConfig()
+            getModelConfig: buildPerModelConfig
         })
-    }, [buildChatConfig, handleRegenerate, getModelIds])
+    }, [buildPerModelConfig, handleRegenerate, getModelIds])
 
     // --- Render ---
 

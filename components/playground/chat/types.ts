@@ -31,7 +31,8 @@ export type StreamCallbacks = {
 
 export type ChatOptions = {
     models: string[]
-    config?: Record<string, any>
+    config?: Record<string, any> // Deprecated: use getModelConfig
+    getModelConfig?: (modelId: string) => Record<string, any> // Per-model config
     contextMessageId?: string
 }
 

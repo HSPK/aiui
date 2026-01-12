@@ -13,7 +13,8 @@ type StreamParams = {
     userContent: string
     parentMessageId?: string
     models: string[]
-    config?: Record<string, any>
+    config?: Record<string, any> // Deprecated: global config fallback
+    getModelConfig?: (modelId: string) => Record<string, any> // Per-model config
 }
 
 export function useChatStream(
@@ -35,7 +36,7 @@ export function useChatStream(
      * Stream responses for multiple models
      */
     const streamMultiple = useCallback(async (params: StreamParams): Promise<void> => {
-        const { userMessageId, userContent, parentMessageId, models, config } = params
+        const { userMessageId, userContent, parentMessageId, models, config, getModelConfig } = params
 
         // Create assistant placeholders
         const assistantMsgs: Message[] = models.map(model => ({
@@ -62,6 +63,9 @@ export function useChatStream(
                 updateInterval
             )
 
+            // Get per-model config or fallback to global config
+            const modelConfig = getModelConfig ? getModelConfig(model) : config
+
             return (async () => {
                 try {
                     await client.stream(
@@ -71,7 +75,7 @@ export function useChatStream(
                             message: userContent,
                             userMessageId,
                             parentMessageId,
-                            additionalConfig: config
+                            additionalConfig: modelConfig
                         },
                         {
                             onContent: (content, reasoning) => {
