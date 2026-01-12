@@ -295,12 +295,9 @@ export function usePlaygroundChat({
                         console.error("Chat Error:", err)
                         setError(err)
                         toast.error(err.message || "Failed to send message")
+                        // Remove the failed assistant message from the list
                         setMessages(prev =>
-                            prev.map(m =>
-                                (m.id === assistantMsg.id || m.id === serverMessageId)
-                                    ? { ...m, content: "Error: " + (err.message || "Failed to generate response") }
-                                    : m
-                            )
+                            prev.filter(m => m.id !== assistantMsg.id && m.id !== serverMessageId)
                         )
                     }
                 }
@@ -457,6 +454,7 @@ export function usePlaygroundChat({
                     const reader = res.body.getReader()
                     const decoder = new TextDecoder()
                     let buffer = ""
+                    let currentEvent: string | null = null
 
                     while (true) {
                         const { value, done } = await reader.read()
@@ -530,12 +528,9 @@ export function usePlaygroundChat({
                         console.error("Chat Retry Error:", err)
                         setError(err)
                         toast.error(err.message || "Failed to retry message")
+                        // Remove the failed assistant message from the list
                         setMessages(prev =>
-                            prev.map(m =>
-                                (m.id === assistantMsg.id || m.id === serverMessageId)
-                                    ? { ...m, content: "Error: " + (err.message || "Failed to generate response") }
-                                    : m
-                            )
+                            prev.filter(m => m.id !== assistantMsg.id && m.id !== serverMessageId)
                         )
                     }
                 }
@@ -713,6 +708,7 @@ export function usePlaygroundChat({
                     const reader = res.body.getReader()
                     const decoder = new TextDecoder()
                     let buffer = ""
+                    let currentEvent: string | null = null
 
                     while (true) {
                         const { value, done } = await reader.read()
@@ -786,12 +782,9 @@ export function usePlaygroundChat({
                         console.error("Chat Regenerate Error:", err)
                         setError(err)
                         toast.error(err.message || "Failed to regenerate message")
+                        // Remove the failed assistant message from the list
                         setMessages(prev =>
-                            prev.map(m =>
-                                (m.id === assistantMsg.id || m.id === serverMessageId)
-                                    ? { ...m, content: "Error: " + (err.message || "Failed to generate response") }
-                                    : m
-                            )
+                            prev.filter(m => m.id !== assistantMsg.id && m.id !== serverMessageId)
                         )
                     }
                 }
