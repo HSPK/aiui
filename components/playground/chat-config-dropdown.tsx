@@ -10,26 +10,33 @@ import {
     DropdownMenuTrigger,
     DropdownMenuContent,
 } from "@/components/ui/dropdown-menu"
+import type { ChatInputConfig, ChatInputCallbacks } from "./chat-input"
 
 interface ChatConfigDropdownProps {
-    temperature?: number
-    onTemperatureChange: (value: number | undefined) => void
-    historyLimit: number
-    onHistoryLimitChange: (value: number) => void
-    reasoningEffort: string | null
-    onReasoningEffortChange: (value: string | null) => void
+    configRef: React.RefObject<ChatInputConfig>
+    callbacksRef: React.RefObject<ChatInputCallbacks>
 }
 
-export function ChatConfigDropdown({
-    temperature,
-    onTemperatureChange,
-    historyLimit,
-    onHistoryLimitChange,
-    reasoningEffort,
-    onReasoningEffortChange,
+export const ChatConfigDropdown = React.memo(function ChatConfigDropdown({
+    configRef,
+    callbacksRef,
 }: ChatConfigDropdownProps) {
+    // Local state for controlled inputs - synced from refs when dropdown opens
+    const [localTemp, setLocalTemp] = React.useState<number | undefined>(undefined)
+    const [localHistory, setLocalHistory] = React.useState(20)
+    const [localReasoning, setLocalReasoning] = React.useState<string | null>(null)
+
+    // Sync local state when dropdown opens
+    const handleOpenChange = React.useCallback((open: boolean) => {
+        if (open && configRef.current) {
+            setLocalTemp(configRef.current.temperature)
+            setLocalHistory(configRef.current.historyLimit)
+            setLocalReasoning(configRef.current.reasoningEffort)
+        }
+    }, [configRef])
+
     return (
-        <DropdownMenu>
+        <DropdownMenu onOpenChange={handleOpenChange}>
             <DropdownMenuTrigger asChild>
                 <Button
                     type="button"
@@ -46,7 +53,7 @@ export function ChatConfigDropdown({
 
                     <div className="grid gap-2">
                         <Label htmlFor="temperature">
-                            Temperature: {temperature ?? 'Default'}
+                            Temperature: {localTemp ?? 'Default'}
                         </Label>
                         <Input
                             id="temperature"
@@ -54,10 +61,11 @@ export function ChatConfigDropdown({
                             min={0}
                             max={2}
                             step={0.1}
-                            value={temperature ?? ''}
+                            value={localTemp ?? ''}
                             onChange={(e) => {
                                 const val = e.target.value ? parseFloat(e.target.value) : undefined
-                                onTemperatureChange(val)
+                                setLocalTemp(val)
+                                callbacksRef.current?.onTemperatureChange(val)
                             }}
                             className="h-8"
                             placeholder="Default (Empty)"
@@ -69,8 +77,12 @@ export function ChatConfigDropdown({
                         <select
                             id="reasoning-effort"
                             className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                            value={reasoningEffort || ""}
-                            onChange={(e) => onReasoningEffortChange(e.target.value || null)}
+                            value={localReasoning || ""}
+                            onChange={(e) => {
+                                const val = e.target.value || null
+                                setLocalReasoning(val)
+                                callbacksRef.current?.onReasoningEffortChange(val)
+                            }}
                         >
                             <option value="">Default (Empty)</option>
                             <option value="low">Low</option>
@@ -85,10 +97,11 @@ export function ChatConfigDropdown({
                             id="history"
                             type="number"
                             min={0}
-                            value={historyLimit}
+                            value={localHistory}
                             onChange={(e) => {
                                 const val = parseInt(e.target.value)
-                                onHistoryLimitChange(val)
+                                setLocalHistory(val)
+                                callbacksRef.current?.onHistoryLimitChange(val)
                             }}
                         />
                     </div>
@@ -96,4 +109,4 @@ export function ChatConfigDropdown({
             </DropdownMenuContent>
         </DropdownMenu>
     )
-}
+})

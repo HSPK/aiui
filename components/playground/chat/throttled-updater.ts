@@ -1,6 +1,6 @@
 // Throttled Message Updater - handles batched UI updates during streaming
+// Optimized: Removed flushSync to allow React to batch updates naturally
 
-import { flushSync } from "react-dom"
 import type { Message, MessageUpdate } from "./types"
 
 type SetMessages = React.Dispatch<React.SetStateAction<Message[]>>
@@ -8,12 +8,13 @@ type SetMessages = React.Dispatch<React.SetStateAction<Message[]>>
 export class ThrottledUpdater {
     private lastUpdateTime = 0
     private isFirstUpdate = true
-    private pendingTimeout: ReturnType<typeof setTimeout> | null = null
+    private pendingRAF: number | null = null
 
     private accumulatedContent = ""
     private accumulatedReasoning = ""
     private serverMessageId: string | null = null
     private serverGenerationId: string | null = null
+    private pendingUpdate = false
 
     constructor(
         private readonly clientMessageId: string,
@@ -35,18 +36,15 @@ export class ThrottledUpdater {
     appendContent(content: string, reasoning: string) {
         if (content) this.accumulatedContent += content
         if (reasoning) this.accumulatedReasoning += reasoning
-        this.scheduleUpdate(false)
+        this.scheduleUpdate()
     }
 
     /**
      * Force immediate update with final content
      */
     flush(includeIds = true) {
-        if (this.pendingTimeout) {
-            clearTimeout(this.pendingTimeout)
-            this.pendingTimeout = null
-        }
-        this.doUpdate(true, includeIds)
+        this.cancelPendingUpdate()
+        this.doUpdate(includeIds)
     }
 
     /**
@@ -63,36 +61,48 @@ export class ThrottledUpdater {
      * Clean up resources
      */
     dispose() {
-        if (this.pendingTimeout) {
-            clearTimeout(this.pendingTimeout)
-            this.pendingTimeout = null
-        }
+        this.cancelPendingUpdate()
     }
 
-    private scheduleUpdate(force: boolean) {
+    private cancelPendingUpdate() {
+        if (this.pendingRAF !== null) {
+            cancelAnimationFrame(this.pendingRAF)
+            this.pendingRAF = null
+        }
+        this.pendingUpdate = false
+    }
+
+    private scheduleUpdate() {
+        // Already have a pending update scheduled
+        if (this.pendingUpdate) return
+
         const now = Date.now()
         const timeSinceLastUpdate = now - this.lastUpdateTime
 
-        if (this.pendingTimeout) {
-            clearTimeout(this.pendingTimeout)
-            this.pendingTimeout = null
-        }
-
-        if (this.isFirstUpdate || force) {
-            this.doUpdate(force, false)
-            return
-        }
-
-        if (timeSinceLastUpdate >= this.minInterval) {
-            this.doUpdate(false, false)
+        // First update or enough time passed - update on next frame
+        if (this.isFirstUpdate || timeSinceLastUpdate >= this.minInterval) {
+            this.pendingUpdate = true
+            this.pendingRAF = requestAnimationFrame(() => {
+                this.pendingRAF = null
+                this.pendingUpdate = false
+                this.doUpdate(false)
+            })
         } else {
-            this.pendingTimeout = setTimeout(() => {
-                this.doUpdate(false, false)
-            }, this.minInterval - timeSinceLastUpdate)
+            // Schedule for later using RAF chain
+            this.pendingUpdate = true
+            const delay = this.minInterval - timeSinceLastUpdate
+            setTimeout(() => {
+                if (!this.pendingUpdate) return
+                this.pendingRAF = requestAnimationFrame(() => {
+                    this.pendingRAF = null
+                    this.pendingUpdate = false
+                    this.doUpdate(false)
+                })
+            }, delay)
         }
     }
 
-    private doUpdate(force: boolean, includeIds: boolean) {
+    private doUpdate(includeIds: boolean) {
         this.isFirstUpdate = false
         this.lastUpdateTime = Date.now()
 
@@ -109,14 +119,13 @@ export class ThrottledUpdater {
         const clientId = this.clientMessageId
         const serverId = this.serverMessageId
 
-        flushSync(() => {
-            this.setMessages(prev =>
-                prev.map(m =>
-                    (m.id === clientId || m.id === serverId)
-                        ? { ...m, ...update }
-                        : m
-                )
+        // Use normal setState - React 18+ batches automatically
+        this.setMessages(prev =>
+            prev.map(m =>
+                (m.id === clientId || m.id === serverId)
+                    ? { ...m, ...update }
+                    : m
             )
-        })
+        )
     }
 }

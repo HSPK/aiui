@@ -119,27 +119,59 @@ export function ChatFlow({ tabId }: { tabId: string }) {
             return lastAssistant?.id
         }
 
+        // Get siblings of the last user message
         const siblings = messages.filter(m => m.role === 'assistant' && m.parent_id === lastUser.id)
         if (siblings.length === 0) {
             const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant')
             return lastAssistant?.id
         }
 
-        const selectedIdx = selectedSiblings.get(lastUser.id) ?? siblings.length - 1
-        const safeIdx = Math.min(selectedIdx, siblings.length - 1)
-        return siblings[safeIdx]?.id
+        // Sort siblings by created_at
+        siblings.sort((a, b) => {
+            const dateA = new Date(a.created_at || a.createdAt || 0).getTime()
+            const dateB = new Date(b.created_at || b.createdAt || 0).getTime()
+            return dateA - dateB
+        })
+
+        // Priority: 1. User selection (from selectedSiblings Map)
+        if (selectedSiblings.has(lastUser.id)) {
+            const selectedIdx = selectedSiblings.get(lastUser.id)!
+            const safeIdx = Math.min(selectedIdx, siblings.length - 1)
+            return siblings[safeIdx]?.id
+        }
+
+        // Priority: 2. Find which sibling is used as parent by subsequent messages
+        const usedAsParent = new Set<string>()
+        messages.forEach((m: any) => {
+            if (m.parent_id) usedAsParent.add(m.parent_id)
+        })
+
+        for (let i = 0; i < siblings.length; i++) {
+            if (usedAsParent.has(siblings[i].id)) {
+                return siblings[i].id
+            }
+        }
+
+        // Priority: 3. Default to last sibling
+        return siblings[siblings.length - 1]?.id
     }, [messages, selectedSiblings])
 
-    // Memoize config change handlers
-    const handleTemperatureChange = React.useCallback((val: number | undefined) => {
-        setTemperature(val)
-        updateTab(tabId, { temperature: val })
-    }, [tabId, updateTab])
+    // Config ref for ChatInput - prevents re-renders
+    const configRef = React.useRef({ temperature, historyLimit, reasoningEffort })
+    configRef.current = { temperature, historyLimit, reasoningEffort }
 
-    const handleHistoryLimitChange = React.useCallback((val: number) => {
-        setHistoryLimit(val)
-        updateTab(tabId, { historyLimit: val })
-    }, [tabId, updateTab])
+    // Callbacks ref for ChatInput - stable reference
+    const configCallbacksRef = React.useRef({
+        onTemperatureChange: (val: number | undefined) => {
+            setTemperature(val)
+            updateTab(tabId, { temperature: val })
+        },
+        onHistoryLimitChange: (val: number) => {
+            setHistoryLimit(val)
+            updateTab(tabId, { historyLimit: val })
+        },
+        onReasoningEffortChange: setReasoningEffort
+    })
 
     const handleClearMessages = React.useCallback(() => {
         setMessages([])
@@ -159,8 +191,9 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         })
     }, [])
 
-    // Build chat config
+    // Build chat config - use ref to avoid dependency changes (reuse configRef from above)
     const buildChatConfig = React.useCallback(() => {
+        const { temperature, historyLimit, reasoningEffort } = configRef.current
         const config: any = {
             stream: true,
             conv_history_limit: historyLimit
@@ -168,17 +201,22 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         if (temperature !== undefined) config.temperature = temperature
         if (reasoningEffort) config.reasoning_effort = reasoningEffort
         return config
-    }, [temperature, historyLimit, reasoningEffort])
+    }, []) // No dependencies - uses ref
+
+    // Context assistant ID ref for stable callback
+    const contextAssistantIdRef = React.useRef(contextAssistantId)
+    contextAssistantIdRef.current = contextAssistantId
 
     // Handle form submit - receives input text directly from ChatInput
+    // OPTIMIZED: Stable callback that doesn't change on every render
     const onFormSubmit = React.useCallback((inputText: string) => {
         const currentModelIds = getTab()?.modelIds || []
         handleSubmit(inputText, {
             models: currentModelIds.length > 0 ? currentModelIds : ["gpt-3.5-turbo"],
             config: buildChatConfig(),
-            contextMessageId: contextAssistantId || undefined
+            contextMessageId: contextAssistantIdRef.current || undefined
         })
-    }, [buildChatConfig, handleSubmit, getTab, contextAssistantId])
+    }, [buildChatConfig, handleSubmit, getTab]) // Removed contextAssistantId - using ref
 
     // Handle retry (when last message is user - no assistant response yet)
     const onRetry = React.useCallback(() => {
@@ -331,15 +369,9 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                     onRetry={onRetry}
                     isLoading={isLoading}
                     onStop={stop}
-                    onClearMessages={handleClearMessages}
-                    hasMessages={messages.length > 0}
                     lastMessageIsUser={lastMessageIsUser}
-                    temperature={temperature}
-                    onTemperatureChange={handleTemperatureChange}
-                    historyLimit={historyLimit}
-                    onHistoryLimitChange={handleHistoryLimitChange}
-                    reasoningEffort={reasoningEffort}
-                    onReasoningEffortChange={setReasoningEffort}
+                    configRef={configRef}
+                    callbacksRef={configCallbacksRef}
                 />
             </div>
 

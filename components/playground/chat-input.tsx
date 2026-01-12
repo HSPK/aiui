@@ -2,9 +2,21 @@
 
 import * as React from "react"
 import { Button } from "@/components/ui/button"
-import { Eraser, Plus, ArrowUp, RotateCcw } from "lucide-react"
+import { Plus, ArrowUp, RotateCcw } from "lucide-react"
 import { ConnectedModelSelector } from "@/components/playground/model-selector"
 import { ChatConfigDropdown } from "@/components/playground/chat-config-dropdown"
+
+export interface ChatInputConfig {
+    temperature?: number
+    historyLimit: number
+    reasoningEffort: string | null
+}
+
+export interface ChatInputCallbacks {
+    onTemperatureChange: (value: number | undefined) => void
+    onHistoryLimitChange: (value: number) => void
+    onReasoningEffortChange: (value: string | null) => void
+}
 
 interface ChatInputProps {
     tabId: string
@@ -12,16 +24,10 @@ interface ChatInputProps {
     onRetry?: () => void
     isLoading: boolean
     onStop: () => void
-    onClearMessages: () => void
-    hasMessages: boolean
     lastMessageIsUser?: boolean
-    // Config props
-    temperature?: number
-    onTemperatureChange: (value: number | undefined) => void
-    historyLimit: number
-    onHistoryLimitChange: (value: number) => void
-    reasoningEffort: string | null
-    onReasoningEffortChange: (value: string | null) => void
+    // Config passed via ref to prevent re-renders
+    configRef: React.RefObject<ChatInputConfig>
+    callbacksRef: React.RefObject<ChatInputCallbacks>
 }
 
 export interface ChatInputRef {
@@ -36,38 +42,57 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     onRetry,
     isLoading,
     onStop,
-    onClearMessages,
-    hasMessages,
     lastMessageIsUser,
-    temperature,
-    onTemperatureChange,
-    historyLimit,
-    onHistoryLimitChange,
-    reasoningEffort,
-    onReasoningEffortChange,
+    configRef,
+    callbacksRef,
 }, ref) {
-    // Local input state - isolated from parent to prevent re-renders
-    const [input, setInput] = React.useState("")
+    // Use ref for input value - avoid React re-renders on every keystroke
+    const inputRef = React.useRef("")
+    const [hasInput, setHasInput] = React.useState(false) // Only track if has content for button
     const textareaRef = React.useRef<HTMLTextAreaElement>(null)
 
     // Track IME composition state (for Chinese/Japanese/Korean input methods)
     const isComposingRef = React.useRef(false)
 
+    // Use ref for callbacks to prevent recreation
+    const onSubmitRef = React.useRef(onSubmit)
+    const onRetryRef = React.useRef(onRetry)
+    const onStopRef = React.useRef(onStop)
+    onSubmitRef.current = onSubmit
+    onRetryRef.current = onRetry
+    onStopRef.current = onStop
+
     // Expose methods to parent
     React.useImperativeHandle(ref, () => ({
         focus: () => textareaRef.current?.focus(),
-        clear: () => setInput(""),
-        getValue: () => input,
-    }), [input])
+        clear: () => {
+            inputRef.current = ""
+            if (textareaRef.current) textareaRef.current.value = ""
+            setHasInput(false)
+        },
+        getValue: () => inputRef.current,
+    }), [])
 
+    // Stable submit handler - NEVER changes
     const handleSubmit = React.useCallback((e?: React.FormEvent) => {
         e?.preventDefault()
-        const value = input.trim()
+        const value = inputRef.current.trim()
         if (value) {
-            onSubmit(value)
-            setInput("")
+            onSubmitRef.current(value)
+            inputRef.current = ""
+            if (textareaRef.current) textareaRef.current.value = ""
+            setHasInput(false)
         }
-    }, [input, onSubmit])
+    }, [])
+
+    // Handle input change - minimal state updates
+    const handleInputChange = React.useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+        const value = e.target.value
+        inputRef.current = value
+        const newHasInput = value.trim().length > 0
+        // Only update state if hasInput actually changed
+        setHasInput(prev => prev !== newHasInput ? newHasInput : prev)
+    }, [])
 
     const handleKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         // Ignore Enter during IME composition (e.g., selecting Chinese characters)
@@ -85,8 +110,8 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
         isComposingRef.current = false
     }, [])
 
-    // Show submit button based on local input state
-    const showSubmit = !isLoading && !lastMessageIsUser && input.trim().length > 0
+    // Show submit button based on hasInput state (not full input value)
+    const showSubmit = !isLoading && !lastMessageIsUser && hasInput
 
     return (
         <form onSubmit={handleSubmit} className="flex flex-col gap-2 w-full mx-auto max-w-4xl relative">
@@ -103,8 +128,8 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
 
                 <textarea
                     ref={textareaRef}
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
+                    defaultValue=""
+                    onChange={handleInputChange}
                     placeholder="Message AI..."
                     className="min-h-[32px] max-h-[200px] border-0 focus-visible:outline-none resize-none p-0 py-[6px] bg-transparent flex-1 text-sm leading-[20px]"
                     onKeyDown={handleKeyDown}
@@ -112,17 +137,12 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
                     onCompositionEnd={handleCompositionEnd}
                     rows={1}
                 />
-
                 <div className="flex items-center gap-1 shrink-0">
                     <ConnectedModelSelector tabId={tabId} />
 
                     <ChatConfigDropdown
-                        temperature={temperature}
-                        onTemperatureChange={onTemperatureChange}
-                        historyLimit={historyLimit}
-                        onHistoryLimitChange={onHistoryLimitChange}
-                        reasoningEffort={reasoningEffort}
-                        onReasoningEffortChange={onReasoningEffortChange}
+                        configRef={configRef}
+                        callbacksRef={callbacksRef}
                     />
 
                     {isLoading ? (
@@ -131,7 +151,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
                             size="icon"
                             onClick={(e) => {
                                 e.preventDefault()
-                                onStop()
+                                onStopRef.current()
                             }}
                             className="h-8 w-8 rounded-full ml-1 bg-secondary text-secondary-foreground hover:bg-secondary/80"
                         >
@@ -144,7 +164,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
                             size="icon"
                             onClick={(e) => {
                                 e.preventDefault()
-                                onRetry?.()
+                                onRetryRef.current?.()
                             }}
                             className="h-8 w-8 rounded-full ml-1 bg-orange-500 text-white hover:bg-orange-600"
                             title="Retry last message"
@@ -164,4 +184,13 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
             </div>
         </form>
     )
-}))
+}), (prevProps, nextProps) => {
+    // Custom comparison - only re-render when these specific props change
+    return (
+        prevProps.tabId === nextProps.tabId &&
+        prevProps.isLoading === nextProps.isLoading &&
+        prevProps.lastMessageIsUser === nextProps.lastMessageIsUser
+        // Refs are stable, no need to compare
+        // onSubmit, onRetry, onStop use refs internally, no need to compare
+    )
+})

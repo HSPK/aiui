@@ -1,6 +1,6 @@
 // Refactored Chat Hook - clean orchestration layer
 
-import { useEffect, useState, useRef, useCallback } from "react"
+import { useEffect, useState, useRef, useCallback, startTransition } from "react"
 import { toast } from "sonner"
 import { useChatStream } from "./chat"
 import type { Message, ChatOptions } from "./chat"
@@ -22,7 +22,7 @@ export function usePlaygroundChat({
     updateInterval = 100,
 }: UsePlaygroundChatOptions) {
     // ============ State ============
-    const [messages, setMessages] = useState<Message[]>(() => 
+    const [messages, setMessages] = useState<Message[]>(() =>
         normalizeMessages(initialMessages)
     )
     const [isLoading, setIsLoading] = useState(false)
@@ -30,6 +30,14 @@ export function usePlaygroundChat({
 
     // Track which conversation we've initialized
     const initializedRef = useRef<string | null>(conversationId || "new")
+
+    // Use ref to access messages without causing re-renders
+    const messagesRef = useRef(messages)
+    messagesRef.current = messages
+
+    // Track loading state in ref for stable callbacks
+    const isLoadingRef = useRef(isLoading)
+    isLoadingRef.current = isLoading
 
     // ============ Stream Hook ============
     const { streamMultiple, stopAll } = useChatStream(
@@ -50,18 +58,18 @@ export function usePlaygroundChat({
     }, [initialMessages, conversationId, isLoading])
 
     // ============ Actions ============
-    
+
     const stop = useCallback(() => {
         stopAll()
         setIsLoading(false)
     }, [stopAll])
 
     const handleSubmit = useCallback(async (
-        inputText: string, 
+        inputText: string,
         options?: ChatOptions
     ) => {
         const userContent = inputText?.trim()
-        if (!userContent || isLoading) return
+        if (!userContent || isLoadingRef.current) return
 
         const models = options?.models
         if (!models?.length) {
@@ -69,26 +77,34 @@ export function usePlaygroundChat({
             return
         }
 
+        // Set loading immediately (high priority)
         setError(null)
         setIsLoading(true)
 
-        try {
-            // Determine parent for user message
-            const userParentId = options?.contextMessageId 
-                ?? messages[messages.length - 1]?.id
+        // Use ref to get current messages without dependency
+        const currentMessages = messagesRef.current
 
-            // Create and add user message
-            const userMsgId = crypto.randomUUID()
-            const userMsg: Message = {
-                id: userMsgId,
-                role: "user",
-                content: userContent,
-                parent_id: userParentId,
-                created_at: new Date()
-            }
+        // Determine parent for user message
+        const userParentId = options?.contextMessageId
+            ?? currentMessages[currentMessages.length - 1]?.id
+
+        // Create user message
+        const userMsgId = crypto.randomUUID()
+        const userMsg: Message = {
+            id: userMsgId,
+            role: "user",
+            content: userContent,
+            parent_id: userParentId,
+            created_at: new Date()
+        }
+
+        // Add user message with low priority - allows input to clear first
+        startTransition(() => {
             setMessages(prev => [...prev, userMsg])
+        })
 
-            // Stream assistant responses
+        // Stream in background
+        try {
             await streamMultiple({
                 userMessageId: userMsgId,
                 userContent,
@@ -102,10 +118,11 @@ export function usePlaygroundChat({
         } finally {
             setIsLoading(false)
         }
-    }, [messages, isLoading, streamMultiple])
+    }, [streamMultiple]) // Remove messages dependency!
 
     const handleRetry = useCallback(async (options?: ChatOptions) => {
-        if (isLoading || !lastMessageIsUser(messages)) return
+        const currentMessages = messagesRef.current
+        if (isLoadingRef.current || !lastMessageIsUser(currentMessages)) return
 
         const models = options?.models
         if (!models?.length) {
@@ -117,8 +134,8 @@ export function usePlaygroundChat({
         setIsLoading(true)
 
         try {
-            const lastUserMessage = messages[messages.length - 1]
-            
+            const lastUserMessage = currentMessages[currentMessages.length - 1]
+
             await streamMultiple({
                 userMessageId: lastUserMessage.id,
                 userContent: lastUserMessage.content,
@@ -132,10 +149,10 @@ export function usePlaygroundChat({
         } finally {
             setIsLoading(false)
         }
-    }, [messages, isLoading, streamMultiple])
+    }, [streamMultiple]) // Remove messages/isLoading dependency!
 
     const handleRegenerate = useCallback(async (options?: ChatOptions) => {
-        if (isLoading) return
+        if (isLoadingRef.current) return
 
         const models = options?.models
         if (!models?.length) {
@@ -143,15 +160,17 @@ export function usePlaygroundChat({
             return
         }
 
+        const currentMessages = messagesRef.current
+
         // Find last assistant message
-        const lastAssistant = findLastAssistantMessage(messages)
+        const lastAssistant = findLastAssistantMessage(currentMessages)
         if (!lastAssistant) {
             toast.error("No assistant message to regenerate")
             return
         }
 
         // Find parent user message
-        const userMessage = messages.find(m => m.id === lastAssistant.parent_id)
+        const userMessage = currentMessages.find(m => m.id === lastAssistant.parent_id)
         if (!userMessage) {
             toast.error("Cannot find parent user message")
             return
@@ -174,7 +193,7 @@ export function usePlaygroundChat({
         } finally {
             setIsLoading(false)
         }
-    }, [messages, isLoading, streamMultiple])
+    }, [streamMultiple]) // Remove messages/isLoading dependency!
 
     // ============ Computed ============
     const isLastMessageUser = lastMessageIsUser(messages)
@@ -196,7 +215,7 @@ export function usePlaygroundChat({
 
 function normalizeMessages(messages: any[]): Message[] {
     if (!messages?.length) return []
-    
+
     return messages.map((m, i) => ({
         ...m,
         id: m.id || `init-${i}`,

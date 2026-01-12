@@ -80,6 +80,45 @@ export const MessageList = React.memo(({
         return groups
     }, [messages])
 
+    // Build a map of which sibling is "active" based on conversation flow
+    // If a subsequent message uses a sibling as parent, that sibling is the active one
+    const activeSiblingMap = React.useMemo(() => {
+        const activeMap = new Map<string, number>() // parent_id -> active sibling index
+
+        // Build a set of all message IDs that are used as parent_id by subsequent messages
+        const usedAsParent = new Set<string>()
+        messages.forEach((m: any) => {
+            if (m.parent_id) {
+                usedAsParent.add(m.parent_id)
+            }
+        })
+
+        // For each sibling group, find which sibling is used as parent
+        siblingGroups.forEach((siblings, parentId) => {
+            for (let i = 0; i < siblings.length; i++) {
+                if (usedAsParent.has(siblings[i].id)) {
+                    activeMap.set(parentId, i)
+                    break
+                }
+            }
+            // If none is used as parent, don't set - will use selectedSiblings or default
+        })
+
+        return activeMap
+    }, [messages, siblingGroups])
+
+    // Get the effective selected index for a sibling group
+    const getSelectedIndex = React.useCallback((parentId: string, siblingsLength: number) => {
+        // Priority: 1. User selection, 2. Active in conversation flow, 3. Default to last
+        if (selectedSiblings?.has(parentId)) {
+            return selectedSiblings.get(parentId)!
+        }
+        if (activeSiblingMap.has(parentId)) {
+            return activeSiblingMap.get(parentId)!
+        }
+        return siblingsLength - 1
+    }, [selectedSiblings, activeSiblingMap])
+
     // Find the last visible assistant message index
     const lastAssistantIndex = React.useMemo(() => {
         // Process messages to find what would be displayed
@@ -95,7 +134,7 @@ export const MessageList = React.memo(({
                 if (siblings && siblings.length > 1) {
                     if (!seenParentIds.has(m.parent_id)) {
                         seenParentIds.add(m.parent_id)
-                        const selectedIdx = selectedSiblings?.get(m.parent_id) ?? siblings.length - 1
+                        const selectedIdx = getSelectedIndex(m.parent_id, siblings.length)
                         visibleMessages.push(siblings[selectedIdx])
                     }
                 } else {
@@ -113,7 +152,7 @@ export const MessageList = React.memo(({
             }
         }
         return null
-    }, [messages, siblingGroups, selectedSiblings])
+    }, [messages, siblingGroups, getSelectedIndex])
 
     // Process messages to inject date separators and handle siblings
     const renderItems = React.useMemo(() => {
@@ -132,7 +171,7 @@ export const MessageList = React.memo(({
                     }
                     seenParentIds.add(m.parent_id)
 
-                    const selectedIdx = selectedSiblings?.get(m.parent_id) ?? siblings.length - 1
+                    const selectedIdx = getSelectedIndex(m.parent_id, siblings.length)
                     // Use date of the LAST sibling for separator logic (to keep it consistent)
                     const lastSibling = siblings[siblings.length - 1]
                     const mDate = lastSibling.created_at || lastSibling.createdAt
@@ -198,7 +237,7 @@ export const MessageList = React.memo(({
             )
         })
         return items
-    }, [messages, isLoading, modelProviderMap, onViewGeneration, siblingGroups, selectedSiblings, onSelectSibling, lastAssistantIndex, onRetry])
+    }, [messages, isLoading, modelProviderMap, onViewGeneration, siblingGroups, getSelectedIndex, onSelectSibling, lastAssistantIndex, onRetry])
 
     return (
         <div className={cn("pb-36 pt-4 max-w-full overflow-hidden", messages.length === 0 && "min-h-[calc(100vh-200px)] flex flex-col")}>
