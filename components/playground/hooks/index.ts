@@ -1,2 +1,7 @@
 export { useChatScroll } from './use-chat-scroll'
 export { usePaginatedMessages, transformMessage } from './use-paginated-messages'
+export { useChatConfig, type ChatConfig, type ChatConfigCallbacks } from './use-chat-config'
+export { useSiblingNavigation } from './use-sibling-navigation'
+export { useContextAssistant } from './use-context-assistant'
+export { useTitleGeneration } from './use-title-generation'
+export { useMessageSync } from './use-message-sync'

@@ -10,6 +10,8 @@ export type Message = {
     created_at?: Date | string
     createdAt?: Date | string
     generation_id?: string
+    rating?: string
+    feedback?: string
 }
 
 export type StreamConfig = {
