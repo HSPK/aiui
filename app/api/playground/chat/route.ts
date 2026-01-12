@@ -31,11 +31,6 @@ export async function POST(req: NextRequest) {
 
     const backendUrl = getBackendBaseUrl()
     const targetUrl = `${backendUrl}/playground/chat`
-    
-    console.log("[Playground Chat] API_URL:", process.env.API_URL)
-    console.log("[Playground Chat] NEXT_PUBLIC_API_URL:", process.env.NEXT_PUBLIC_API_URL)
-    console.log("[Playground Chat] Backend URL:", backendUrl)
-    console.log("[Playground Chat] Target URL:", targetUrl)
 
     const response = await fetch(targetUrl, {
         method: "POST",

@@ -217,7 +217,7 @@ export const api = {
             headers["Authorization"] = auth;
         }
 
-        const res = await fetch(`${BASE_URL}/v1/chat/completions`, {
+        const res = await fetch(`${BASE_URL}/openai/v1/chat/completions`, {
             method: "POST",
             headers,
             body: JSON.stringify({
