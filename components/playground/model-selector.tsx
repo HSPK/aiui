@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import * as ReactDOM from "react-dom"
 import { ChevronsUpDown, Search, X, Bot } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -215,7 +216,9 @@ export function ModelSelector({ selectedModelIds, onModelSelect, side = "top", a
 export function ConnectedModelSelector({ tabId }: { tabId: string }) {
     const [open, setOpen] = React.useState(false)
     const [searchQuery, setSearchQuery] = React.useState("")
-    const containerRef = React.useRef<HTMLDivElement>(null)
+    const triggerRef = React.useRef<HTMLButtonElement>(null)
+    const dropdownRef = React.useRef<HTMLDivElement>(null)
+    const [dropdownStyle, setDropdownStyle] = React.useState<React.CSSProperties>({})
     const { defaultModel } = useSettingsStore()
 
     // Direct store access - stable refs
@@ -257,17 +260,74 @@ export function ConnectedModelSelector({ tabId }: { tabId: string }) {
         return models.filter(m => m.name.toLowerCase().includes(q))
     }, [models, searchQuery])
 
+    // Calculate dropdown position when opening
+    const updatePosition = React.useCallback(() => {
+        if (!triggerRef.current) return
+
+        const rect = triggerRef.current.getBoundingClientRect()
+        const dropdownWidth = 320
+        const dropdownHeight = 380 // Approximate max height
+        const padding = 8
+
+        // Calculate available space
+        const spaceAbove = rect.top
+        const spaceBelow = window.innerHeight - rect.bottom
+        const spaceLeft = rect.left
+        const spaceRight = window.innerWidth - rect.right
+
+        // Prefer opening upward (above the input)
+        const openAbove = spaceAbove >= dropdownHeight || spaceAbove > spaceBelow
+
+        // Determine horizontal position - prefer left alignment, adjust if not enough space
+        let left = rect.left
+        if (left + dropdownWidth > window.innerWidth - padding) {
+            left = Math.max(padding, rect.right - dropdownWidth)
+        }
+
+        const style: React.CSSProperties = {
+            position: 'fixed',
+            width: dropdownWidth,
+            left,
+            zIndex: 9999, // Very high z-index to ensure it's above everything
+        }
+
+        if (openAbove) {
+            style.bottom = window.innerHeight - rect.top + padding
+        } else {
+            style.top = rect.bottom + padding
+        }
+
+        setDropdownStyle(style)
+    }, [])
+
     // Close on click outside
     React.useEffect(() => {
         if (!open) return
-        const handler = (e: MouseEvent) => {
-            if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+
+        updatePosition()
+
+        const handleClickOutside = (e: MouseEvent) => {
+            if (
+                triggerRef.current && !triggerRef.current.contains(e.target as Node) &&
+                dropdownRef.current && !dropdownRef.current.contains(e.target as Node)
+            ) {
                 setOpen(false)
             }
         }
-        document.addEventListener('mousedown', handler)
-        return () => document.removeEventListener('mousedown', handler)
-    }, [open])
+
+        const handleScroll = () => updatePosition()
+        const handleResize = () => updatePosition()
+
+        document.addEventListener('mousedown', handleClickOutside)
+        window.addEventListener('scroll', handleScroll, true)
+        window.addEventListener('resize', handleResize)
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside)
+            window.removeEventListener('scroll', handleScroll, true)
+            window.removeEventListener('resize', handleResize)
+        }
+    }, [open, updatePosition])
 
     React.useEffect(() => {
         if (!open) setSearchQuery("")
@@ -290,9 +350,38 @@ export function ConnectedModelSelector({ tabId }: { tabId: string }) {
     const selectedIds = open ? (storeRef.current.getState().tabs.find(t => t.id === tabId)?.modelIds || []) : []
     const selectedSet = React.useMemo(() => new Set(selectedIds), [selectedIds])
 
+    // Render dropdown via Portal to avoid z-index/overflow issues
+    const dropdownContent = open && (
+        <div
+            ref={dropdownRef}
+            style={dropdownStyle}
+            className="rounded-lg border bg-popover text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95"
+        >
+            <div className="p-3 border-b">
+                <div className="relative">
+                    <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                        placeholder="Search models..."
+                        className="pl-8 h-8 text-sm"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        autoFocus
+                    />
+                </div>
+            </div>
+            <ModelList
+                models={filteredModels}
+                selectedSet={selectedSet}
+                isLoading={isLoading}
+                onToggle={handleToggle}
+            />
+        </div>
+    )
+
     return (
-        <div ref={containerRef} className="relative">
+        <>
             <Button
+                ref={triggerRef}
                 type="button"
                 variant="ghost"
                 size="icon"
@@ -307,32 +396,8 @@ export function ConnectedModelSelector({ tabId }: { tabId: string }) {
                     </span>
                 )}
             </Button>
-            {open && (
-                <div className="absolute z-50 w-[300px] rounded-md border bg-popover text-popover-foreground shadow-md bottom-full mb-1 right-0">
-                    <div className="p-2 border-b">
-                        <div className="relative">
-                            <Search className="absolute left-2 top-1.5 h-3.5 w-3.5 text-muted-foreground" />
-                            <Input
-                                placeholder="Search models..."
-                                className="pl-7 h-7 text-xs"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                autoFocus
-                            />
-                        </div>
-                        {selectedIds.length > 0 && (
-                            <SelectedModelTags ids={selectedIds} onRemove={handleToggle} />
-                        )}
-                    </div>
-                    <ModelList
-                        models={filteredModels}
-                        selectedSet={selectedSet}
-                        isLoading={isLoading}
-                        onToggle={handleToggle}
-                    />
-                </div>
-            )}
-        </div>
+            {typeof document !== 'undefined' && ReactDOM.createPortal(dropdownContent, document.body)}
+        </>
     )
 }
 

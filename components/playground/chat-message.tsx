@@ -144,12 +144,12 @@ export const ChatMessage = React.memo(({
                         </span>
                         {isSibling && isSelected && onSelect && (
                             <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium border border-primary/10">
-                                Active Context
+                                Active
                             </span>
                         )}
                         {isSibling && isSelected && !onSelect && (
                             <span className="text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded-full font-medium border">
-                                Used Context
+                                Context
                             </span>
                         )}
                     </div>
