@@ -42,6 +42,7 @@ interface PlaygroundState {
     updateTabTitle: (id: string, title: string) => void;
     closeOtherTabs: (id: string) => void;
     closeAllTabs: () => void;
+    reorderTabs: (fromIndex: number, toIndex: number) => void;
     toggleSidebar: () => void;
     setSidebarOpen: (open: boolean) => void;
 }
@@ -111,6 +112,13 @@ export const usePlaygroundStore = create<PlaygroundState>()(
             closeAllTabs: () => set({
                 tabs: [],
                 activeTabId: null,
+            }),
+
+            reorderTabs: (fromIndex, toIndex) => set((state) => {
+                const newTabs = [...state.tabs];
+                const [movedTab] = newTabs.splice(fromIndex, 1);
+                newTabs.splice(toIndex, 0, movedTab);
+                return { tabs: newTabs };
             }),
 
             toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),

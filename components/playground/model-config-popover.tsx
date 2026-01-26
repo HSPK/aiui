@@ -225,9 +225,9 @@ export const ModelConfigPopover = React.memo(function ModelConfigPopover({
         }
     }, [open, config])
 
-    // Calculate position
-    const updatePosition = React.useCallback(() => {
-        if (!triggerRef.current) return
+    // Calculate position - returns style object
+    const calculatePosition = React.useCallback((): React.CSSProperties => {
+        if (!triggerRef.current) return {}
 
         const rect = triggerRef.current.getBoundingClientRect()
         const popoverWidth = 320
@@ -256,8 +256,21 @@ export const ModelConfigPopover = React.memo(function ModelConfigPopover({
             style.top = rect.bottom + padding
         }
 
-        setPosition(style)
+        return style
     }, [])
+
+    const updatePosition = React.useCallback(() => {
+        setPosition(calculatePosition())
+    }, [calculatePosition])
+
+    // Handle open state change - calculate position before rendering
+    const handleOpen = React.useCallback(() => {
+        if (!open) {
+            // Calculate position BEFORE setting open to avoid jitter
+            setPosition(calculatePosition())
+        }
+        setOpen(!open)
+    }, [open, calculatePosition])
 
     // Handle outside click and positioning
     React.useEffect(() => {
@@ -331,7 +344,7 @@ export const ModelConfigPopover = React.memo(function ModelConfigPopover({
         <div
             ref={popoverRef}
             style={position}
-            className="rounded-xl border bg-popover text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95"
+            className="rounded-xl border bg-popover text-popover-foreground shadow-xl animate-in fade-in-0 duration-100"
         >
             {/* Header */}
             <div className="border-b px-4 py-3 flex items-center justify-between">
@@ -438,7 +451,7 @@ export const ModelConfigPopover = React.memo(function ModelConfigPopover({
             <button
                 ref={triggerRef}
                 type="button"
-                onClick={() => setOpen(!open)}
+                onClick={handleOpen}
                 className={cn(
                     "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs transition-all",
                     "border group focus:outline-none focus:ring-1 focus:ring-ring focus:ring-offset-1",

@@ -6,7 +6,7 @@ import { ChatFlow } from "@/components/playground/chat-flow"
 import { PlaygroundHome } from "@/components/playground/playground-home"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
-import { Plus, X, MessageSquare, ChevronLeft, ChevronRight, MoreHorizontal, XCircle, Layers, Trash2 } from "lucide-react"
+import { Plus, X, MessageSquare, ChevronLeft, ChevronRight, MoreHorizontal, XCircle, Layers, Trash2, GripVertical } from "lucide-react"
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -17,30 +17,57 @@ import {
 import { useShallow } from "zustand/react/shallow"
 
 // Memoize TabHeader to prevent re-renders
-const TabHeader = React.memo(function TabHeader({ tab, isActive, onClick, onClose, onCloseOthers, onCloseAll }: {
+const TabHeader = React.memo(function TabHeader({
+    tab,
+    isActive,
+    onClick,
+    onClose,
+    onCloseOthers,
+    onCloseAll,
+    onDragStart,
+    onDragOver,
+    onDragEnd,
+    onDrop,
+    isDragging,
+    isDragOver
+}: {
     tab: PlaygroundTab
     isActive: boolean
     onClick: () => void
     onClose: (e: React.MouseEvent) => void
     onCloseOthers: () => void
     onCloseAll: () => void
+    onDragStart: (e: React.DragEvent) => void
+    onDragOver: (e: React.DragEvent) => void
+    onDragEnd: (e: React.DragEvent) => void
+    onDrop: (e: React.DragEvent) => void
+    isDragging: boolean
+    isDragOver: boolean
 }) {
     const [dropdownOpen, setDropdownOpen] = React.useState(false)
 
     return (
         <div
+            draggable
+            onDragStart={onDragStart}
+            onDragOver={onDragOver}
+            onDragEnd={onDragEnd}
+            onDrop={onDrop}
             onClick={onClick}
             onContextMenu={(e) => {
                 e.preventDefault()
                 setDropdownOpen(true)
             }}
             className={cn(
-                "group flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer select-none transition-all rounded-t-lg mx-0.5 h-[36px] shrink-0",
+                "group flex items-center gap-1.5 px-2 py-1.5 text-sm cursor-pointer select-none transition-all rounded-t-lg mx-0.5 h-[36px] shrink-0",
                 isActive
                     ? "bg-background text-foreground shadow-sm border border-b-0 border-border/50"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+                isDragging && "opacity-50",
+                isDragOver && "border-l-2 border-l-primary"
             )}
         >
+            <GripVertical className="h-3 w-3 shrink-0 opacity-0 group-hover:opacity-50 cursor-grab active:cursor-grabbing" />
             <MessageSquare className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate max-w-[100px] text-xs font-medium">{tab.title}</span>
 
@@ -122,10 +149,13 @@ export default function PlaygroundPage() {
     const addTab = usePlaygroundStore((state) => state.addTab)
     const closeOtherTabs = usePlaygroundStore((state) => state.closeOtherTabs)
     const closeAllTabs = usePlaygroundStore((state) => state.closeAllTabs)
+    const reorderTabs = usePlaygroundStore((state) => state.reorderTabs)
 
     const tabsContainerRef = React.useRef<HTMLDivElement>(null)
     const [showLeftArrow, setShowLeftArrow] = React.useState(false)
     const [showRightArrow, setShowRightArrow] = React.useState(false)
+    const [draggedIndex, setDraggedIndex] = React.useState<number | null>(null)
+    const [dragOverIndex, setDragOverIndex] = React.useState<number | null>(null)
 
     const checkScrollArrows = React.useCallback(() => {
         const container = tabsContainerRef.current
@@ -154,6 +184,34 @@ export default function PlaygroundPage() {
         })
     }
 
+    const handleDragStart = React.useCallback((index: number) => (e: React.DragEvent) => {
+        setDraggedIndex(index)
+        e.dataTransfer.effectAllowed = 'move'
+        e.dataTransfer.setData('text/plain', String(index))
+    }, [])
+
+    const handleDragOver = React.useCallback((index: number) => (e: React.DragEvent) => {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        if (draggedIndex !== null && draggedIndex !== index) {
+            setDragOverIndex(index)
+        }
+    }, [draggedIndex])
+
+    const handleDragEnd = React.useCallback(() => {
+        setDraggedIndex(null)
+        setDragOverIndex(null)
+    }, [])
+
+    const handleDrop = React.useCallback((toIndex: number) => (e: React.DragEvent) => {
+        e.preventDefault()
+        if (draggedIndex !== null && draggedIndex !== toIndex) {
+            reorderTabs(draggedIndex, toIndex)
+        }
+        setDraggedIndex(null)
+        setDragOverIndex(null)
+    }, [draggedIndex, reorderTabs])
+
     return (
         <div className="h-full flex overflow-hidden bg-background">
             <div className="flex-1 flex flex-col h-full overflow-hidden">
@@ -176,7 +234,7 @@ export default function PlaygroundPage() {
                         className="flex-1 flex overflow-x-auto scrollbar-none items-end pt-1.5 px-1"
                         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
                     >
-                        {tabs.map(tab => (
+                        {tabs.map((tab, index) => (
                             <TabHeader
                                 key={tab.id}
                                 tab={tab}
@@ -188,6 +246,12 @@ export default function PlaygroundPage() {
                                 }}
                                 onCloseOthers={() => closeOtherTabs(tab.id)}
                                 onCloseAll={closeAllTabs}
+                                onDragStart={handleDragStart(index)}
+                                onDragOver={handleDragOver(index)}
+                                onDragEnd={handleDragEnd}
+                                onDrop={handleDrop(index)}
+                                isDragging={draggedIndex === index}
+                                isDragOver={dragOverIndex === index}
                             />
                         ))}
                     </div>

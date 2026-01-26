@@ -228,7 +228,7 @@ export const ChatMessage = React.memo(({
             onClick={onSelect}
             className={cn(
                 "group relative transition-all m-0.5",
-                !isSibling && "flex gap-3 sm:gap-4 px-3 sm:px-4 w-full py-4 sm:py-6 hover:bg-muted/30",
+                !isSibling && "flex gap-3 sm:gap-4 px-4 sm:px-6 md:px-6 lg:px-6 w-full py-4 sm:py-6 hover:bg-muted/30",
                 isSibling && "flex flex-col gap-3 border rounded-xl shadow-sm bg-card flex-shrink-0 px-4 py-4",
                 isSibling && siblingWidthClass,
                 isSibling && isSelected && "ring-0 ring-primary/20 border-primary/30 bg-card",

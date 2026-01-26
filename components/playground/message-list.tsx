@@ -190,7 +190,7 @@ export const MessageList = React.memo(({
 
                     items.push(
                         <div key={`group-${m.parent_id}`} className="w-0 min-w-full overflow-x-auto pb-4 scrollbar-none">
-                            <div className="inline-flex gap-3 px-3 sm:px-4">
+                            <div className="inline-flex gap-3 px-4 sm:px-6 md:px-8 lg:px-12">
                                 {siblings.map((sibling, idx) => (
                                     <ChatMessage
                                         key={sibling.id}

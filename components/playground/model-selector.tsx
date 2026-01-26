@@ -260,9 +260,9 @@ export function ConnectedModelSelector({ tabId }: { tabId: string }) {
         return models.filter(m => m.name.toLowerCase().includes(q))
     }, [models, searchQuery])
 
-    // Calculate dropdown position when opening
-    const updatePosition = React.useCallback(() => {
-        if (!triggerRef.current) return
+    // Calculate dropdown position - returns style object
+    const calculatePosition = React.useCallback((): React.CSSProperties => {
+        if (!triggerRef.current) return {}
 
         const rect = triggerRef.current.getBoundingClientRect()
         const dropdownWidth = 320
@@ -272,8 +272,6 @@ export function ConnectedModelSelector({ tabId }: { tabId: string }) {
         // Calculate available space
         const spaceAbove = rect.top
         const spaceBelow = window.innerHeight - rect.bottom
-        const spaceLeft = rect.left
-        const spaceRight = window.innerWidth - rect.right
 
         // Prefer opening upward (above the input)
         const openAbove = spaceAbove >= dropdownHeight || spaceAbove > spaceBelow
@@ -297,8 +295,21 @@ export function ConnectedModelSelector({ tabId }: { tabId: string }) {
             style.top = rect.bottom + padding
         }
 
-        setDropdownStyle(style)
+        return style
     }, [])
+
+    const updatePosition = React.useCallback(() => {
+        setDropdownStyle(calculatePosition())
+    }, [calculatePosition])
+
+    // Handle open state change - calculate position before rendering
+    const handleOpen = React.useCallback(() => {
+        if (!open) {
+            // Calculate position BEFORE setting open to avoid jitter
+            setDropdownStyle(calculatePosition())
+        }
+        setOpen(!open)
+    }, [open, calculatePosition])
 
     // Close on click outside
     React.useEffect(() => {
@@ -355,7 +366,7 @@ export function ConnectedModelSelector({ tabId }: { tabId: string }) {
         <div
             ref={dropdownRef}
             style={dropdownStyle}
-            className="rounded-lg border bg-popover text-popover-foreground shadow-xl animate-in fade-in-0 zoom-in-95"
+            className="rounded-lg border bg-popover text-popover-foreground shadow-xl animate-in fade-in-0 duration-100"
         >
             <div className="p-3 border-b">
                 <div className="relative">
@@ -387,7 +398,7 @@ export function ConnectedModelSelector({ tabId }: { tabId: string }) {
                 size="icon"
                 className="h-8 w-8 text-muted-foreground hover:text-foreground relative"
                 disabled={isLoading}
-                onClick={() => setOpen(!open)}
+                onClick={handleOpen}
             >
                 <Bot className="h-5 w-5" />
                 {modelCount > 1 && (
