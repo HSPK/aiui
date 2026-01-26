@@ -171,7 +171,7 @@ export function ModelSelector({ selectedModelIds, onModelSelect, side = "top", a
                                 className="pl-7 h-7 text-xs"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                // No autofocus to avoid focusing on open
+                            // No autofocus to avoid focusing on open
                             />
                         </div>
                         {selectedModelIds.length > 0 && (
@@ -365,7 +365,7 @@ export function ConnectedModelSelector({ tabId }: { tabId: string }) {
                         className="pl-8 h-8 text-sm"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                                // Do not auto-focus to avoid page flicker / scroll jump
+                    // Do not auto-focus to avoid page flicker / scroll jump
                     />
                 </div>
             </div>

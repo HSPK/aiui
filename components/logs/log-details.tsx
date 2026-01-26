@@ -19,7 +19,7 @@ import {
     AccordionTrigger,
 } from "@/components/ui/accordion"
 import dynamic from 'next/dynamic'
-import { Loader2, Copy, Check, FileText, Terminal, AlignLeft, Code } from "lucide-react"
+import { Loader2, Copy, Check, FileText, Terminal, AlignLeft, Code, Download } from "lucide-react"
 import { formatToLocal, cn } from "@/lib/utils"
 // @ts-ignore
 import ReactMarkdown from 'react-markdown'
@@ -140,19 +140,77 @@ interface LogDetailsProps {
     onOpenChange: (open: boolean) => void;
 }
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, className }: { text: string, className?: string }) {
     const [copied, setCopied] = useState(false)
 
-    const handleCopy = () => {
-        navigator.clipboard.writeText(text)
-        setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
+    const handleCopy = async () => {
+        try {
+            await navigator.clipboard.writeText(text)
+            setCopied(true)
+            setTimeout(() => setCopied(false), 2000)
+        } catch (err) {
+            console.error('Failed to copy:', err)
+        }
     }
 
     return (
-        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleCopy}>
+        <Button variant="ghost" size="icon" className={cn("h-6 w-6", className)} onClick={handleCopy} title="Copy to clipboard">
             {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3 text-muted-foreground" />}
         </Button>
+    )
+}
+
+function JsonActionButtons({ data, filename, onClick }: { data: object, filename: string, onClick?: (e: React.MouseEvent) => void }) {
+    const jsonString = JSON.stringify(data, null, 2)
+    const [copied, setCopied] = useState(false)
+
+    const handleCopy = async (e: React.MouseEvent) => {
+        e.stopPropagation()
+        onClick?.(e)
+        try {
+            await navigator.clipboard.writeText(jsonString)
+            setCopied(true)
+            setTimeout(() => setCopied(false), 2000)
+        } catch (err) {
+            console.error('Failed to copy:', err)
+        }
+    }
+
+    const handleDownload = (e: React.MouseEvent) => {
+        e.stopPropagation()
+        onClick?.(e)
+        const blob = new Blob([jsonString], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+    }
+
+    return (
+        <div className="flex items-center gap-0.5 ml-auto mr-2">
+            <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-muted-foreground hover:text-foreground hover:bg-muted/80 rounded-md"
+                onClick={handleCopy}
+                title="Copy JSON"
+            >
+                {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+            </Button>
+            <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-muted-foreground hover:text-foreground hover:bg-muted/80 rounded-md"
+                onClick={handleDownload}
+                title="Download JSON"
+            >
+                <Download className="h-3.5 w-3.5" />
+            </Button>
+        </div>
     )
 }
 
@@ -305,8 +363,14 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                         <Accordion type="single" collapsible className="w-full border rounded-lg bg-card">
                             <AccordionItem value="params" className="border-b px-4">
                                 <AccordionTrigger className="hover:no-underline py-3">
-                                    <div className="flex items-center gap-2 text-sm font-semibold">
-                                        <FileText className="h-4 w-4" /> Generation Parameters
+                                    <div className="flex items-center w-full">
+                                        <div className="flex items-center gap-2 text-sm font-semibold">
+                                            <FileText className="h-4 w-4" /> Generation Parameters
+                                        </div>
+                                        <JsonActionButtons
+                                            data={log.generation_kwargs || {}}
+                                            filename={`generation-params-${logId}.json`}
+                                        />
                                     </div>
                                 </AccordionTrigger>
                                 <AccordionContent className="pb-4">
@@ -316,7 +380,7 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                                             name={false}
                                             collapsed={false}
                                             displayDataTypes={false}
-                                            enableClipboard
+                                            enableClipboard={false}
                                             theme={resolvedTheme === 'dark' ? 'monokai' : 'rjv-default'}
                                             style={{ backgroundColor: 'transparent', fontSize: '12px' }}
                                         />
@@ -326,8 +390,14 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
 
                             <AccordionItem value="raw" className="px-4 border-none">
                                 <AccordionTrigger className="hover:no-underline py-3">
-                                    <div className="flex items-center gap-2 text-sm font-semibold">
-                                        <Code className="h-4 w-4" /> Raw Output
+                                    <div className="flex items-center w-full">
+                                        <div className="flex items-center gap-2 text-sm font-semibold">
+                                            <Code className="h-4 w-4" /> Raw Output
+                                        </div>
+                                        <JsonActionButtons
+                                            data={log?.generation || {}}
+                                            filename={`raw-output-${logId}.json`}
+                                        />
                                     </div>
                                 </AccordionTrigger>
                                 <AccordionContent className="pb-4">
@@ -336,7 +406,7 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                                             src={log?.generation || {}}
                                             name={false}
                                             displayDataTypes={false}
-                                            enableClipboard
+                                            enableClipboard={false}
                                             collapsed={1}
                                             theme={resolvedTheme === 'dark' ? 'monokai' : 'rjv-default'}
                                             style={{ backgroundColor: 'transparent', fontSize: '12px' }}
