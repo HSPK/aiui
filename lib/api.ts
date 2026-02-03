@@ -1,4 +1,4 @@
-import { BaseResponse, ModelConfig, ProviderConfig, User, AuthParams, LogFilterParams, LogListResponse, GenerationLogDetail } from "./types";
+import { BaseResponse, ModelConfig, ProviderConfig, User, AuthParams, LogFilterParams, LogListResponse, GenerationLogDetail, UserCreateParams, UserUpdateParams, UserListResponse, UserFilterParams } from "./types";
 import { ConversationListResponse, MessageListResponse, Conversation, Message } from "./types/playground";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
@@ -254,4 +254,29 @@ export const api = {
         // Clean up: remove quotes if present
         return title.replace(/^["']|["']$/g, '').slice(0, 50);
     },
+
+    // User Management
+    getUsers: (params: UserFilterParams) => {
+        const searchParams = new URLSearchParams();
+        if (params.page) searchParams.set("page", params.page.toString());
+        if (params.page_size) searchParams.set("page_size", params.page_size.toString());
+        if (params.sort) searchParams.set("sort", params.sort);
+        if (params.keyword) searchParams.set("keyword", params.keyword);
+        if (params.filter_admin !== undefined) searchParams.set("filter_admin", params.filter_admin.toString());
+        return fetcher<UserListResponse>(`/users?${searchParams.toString()}`);
+    },
+
+    createUser: (data: UserCreateParams) => fetcher<User>("/users/create", {
+        method: "POST",
+        body: JSON.stringify(data),
+    }),
+
+    updateUser: (username: string, data: UserUpdateParams) => fetcher<void>(`/users/update/${username}`, {
+        method: "POST",
+        body: JSON.stringify(data),
+    }),
+
+    deleteUser: (username: string) => fetcher<void>(`/users/delete/${username}`, {
+        method: "DELETE",
+    }),
 };

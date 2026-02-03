@@ -15,6 +15,7 @@ import {
     ChevronRight,
     Zap,
     Plus,
+    Users,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -25,6 +26,7 @@ import {
 } from "@/components/ui/tooltip"
 import { SidebarHistory } from "@/components/playground/sidebar-history"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
+import { useAuth } from "@/context/auth-context"
 
 // Navigation structure
 const mainNavItems = [
@@ -55,6 +57,12 @@ const toolNavItems = [
 ]
 
 const bottomNavItems = [
+    {
+        title: "Users",
+        href: "/settings/users",
+        icon: Users,
+        adminOnly: true,
+    },
     {
         title: "Settings",
         href: "/settings",
@@ -162,6 +170,7 @@ export function Sidebar({
     const router = useRouter()
     const [isPlaygroundExpanded, setIsPlaygroundExpanded] = useState(true)
     const { addTab } = usePlaygroundStore()
+    const { user } = useAuth()
 
     // Auto-expand playground section when on /chat
     useEffect(() => {
@@ -277,17 +286,19 @@ export function Sidebar({
 
             {/* Bottom section */}
             <div className="border-t p-2 shrink-0">
-                {bottomNavItems.map((item) => {
-                    const isActive = pathname === item.href
-                    return (
-                        <NavItem
-                            key={item.href}
-                            item={item}
-                            isActive={isActive}
-                            collapsed={collapsed}
-                        />
-                    )
-                })}
+                {bottomNavItems
+                    .filter(item => !item.adminOnly || user?.role === "admin")
+                    .map((item) => {
+                        const isActive = pathname === item.href
+                        return (
+                            <NavItem
+                                key={item.href}
+                                item={item}
+                                isActive={isActive}
+                                collapsed={collapsed}
+                            />
+                        )
+                    })}
 
                 {/* Expand button when collapsed */}
                 {onToggle && collapsed && (

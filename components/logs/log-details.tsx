@@ -192,24 +192,26 @@ function JsonActionButtons({ data, filename, onClick }: { data: object, filename
 
     return (
         <div className="flex items-center gap-0.5 ml-auto mr-2">
-            <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 text-muted-foreground hover:text-foreground hover:bg-muted/80 rounded-md"
+            <div
+                role="button"
+                tabIndex={0}
+                className="inline-flex items-center justify-center h-6 w-6 text-muted-foreground hover:text-foreground hover:bg-muted/80 rounded-md cursor-pointer"
                 onClick={handleCopy}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleCopy(e as unknown as React.MouseEvent) }}
                 title="Copy JSON"
             >
                 {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
-            </Button>
-            <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 text-muted-foreground hover:text-foreground hover:bg-muted/80 rounded-md"
+            </div>
+            <div
+                role="button"
+                tabIndex={0}
+                className="inline-flex items-center justify-center h-6 w-6 text-muted-foreground hover:text-foreground hover:bg-muted/80 rounded-md cursor-pointer"
                 onClick={handleDownload}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleDownload(e as unknown as React.MouseEvent) }}
                 title="Download JSON"
             >
                 <Download className="h-3.5 w-3.5" />
-            </Button>
+            </div>
         </div>
     )
 }
