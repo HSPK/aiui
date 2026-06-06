@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { Button } from "@/components/ui/button"
-import { Plus, ArrowUp, RotateCcw } from "lucide-react"
+import { Plus, ArrowUp } from "lucide-react"
 import { ConnectedModelSelector } from "@/components/playground/model-selector"
 import { ModelChipsWithConfig } from "@/components/playground/model-chips-with-config"
 import { useDeviceSettingsStore } from "@/lib/stores/device-settings-store"
@@ -18,10 +18,8 @@ export interface ChatInputCallbacks {
 interface ChatInputProps {
     tabId: string
     onSubmit: (input: string) => void
-    onRetry?: () => void
     isLoading: boolean
     onStop: () => void
-    lastMessageIsUser?: boolean
     // Config passed via ref to prevent re-renders
     configRef: React.RefObject<ChatInputConfig>
     callbacksRef: React.RefObject<ChatInputCallbacks>
@@ -36,10 +34,8 @@ export interface ChatInputRef {
 export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProps>(function ChatInput({
     tabId,
     onSubmit,
-    onRetry,
     isLoading,
     onStop,
-    lastMessageIsUser,
     configRef,
     callbacksRef,
 }, ref) {
@@ -62,10 +58,8 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
 
     // Use ref for callbacks to prevent recreation
     const onSubmitRef = React.useRef(onSubmit)
-    const onRetryRef = React.useRef(onRetry)
     const onStopRef = React.useRef(onStop)
     onSubmitRef.current = onSubmit
-    onRetryRef.current = onRetry
     onStopRef.current = onStop
 
     // Expose methods to parent
@@ -138,7 +132,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     }, [])
 
     // Show submit button based on hasInput state (not full input value)
-    const showSubmit = !isLoading && !lastMessageIsUser && hasInput
+    const showSubmit = !isLoading && hasInput
 
     return (
         <form onSubmit={handleSubmit} className="flex flex-col gap-2 w-full mx-auto max-w-4xl relative">
@@ -187,20 +181,6 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
                         >
                             <div className="h-2.5 w-2.5 bg-current rounded-[1px]" />
                         </Button>
-                    ) : lastMessageIsUser ? (
-                        // Show retry button when last message is from user
-                        <Button
-                            type="button"
-                            size="icon"
-                            onClick={(e) => {
-                                e.preventDefault()
-                                onRetryRef.current?.()
-                            }}
-                            className="h-8 w-8 rounded-full ml-1 bg-orange-500 text-white hover:bg-orange-600"
-                            title="Retry last message"
-                        >
-                            <RotateCcw className="h-4 w-4" />
-                        </Button>
                     ) : showSubmit && (
                         <Button
                             type="submit"
@@ -218,9 +198,8 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     // Custom comparison - only re-render when these specific props change
     return (
         prevProps.tabId === nextProps.tabId &&
-        prevProps.isLoading === nextProps.isLoading &&
-        prevProps.lastMessageIsUser === nextProps.lastMessageIsUser
+        prevProps.isLoading === nextProps.isLoading
         // Refs are stable, no need to compare
-        // onSubmit, onRetry, onStop use refs internally, no need to compare
+        // onSubmit, onStop use refs internally, no need to compare
     )
 })

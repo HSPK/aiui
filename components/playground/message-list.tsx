@@ -4,6 +4,7 @@ import { models } from "@/lib/api";
 import * as React from "react"
 import { Bot } from "lucide-react"
 import { cn, formatRelativeDate, normalizeDate } from "@/lib/utils"
+import type { Message } from "@/components/playground/chat/types"
 
 import { ChatMessage } from "./chat-message"
 
@@ -22,10 +23,15 @@ const DateSeparator = React.memo(({ date }: { date: string | Date }) => (
 DateSeparator.displayName = "DateSeparator"
 
 interface MessageListProps {
-    messages: any[]
+    messages: Message[]
     isLoading: boolean
     onViewGeneration?: (generationId: string) => void
-    onRetry?: () => void
+    /** Create a sibling response for the last assistant message
+     *  (different from retry — runs on a successful completion to
+     *  generate an alternative). */
+    onRegenerate?: () => void
+    /** Per-message retry for a failed assistant slot. Wired to the
+     *  retry button on the inline error card. */
     onRetryFailed?: (failedAssistantId: string) => void
     // For sibling navigation - map of parent_id to selected sibling index
     selectedSiblings?: Map<string, number>
@@ -36,7 +42,7 @@ export const MessageList = React.memo(({
     messages,
     isLoading,
     onViewGeneration,
-    onRetry,
+    onRegenerate,
     onRetryFailed,
     selectedSiblings,
     onSelectSibling
@@ -46,9 +52,11 @@ export const MessageList = React.memo(({
     const modelProviderMap = React.useMemo(() => {
         const map = new Map<string, string>()
         if (Array.isArray(modelsData)) {
-            modelsData.forEach((m: any) => {
-                if (m.name) map.set(m.name, m.provider)
-                if (m.model_id) map.set(m.model_id, m.provider)
+            modelsData.forEach((m) => {
+                if (m.provider) {
+                    if (m.name) map.set(m.name, m.provider)
+                    if (m.model_id) map.set(m.model_id, m.provider)
+                }
             })
         }
         return map
@@ -56,9 +64,9 @@ export const MessageList = React.memo(({
 
     // Build sibling groups: group assistant messages by their parent_id
     const siblingGroups = React.useMemo(() => {
-        const groups = new Map<string, any[]>()  // parent_id -> array of sibling messages
+        const groups = new Map<string, Message[]>()
 
-        messages.forEach((m: any) => {
+        messages.forEach((m) => {
             if (m.role === 'assistant' && m.parent_id) {
                 const siblings = groups.get(m.parent_id) || []
                 siblings.push(m)
@@ -67,10 +75,10 @@ export const MessageList = React.memo(({
         })
 
         // Sort each group by created_at to maintain order
-        groups.forEach((siblings, key) => {
+        groups.forEach((siblings) => {
             siblings.sort((a, b) => {
-                const dateA = new Date(a.created_at || a.createdAt || 0).getTime()
-                const dateB = new Date(b.created_at || b.createdAt || 0).getTime()
+                const dateA = new Date(a.created_at || 0).getTime()
+                const dateB = new Date(b.created_at || 0).getTime()
                 return dateA - dateB
             })
         })
@@ -85,7 +93,7 @@ export const MessageList = React.memo(({
 
         // Build a set of all message IDs that are used as parent_id by subsequent messages
         const usedAsParent = new Set<string>()
-        messages.forEach((m: any) => {
+        messages.forEach((m) => {
             if (m.parent_id) {
                 usedAsParent.add(m.parent_id)
             }
@@ -120,10 +128,10 @@ export const MessageList = React.memo(({
     // Find the last visible assistant message index
     const lastAssistantIndex = React.useMemo(() => {
         // Process messages to find what would be displayed
-        const visibleMessages: any[] = []
+        const visibleMessages: Message[] = []
         const seenParentIds = new Set<string>()
 
-        messages.forEach((m: any) => {
+        messages.forEach((m) => {
             if (m.role === 'user') {
                 visibleMessages.push(m)
             } else if (m.role === 'assistant' && m.parent_id) {
@@ -158,7 +166,7 @@ export const MessageList = React.memo(({
         let lastDate: string | null = null
         const seenParentIds = new Set<string>()
 
-        messages.forEach((m: any, index: number) => {
+        messages.forEach((m, index) => {
             // For assistant messages with siblings, only render selected one
             if (m.role === 'assistant' && m.parent_id) {
                 const siblings = siblingGroups.get(m.parent_id)
@@ -172,7 +180,7 @@ export const MessageList = React.memo(({
                     const selectedIdx = getSelectedIndex(m.parent_id, siblings.length)
                     // Use date of the LAST sibling for separator logic (to keep it consistent)
                     const lastSibling = siblings[siblings.length - 1]
-                    const mDate = lastSibling.created_at || lastSibling.createdAt
+                    const mDate = lastSibling.created_at
                     const dateObj = normalizeDate(mDate)
                     const currentDate = dateObj.toDateString()
 
@@ -182,12 +190,13 @@ export const MessageList = React.memo(({
                     const canSelect = !hasNextUserMessage
 
                     if (currentDate !== lastDate) {
-                        items.push(<DateSeparator key={`date-${currentDate}-${index}`} date={mDate} />)
+                        items.push(<DateSeparator key={`date-${currentDate}-${index}`} date={mDate ?? new Date()} />)
                         lastDate = currentDate
                     }
 
+                    const parentId = m.parent_id
                     items.push(
-                        <div key={`group-${m.parent_id}`} className="w-0 min-w-full overflow-x-auto pb-4 scrollbar-none">
+                        <div key={`group-${parentId}`} className="w-0 min-w-full overflow-x-auto pb-4 scrollbar-none">
                             <div className="inline-flex gap-3 px-4 sm:px-6 md:px-8 lg:px-12">
                                 {siblings.map((sibling, idx) => (
                                     <ChatMessage
@@ -197,13 +206,13 @@ export const MessageList = React.memo(({
                                         isTyping={isLoading && !sibling.generation_id && !sibling.error}
                                         onViewGeneration={onViewGeneration}
                                         isLastAssistant={sibling.id === lastAssistantIndex}
-                                        onRetry={onRetry}
+                                        onRegenerate={onRegenerate}
                                         onRetryFailed={onRetryFailed}
                                         isLoading={isLoading}
                                         isSibling={true}
                                         siblingCount={siblings.length}
                                         isSelected={idx === selectedIdx}
-                                        onSelect={canSelect ? () => onSelectSibling?.(m.parent_id, idx) : undefined}
+                                        onSelect={canSelect ? () => onSelectSibling?.(parentId, idx) : undefined}
                                     />
                                 ))}
                             </div>
@@ -213,12 +222,12 @@ export const MessageList = React.memo(({
                 }
             }
 
-            const mDate = m.created_at || m.createdAt
+            const mDate = m.created_at
             const dateObj = normalizeDate(mDate)
             const currentDate = dateObj.toDateString()
 
             if (currentDate !== lastDate) {
-                items.push(<DateSeparator key={`date-${currentDate}-${index}`} date={mDate} />)
+                items.push(<DateSeparator key={`date-${currentDate}-${index}`} date={mDate ?? new Date()} />)
                 lastDate = currentDate
             }
 
@@ -230,14 +239,14 @@ export const MessageList = React.memo(({
                     isTyping={isLoading && m.role === 'assistant' && !m.generation_id && !m.error}
                     onViewGeneration={onViewGeneration}
                     isLastAssistant={m.id === lastAssistantIndex && m.role === 'assistant'}
-                    onRetry={m.role === 'assistant' ? onRetry : undefined}
+                    onRegenerate={m.role === 'assistant' ? onRegenerate : undefined}
                     onRetryFailed={m.role === 'assistant' ? onRetryFailed : undefined}
                     isLoading={isLoading}
                 />
             )
         })
         return items
-    }, [messages, isLoading, modelProviderMap, onViewGeneration, siblingGroups, getSelectedIndex, onSelectSibling, lastAssistantIndex, onRetry, onRetryFailed])
+    }, [messages, isLoading, modelProviderMap, onViewGeneration, siblingGroups, getSelectedIndex, onSelectSibling, lastAssistantIndex, onRegenerate, onRetryFailed])
 
     return (
         <div className={cn("pb-36 pt-4 max-w-full overflow-hidden", messages.length === 0 && "min-h-[calc(100vh-200px)] flex flex-col")}>

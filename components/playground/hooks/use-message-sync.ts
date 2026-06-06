@@ -13,52 +13,31 @@ interface UseMessageSyncOptions {
 }
 
 /**
- * Hook to sync messages to store and refresh sidebar
- * - Debounced sync to store (1s delay)
- * - Refresh sidebar when loading completes
+ * Hook to sync messages to store and refresh sidebar.
+ *
+ * - Debounced (1s) write of the hook's authoritative `Message[]` into
+ *   the store. We persist the same shape we hold in component state —
+ *   `Message` from `chat/types` — so there's no round-trip conversion
+ *   between hook and store. (Wire-format conversion happens once at
+ *   the server boundary in `usePaginatedMessages.transformMessage`.)
+ * - Refresh the sidebar when streaming completes so the conversation
+ *   list picks up the new title / preview.
  */
 export function useMessageSync({
     tabId,
-    conversationId,
+    conversationId: _conversationId,
     messages,
     isLoading
 }: UseMessageSyncOptions): void {
     const updateTab = usePlaygroundStore((state) => state.updateTab)
     const invalidateConversations = conversations.useInvalidate()
 
-    // Sync messages to store (debounced)
     React.useEffect(() => {
         const timeout = setTimeout(() => {
-            const storeMessages = messages.map((m) => {
-                let contentVal = m.content
-                if (typeof contentVal !== 'string') {
-                    if (Array.isArray(contentVal) && (contentVal as any)[0]?.text) {
-                        contentVal = (contentVal as any)[0].text
-                    } else if (typeof contentVal === 'object' && contentVal !== null) {
-                        contentVal = JSON.stringify(contentVal)
-                    }
-                }
-
-                return {
-                    id: m.id,
-                    conversation_id: conversationId || "",
-                    role: m.role as any,
-                    content: [{ type: "text", text: String(contentVal) }],
-                    model_id: m.model_id,
-                    reasoning_content: m.reasoning_content,
-                    is_active: true,
-                    created_at: m.created_at || new Date().toISOString(),
-                    rating: m.rating,
-                    generation_id: m.generation_id,
-                    feedback: m.feedback,
-                    parent_id: m.parent_id
-                }
-            })
-            updateTab(tabId, { messages: storeMessages as any })
+            updateTab(tabId, { messages })
         }, 1000)
-
         return () => clearTimeout(timeout)
-    }, [messages, updateTab, tabId, conversationId])
+    }, [messages, updateTab, tabId])
 
     // Refresh sidebar when message sending completes
     const prevIsLoadingRef = React.useRef(isLoading)

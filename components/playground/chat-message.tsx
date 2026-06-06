@@ -4,7 +4,7 @@ import { messages } from "@/lib/api";
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Check, Copy, ChevronDown, ChevronRight, ChevronLeft, ThumbsUp, ThumbsDown, Info, RotateCcw, AlertCircle } from "lucide-react"
+import { Check, Copy, ChevronDown, ChevronRight, ThumbsUp, ThumbsDown, Info, RotateCcw, AlertCircle } from "lucide-react"
 import { cn, formatMessageTime } from "@/lib/utils"
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -13,6 +13,7 @@ import rehypeKatex from 'rehype-katex'
 import { ProviderIcon } from "@/components/ProviderIcon"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { preferences } from "@/lib/api"
+import type { Message } from "@/components/playground/chat/types"
 
 import { toast } from "sonner"
 import { CodeBlock, InlineCode } from "./code-block"
@@ -127,13 +128,16 @@ const markdownComponents = {
 }
 
 interface ChatMessageProps {
-    message: any
+    message: Message
     provider?: string
     isTyping?: boolean
     onViewGeneration?: (generationId: string) => void
     // Retry/regenerate support
     isLastAssistant?: boolean
-    onRetry?: () => void
+    /** Generate an alternative sibling for the last successful
+     *  assistant message. Distinct from `onRetryFailed`, which only
+     *  re-runs failed slots. */
+    onRegenerate?: () => void
     /** Per-message retry for failed assistant slots — wired to the
      *  retry button on the inline error card. */
     onRetryFailed?: (failedAssistantId: string) => void
@@ -151,7 +155,7 @@ export const ChatMessage = React.memo(({
     isTyping,
     onViewGeneration,
     isLastAssistant,
-    onRetry,
+    onRegenerate,
     onRetryFailed,
     isLoading,
     isSibling,
@@ -159,11 +163,13 @@ export const ChatMessage = React.memo(({
     isSelected,
     onSelect
 }: ChatMessageProps) => {
-    const { role, content, reasoning_content, model_id, created_at, createdAt, generation_id, rating: initialRating, error: messageError } = message
-    const messageDate = created_at || createdAt
+    const { role, content, reasoning_content, model_id, created_at, generation_id, rating: initialRating, error: messageError } = message
+    const messageDate = created_at
     const [copied, setCopied] = React.useState(false)
     const [isReasoningOpen, setIsReasoningOpen] = React.useState(true)
-    const [rating, setRating] = React.useState<"up" | "down" | "none">(initialRating || "none")
+    const [rating, setRating] = React.useState<"up" | "down" | "none">(
+        (initialRating as "up" | "down" | "none") || "none"
+    )
     const [isRating, setIsRating] = React.useState(false)
     const { data: userPrefs } = preferences.useGet()
     const userName = userPrefs?.user_name ?? "User"
@@ -172,25 +178,14 @@ export const ChatMessage = React.memo(({
     // Sync rating state when initialRating changes (e.g., from server)
     React.useEffect(() => {
         if (initialRating) {
-            setRating(initialRating)
+            setRating(initialRating as "up" | "down" | "none")
         }
     }, [initialRating])
 
-    // Memoize the JSON parsing/display calculation to avoid doing it on every render
-    const displayContent = React.useMemo(() => {
-        let dc = content;
-        if (typeof content === 'string' && content.trim().startsWith('[') && content.includes('"type":"text"')) {
-            try {
-                const parsed = JSON.parse(content);
-                if (Array.isArray(parsed) && parsed[0]?.text) {
-                    dc = parsed[0].text;
-                }
-            } catch (e) {
-                // ignore
-            }
-        }
-        return typeof dc === 'string' ? dc : JSON.stringify(dc, null, 2)
-    }, [content])
+    // Content is always a string by `Message` contract — wire-format
+    // conversion happens once at the server boundary in
+    // `usePaginatedMessages.transformMessage`, never round-tripped.
+    const displayContent = content ?? ""
 
     const onCopy = React.useCallback(() => {
         navigator.clipboard.writeText(displayContent)
@@ -207,7 +202,7 @@ export const ChatMessage = React.memo(({
         try {
             await messages.rate(message.id, targetRating)
             setRating(targetRating)
-        } catch (err) {
+        } catch {
             toast.error("Failed to rate message")
         } finally {
             setIsRating(false)
@@ -420,15 +415,15 @@ export const ChatMessage = React.memo(({
                     </>
                 )}
 
-                {/* Retry button - only for last assistant message when not loading */}
-                {role === "assistant" && isLastAssistant && onRetry && !isLoading && generation_id && (
+                {/* Regenerate button - last successful assistant message only */}
+                {role === "assistant" && isLastAssistant && onRegenerate && !isLoading && generation_id && (
                     <Button
                         variant="ghost"
                         size="sm"
                         className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground bg-background border border-border/50 shadow-sm rounded-md hover:bg-muted/50 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150"
                         onClick={(e) => {
                             e.stopPropagation()
-                            onRetry()
+                            onRegenerate()
                         }}
                         title="Regenerate response"
                     >

@@ -8,9 +8,8 @@ import type { Message, ChatOptions } from "./chat"
 export { type Message } from "./chat"
 
 type UsePlaygroundChatOptions = {
-    initialMessages?: any[]
+    initialMessages?: Message[]
     conversationId?: string
-    onConversationCreated?: (id: string, groupId?: string) => void
     /** Minimum interval (ms) between UI updates during streaming. Default: 100ms */
     updateInterval?: number
 }
@@ -18,7 +17,6 @@ type UsePlaygroundChatOptions = {
 export function usePlaygroundChat({
     initialMessages = [],
     conversationId,
-    onConversationCreated,
     updateInterval = 100,
 }: UsePlaygroundChatOptions) {
     // ============ State ============
@@ -113,46 +111,19 @@ export function usePlaygroundChat({
                 config: options?.config,
                 getModelConfig: options?.getModelConfig
             })
-        } catch (err: any) {
+        } catch (err) {
             console.error("Chat Error:", err)
-            setError(err)
+            setError(err instanceof Error ? err : new Error(String(err)))
         } finally {
             setIsLoading(false)
         }
-    }, [streamMultiple]) // Remove messages dependency!
+    }, [streamMultiple])
 
-    const handleRetry = useCallback(async (options?: ChatOptions) => {
-        const currentMessages = messagesRef.current
-        if (isLoadingRef.current || !lastMessageIsUser(currentMessages)) return
-
-        const models = options?.models
-        if (!models?.length) {
-            toast.error("Please select a model first")
-            return
-        }
-
-        setError(null)
-        setIsLoading(true)
-
-        try {
-            const lastUserMessage = currentMessages[currentMessages.length - 1]
-
-            await streamMultiple({
-                userMessageId: lastUserMessage.id,
-                userContent: lastUserMessage.content,
-                parentMessageId: lastUserMessage.parent_id,
-                models,
-                config: options?.config,
-                getModelConfig: options?.getModelConfig
-            })
-        } catch (err: any) {
-            console.error("Chat Retry Error:", err)
-            setError(err)
-        } finally {
-            setIsLoading(false)
-        }
-    }, [streamMultiple]) // Remove messages/isLoading dependency!
-
+    /** Retry a single failed assistant slot — invoked from the inline
+     *  error card. There is intentionally no "retry last user message"
+     *  surface; per-message retry covers single- and multi-model runs
+     *  uniformly (a failed slot retries that one model, successful
+     *  siblings stay untouched). */
     const handleRetryFailed = useCallback(async (
         failedAssistantId: string,
         options?: ChatOptions
@@ -175,9 +146,9 @@ export function usePlaygroundChat({
                 userMessage.content,
                 options?.getModelConfig
             )
-        } catch (err: any) {
+        } catch (err) {
             console.error("Chat Retry Failed Error:", err)
-            setError(err)
+            setError(err instanceof Error ? err : new Error(String(err)))
         } finally {
             setIsLoading(false)
         }
@@ -220,46 +191,36 @@ export function usePlaygroundChat({
                 config: options?.config,
                 getModelConfig: options?.getModelConfig
             })
-        } catch (err: any) {
+        } catch (err) {
             console.error("Chat Regenerate Error:", err)
-            setError(err)
+            setError(err instanceof Error ? err : new Error(String(err)))
         } finally {
             setIsLoading(false)
         }
-    }, [streamMultiple]) // Remove messages/isLoading dependency!
-
-    // ============ Computed ============
-    const isLastMessageUser = lastMessageIsUser(messages)
+    }, [streamMultiple])
 
     return {
         messages,
         handleSubmit,
-        handleRetry,
         handleRetryFailed,
         handleRegenerate,
         isLoading,
         setMessages,
         error,
         stop,
-        lastMessageIsUser: isLastMessageUser
     }
 }
 
 // ============ Helper Functions ============
 
-function normalizeMessages(messages: any[]): Message[] {
+function normalizeMessages(messages: Message[]): Message[] {
     if (!messages?.length) return []
-
     return messages.map((m, i) => ({
         ...m,
         id: m.id || `init-${i}`,
         role: m.role || "user",
-        content: m.content || ""
+        content: m.content ?? ""
     }))
-}
-
-function lastMessageIsUser(messages: Message[]): boolean {
-    return messages.length > 0 && messages[messages.length - 1].role === "user"
 }
 
 function findLastAssistantMessage(messages: Message[]): Message | null {

@@ -50,34 +50,19 @@ export function ChatFlow({ tabId }: { tabId: string }) {
     // Sibling navigation state
     const { selectedSiblings, onSelectSibling } = useSiblingNavigation()
 
-    // Normalize messages from store
-    const normalizedMessages = React.useMemo(() => {
-        return tabMessages.map(m => ({
-            ...m,
-            id: m.id,
-            role: m.role as any,
-            content: typeof m.content === 'string'
-                ? m.content
-                : (Array.isArray(m.content) && m.content[0]?.text)
-                    ? m.content[0].text
-                    : String(m.content)
-        }))
-    }, [tabMessages])
-
-    // Chat hook
+    // Chat hook — `tabMessages` is already in canonical `Message[]` shape
+    // (string content) so no normalization layer is needed.
     const {
         messages,
         handleSubmit,
-        handleRetry,
         handleRetryFailed,
         handleRegenerate,
         isLoading,
         setMessages,
         stop,
-        lastMessageIsUser
     } = usePlaygroundChat({
         conversationId,
-        initialMessages: normalizedMessages,
+        initialMessages: tabMessages,
     })
 
     // Context assistant calculation (for sibling branching)
@@ -144,14 +129,6 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         })
     }, [buildPerModelConfig, handleSubmit, getModelIds, contextAssistantIdRef])
 
-    // Retry (when last message is user - no assistant response yet)
-    const onRetry = React.useCallback(() => {
-        handleRetry({
-            models: getModelIds(),
-            getModelConfig: buildPerModelConfig
-        })
-    }, [buildPerModelConfig, handleRetry, getModelIds])
-
     // Regenerate (create sibling response for last assistant message)
     const onRegenerate = React.useCallback(() => {
         handleRegenerate({
@@ -161,7 +138,9 @@ export function ChatFlow({ tabId }: { tabId: string }) {
     }, [buildPerModelConfig, handleRegenerate, getModelIds])
 
     // Per-message retry — triggered by the retry button on an inline
-    // error card. Re-streams just that one failed assistant slot.
+    // error card. Re-streams just that one failed assistant slot. This
+    // is the ONLY retry surface — the old "last message is user" retry
+    // button in ChatInput was removed in favor of inline error UI.
     const onRetryFailed = React.useCallback((failedAssistantId: string) => {
         handleRetryFailed(failedAssistantId, {
             models: getModelIds(),
@@ -183,7 +162,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                         messages={messages}
                         isLoading={isLoading}
                         onViewGeneration={handleViewGeneration}
-                        onRetry={onRegenerate}
+                        onRegenerate={onRegenerate}
                         onRetryFailed={onRetryFailed}
                         selectedSiblings={selectedSiblings}
                         onSelectSibling={onSelectSibling}
@@ -206,10 +185,8 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                 <ChatInput
                     tabId={tabId}
                     onSubmit={onFormSubmit}
-                    onRetry={onRetry}
                     isLoading={isLoading}
                     onStop={stop}
-                    lastMessageIsUser={lastMessageIsUser}
                     configRef={configRef}
                     callbacksRef={callbacksRef}
                 />

@@ -1,28 +1,42 @@
 import { ApiError, conversations } from "@/lib/api";
 import * as React from "react"
+import type { Message } from "@/components/playground/chat/types"
+import type { MessageDTO } from "@/lib/schemas/conversation"
 
 interface UsePaginatedMessagesOptions {
     conversationId?: string
-    initialMessages: any[]
-    setMessages: React.Dispatch<React.SetStateAction<any[]>>
+    initialMessages: Message[]
+    setMessages: React.Dispatch<React.SetStateAction<Message[]>>
     pageSize?: number
 }
 
-// Helper to transform API message to UI message
-export function transformMessage(m: any) {
+/** Convert a server `MessageDTO` to the FE-canonical `Message`.
+ *  This is the single conversion point between wire-format (where
+ *  `content` is the OpenAI-style `[{type:"text", text:"..."}]` array)
+ *  and the hook/store shape (where `content` is a plain string). */
+export function transformMessage(m: MessageDTO): Message {
+    const raw = m.content
+    let content: string
+    if (typeof raw === "string") {
+        content = raw
+    } else if (Array.isArray(raw) && typeof raw[0]?.text === "string") {
+        content = raw[0].text
+    } else if (raw == null) {
+        content = ""
+    } else {
+        content = JSON.stringify(raw)
+    }
     return {
         id: m.id,
-        role: m.role,
-        content: typeof m.content === 'string'
-            ? m.content
-            : (Array.isArray(m.content) && m.content[0]?.text) || JSON.stringify(m.content),
+        role: m.role === "tool" ? "assistant" : m.role,
+        content,
         model_id: m.model_id,
         reasoning_content: m.reasoning_content,
         created_at: m.created_at,
         rating: m.rating,
         generation_id: m.generation_id,
         feedback: m.feedback,
-        parent_id: m.parent_id
+        parent_id: m.parent_id,
     }
 }
 
