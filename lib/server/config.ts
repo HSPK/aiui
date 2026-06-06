@@ -3,12 +3,12 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db, schema } from "./db";
 import { encryptSecret } from "./crypto";
-import { preflightFromConfig } from "@/lib/preflight.mjs";
+import { preflightFromConfig } from "@/lib/preflight";
 
 /**
  * Local config file loader (server side).
  *
- * The search order and the YAML schema are defined in lib/preflight.mjs so
+ * The search order and the YAML schema are defined in lib/preflight.ts so
  * the CLI (bin/aiui.mjs) and the server can share one source of truth.
  *
  * Top-level fields applied as env vars (master_key, database.path, admin.*,

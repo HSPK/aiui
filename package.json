@@ -8,9 +8,11 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "bun run build:cli && next build",
+    "build:cli": "node scripts/build-cli.mjs",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "prepare": "node scripts/build-cli.mjs"
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.29",
@@ -71,6 +73,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "drizzle-kit": "^0.31.10",
+    "esbuild": "^0.28.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
     "tailwindcss": "^4",

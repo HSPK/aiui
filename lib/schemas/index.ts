@@ -8,3 +8,4 @@ export * from "./log";
 export * from "./conversation";
 export * from "./playground";
 export * from "./preferences";
+export * from "./config";

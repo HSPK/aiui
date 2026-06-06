@@ -111,4 +111,4 @@ export const providers = {
 
 - **Namespace shadowing**：`import { providers } from "@/lib/api"` 后不要 `const providers = ...`——TS 推断会回退 `any`。命名 `providerList / modelOptions / convList`
 - **新 `user_preferences` 字段**：加 zod field + 加默认值即可，`getPreferences` 自动 merge 旧行；JSON 列**不需要** migration
-- **CLI**：`bin/aiui.mjs` 只做参数解析 + `preflight` + spawn next；共享逻辑住 `lib/preflight.mjs` (plain JS，CLI 与 server `config.ts` 都用)。CLI 自动注入 `AIUI_USER_CWD=process.cwd()`，服务端始终 `process.env.AIUI_USER_CWD || process.cwd()` 解析路径
+- **CLI**：`bin/aiui.ts` 是源（TS），`scripts/build-cli.mjs` 用 esbuild 把它 + `lib/preflight.ts` 打包成 `bin/aiui.mjs`（committed compiled artifact 已 gitignore；`prepare` 钩子在 `bun install` 时自动重建，`bun run build` 也会先跑 `build:cli`）。源里只做参数解析 + `preflight` + spawn next；共享解析逻辑住 `lib/preflight.ts`（CLI 与服务端 `config.ts` 都用，类型来自 `lib/schemas/config.ts`）。CLI 自动注入 `AIUI_USER_CWD=process.cwd()`，服务端始终 `process.env.AIUI_USER_CWD || process.cwd()` 解析路径
