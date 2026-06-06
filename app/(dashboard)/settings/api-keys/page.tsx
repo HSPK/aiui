@@ -38,6 +38,7 @@ import { toast } from "sonner"
 import { Plus, Trash2, Copy, KeyRound } from "lucide-react"
 import { formatToLocal } from "@/lib/utils"
 import { ApiKey } from "@/lib/types"
+import { PageHeader } from "@/components/ui/page-header"
 
 export default function ApiKeysPage() {
     const queryClient = useQueryClient()
@@ -74,19 +75,19 @@ export default function ApiKeysPage() {
 
     return (
         <div className="h-full overflow-y-auto scrollbar-thin p-4 space-y-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h2 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+            <PageHeader
+                title={
+                    <span className="flex items-center gap-2">
                         <KeyRound className="h-6 w-6" /> API Keys
-                    </h2>
-                    <p className="text-muted-foreground text-sm mt-1">
-                        Use these keys with any OpenAI-compatible client to call the gateway at <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">/api/v1/chat/completions</code>.
-                    </p>
-                </div>
-                <Button onClick={() => setCreateOpen(true)}>
-                    <Plus className="h-4 w-4 mr-1" /> Create Key
-                </Button>
-            </div>
+                    </span>
+                }
+                description={<>Use these keys with any OpenAI-compatible client to call the gateway at <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">/api/v1/chat/completions</code>.</>}
+                actions={
+                    <Button onClick={() => setCreateOpen(true)}>
+                        <Plus className="h-4 w-4 mr-1" /> Create Key
+                    </Button>
+                }
+            />
 
             <Card>
                 <CardHeader>
