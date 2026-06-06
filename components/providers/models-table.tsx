@@ -14,9 +14,18 @@ import {
     TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
-import { Copy, Pencil, Trash2 } from "lucide-react"
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Copy, MoreHorizontal, Pencil, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
+import { capabilityLabel } from "./capability-label"
+import { cn } from "@/lib/utils"
 
 interface Props {
     models: ModelDTO[]
@@ -25,7 +34,7 @@ interface Props {
 }
 
 export function ModelsTable({ models, onEdit, onDelete }: Props) {
-    const showActions = !!(onEdit || onDelete)
+    const interactive = !!onEdit
     return (
         <Table>
             <TableHeader>
@@ -36,12 +45,17 @@ export function ModelsTable({ models, onEdit, onDelete }: Props) {
                     <TableHead>Type</TableHead>
                     <TableHead>Context</TableHead>
                     <TableHead>Source</TableHead>
-                    {showActions && <TableHead className="w-[100px] text-right">Actions</TableHead>}
+                    {onDelete && <TableHead className="w-[40px]" />}
                 </TableRow>
             </TableHeader>
             <TableBody>
                 {models.map((model) => (
-                    <TableRow key={model.id || model.name}>
+                    <TableRow
+                        key={model.id || model.name}
+                        onClick={interactive ? () => onEdit?.(model) : undefined}
+                        className={cn(interactive && "cursor-pointer")}
+                        title={interactive ? (model.is_discovered ? "Click to register override" : "Click to edit") : undefined}
+                    >
                         <TableCell className="font-mono max-w-[300px]">
                             <div className="flex items-center justify-between gap-2 group w-full">
                                 <TooltipProvider>
@@ -58,7 +72,8 @@ export function ModelsTable({ models, onEdit, onDelete }: Props) {
                                     variant="ghost"
                                     size="icon"
                                     className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                                    onClick={() => {
+                                    onClick={(e) => {
+                                        e.stopPropagation()
                                         navigator.clipboard.writeText(model.name)
                                         toast.success("Model name copied to clipboard")
                                     }}
@@ -72,7 +87,7 @@ export function ModelsTable({ models, onEdit, onDelete }: Props) {
                             <Badge variant="outline">{model.provider}</Badge>
                         </TableCell>
                         <TableCell>
-                            <Badge variant="outline">{model.type}</Badge>
+                            <Badge variant="outline">{capabilityLabel(model.type)}</Badge>
                         </TableCell>
                         <TableCell>
                             <Badge variant="outline">
@@ -90,26 +105,34 @@ export function ModelsTable({ models, onEdit, onDelete }: Props) {
                                 <Badge variant="outline" className="text-[10px] uppercase font-semibold">override</Badge>
                             )}
                         </TableCell>
-                        {showActions && (
-                            <TableCell className="text-right">
-                                <div className="flex justify-end gap-1">
-                                    {onEdit && (
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-7 w-7"
-                                            onClick={() => onEdit(model)}
-                                            title={model.is_discovered ? "Create override" : "Edit"}
-                                        >
-                                            <Pencil className="h-3.5 w-3.5" />
-                                        </Button>
-                                    )}
-                                    {!model.is_discovered && onDelete && (
-                                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => onDelete(model)} title="Delete">
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                        </Button>
-                                    )}
-                                </div>
+                        {/* Compact menu — only shows the actions that aren't covered by the
+                            row click. Delete is destructive so we keep it explicit (and
+                            require the menu so a stray row click doesn't trigger it). */}
+                        {onDelete && (
+                            <TableCell className="w-[40px] text-right" onClick={(e) => e.stopPropagation()}>
+                                {!model.is_discovered && (
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button variant="ghost" size="icon" className="h-7 w-7">
+                                                <MoreHorizontal className="h-4 w-4" />
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end" className="w-32">
+                                            {onEdit && (
+                                                <DropdownMenuItem onSelect={() => onEdit(model)}>
+                                                    <Pencil className="mr-2 h-3.5 w-3.5" /> Edit
+                                                </DropdownMenuItem>
+                                            )}
+                                            {onEdit && <DropdownMenuSeparator />}
+                                            <DropdownMenuItem
+                                                className="text-destructive focus:text-destructive"
+                                                onSelect={() => onDelete(model)}
+                                            >
+                                                <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete
+                                            </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                )}
                             </TableCell>
                         )}
                     </TableRow>

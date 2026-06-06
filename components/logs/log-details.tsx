@@ -2,6 +2,7 @@
 
 import { logs } from "@/lib/api";
 import { useState } from "react"
+import { capabilityLabel } from "@/components/providers/capability-label"
 
 import {
     Sheet,
@@ -328,7 +329,7 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                             <div className="space-y-1">
                                 <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Capability</span>
                                 <div>
-                                    <Badge variant="secondary" className="font-mono text-xs font-normal">{log.capability ?? "—"}</Badge>
+                                    <Badge variant="secondary" className="text-xs font-normal">{capabilityLabel(log.capability)}</Badge>
                                 </div>
                             </div>
                             <div className="space-y-1 overflow-hidden">

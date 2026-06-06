@@ -1,6 +1,7 @@
 "use client"
 
 import type { LogListItemDTO } from "@/lib/schemas/log";
+import { capabilityLabel } from "@/components/providers/capability-label"
 import {
     ColumnDef,
     flexRender,
@@ -106,7 +107,7 @@ export function LogsTable({ data, sorting, onSortingChange, onViewDetail }: Logs
             cell: ({ row }) => {
                 const cap = row.original.capability
                 return cap
-                    ? <Badge variant="secondary" className="font-mono font-normal text-[10px]">{cap}</Badge>
+                    ? <Badge variant="secondary" className="font-normal text-[10px]">{capabilityLabel(cap)}</Badge>
                     : <span className="text-muted-foreground text-xs">—</span>
             }
         },

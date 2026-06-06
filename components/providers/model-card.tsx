@@ -5,6 +5,7 @@ import { Copy, Box, Cpu, Calendar, MessageSquare, Layers, ScanSearch, Image as I
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import { capabilityLabel } from "./capability-label"
 
 interface ModelCardProps {
     model: ModelDTO;
@@ -71,7 +72,7 @@ export function ModelCard({ model }: ModelCardProps) {
                             <TypeIcon className="h-3 w-3" /> Type
                         </span>
                         <span className={cn("font-mono text-sm font-medium", presentation.color)}>
-                            {model.type}
+                            {capabilityLabel(model.type)}
                         </span>
                     </div>
 

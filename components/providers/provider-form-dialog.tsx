@@ -34,7 +34,10 @@ interface Props {
     provider?: ProviderDTO | null
 }
 
-const ADAPTER_AUTO = ""
+/** Sentinel for the "let the server auto-detect" dropdown option. Radix
+ *  Select forbids empty-string item values, so we use a marker string and
+ *  translate it to `undefined` on submit. */
+const ADAPTER_AUTO = "__auto__"
 
 export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props) {
     const { data: adapterList } = adapters.useList(undefined, { enabled: open })
@@ -116,7 +119,7 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
 
         const payload: ProviderCreateInput = {
             name: name.trim(),
-            adapter_id: adapterId || undefined, // empty → server auto-detects
+            adapter_id: adapterId === ADAPTER_AUTO ? undefined : adapterId, // auto-detect on server
             base_url: baseUrl.trim(),
             api_version: apiVersion.trim() || null,
             default_params: params,
@@ -157,7 +160,7 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
                             </div>
                             <div className="grid gap-2 min-w-0">
                                 <Label className="text-xs">Adapter</Label>
-                                <Select value={adapterId || ADAPTER_AUTO} onValueChange={setAdapterId}>
+                                <Select value={adapterId} onValueChange={setAdapterId}>
                                     <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="Auto-detect" /></SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value={ADAPTER_AUTO}>Auto-detect</SelectItem>
