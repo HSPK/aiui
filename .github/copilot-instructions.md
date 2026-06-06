@@ -14,23 +14,28 @@
 
 ## 必备环境变量
 
-| 变量 | 说明 |
-|---|---|
-| `AIUI_MASTER_KEY` | AES-256-GCM 主密钥，加密 Provider 的 `api_key`。可改放配置文件里的 `master_key:`，env 优先。轮换会让已存的 key 解不开。 |
-| `AIUI_DB_PATH` | SQLite 路径，默认 `<userCwd>/data/aiui.db`（已在 `.gitignore`）。 |
-| `AIUI_CONFIG_PATH` | 配置文件路径覆盖；不设按下文顺序搜索。 |
-| `AIUI_USER_CWD` | **CLI 自动设置**——bin/aiui.mjs 把用户当前目录传给 Next，使 `config.ts` 和 `db/index.ts` 都基于用户工作目录而非包目录解析路径。手写代码时一律走 `process.env.AIUI_USER_CWD || process.cwd()`。 |
-| `AIUI_ADMIN_USERNAME` / `AIUI_ADMIN_PASSWORD` | 首次启动且 `users` 表为空时引导首位 admin；不设置就不引导。 |
+配置文件是单一真相，但 env vars 始终优先于配置。下表里的所有变量都对应配置文件的一个字段（见下一节）：
+
+| 变量 | 配置文件字段 | 说明 |
+|---|---|---|
+| `AIUI_MASTER_KEY` | `master_key` | AES-256-GCM 主密钥。轮换会让已存 key 解不开。 |
+| `AIUI_DB_PATH` | `database.path` | SQLite 路径，默认 `<userCwd>/data/aiui.db`（已 gitignore）。**只通过 CLI 配置生效**——`bun run start` 直接走需要 env。 |
+| `AIUI_CONFIG_PATH` | — | 配置文件路径覆盖；不设按下文顺序搜索。 |
+| `AIUI_USER_CWD` | — | **CLI 自动设置**：`bin/aiui.mjs` 把用户当前目录传给 Next，使 `preflight` 和 `db/index.ts` 都基于用户工作目录解析路径。手写代码一律走 `process.env.AIUI_USER_CWD || process.cwd()`。 |
+| `AIUI_ADMIN_USERNAME` / `AIUI_ADMIN_PASSWORD` | `admin.username` / `admin.password` | 首次启动且 `users` 表为空时引导首位 admin。 |
+| `AIUI_SESSION_TTL_DAYS` | `session.ttl_days` | 浏览器会话 TTL，默认 30。在 `auth.ts:sessionTtlMs()` 每次创建 session 时读，所以 CLI 之外也能生效。 |
+| `AIUI_MODELS_CACHE_TTL` | `cache.models_ttl_seconds` | `/models` 发现缓存的秒数，默认 300。`discovery.ts:cacheTtlMs()` 按需读。 |
+| `AIUI_SERVER_PORT` / `AIUI_SERVER_HOSTNAME` | `server.port` / `server.hostname` | CLI 启动监听；`-p`/`-H` 仍优先。Next 进程里没人用。 |
 
 ## CLI（`bin/aiui.mjs`）
 
 `package.json` `bin` 字段把它暴露为 `aiui` 命令。子命令：
 
-- `aiui init-config [--out PATH | --user | --print | --force]` — 生成带随机 `master_key` 的 YAML 模板（含 OpenAI/Azure 示例与所有注释）。默认写 `./aiui.config.yaml`。
-- `aiui start` / `aiui dev` — spawn 包目录里的 `next` binary；自动注入 `AIUI_USER_CWD=process.cwd()`。
+- `aiui init-config [--out PATH | --user | --print | --force]` — 生成带随机 `master_key` 的 YAML 模板（含全部 infra 段 + OpenAI/Azure provider 示例 + 所有注释）。默认写 `./aiui.config.yaml`。
+- `aiui start` / `aiui dev` — **先跑 `preflightFromConfig()`**（hoist 所有 env vars）再 spawn 包目录里的 `next` binary，同时注入 `AIUI_USER_CWD=process.cwd()`。
 - 无参 → `aiui start`。
 
-不要在 CLI 里读 DB / 加密 / 启业务流程：它只做参数解析 + 写文件 + spawn next。
+不要在 CLI 里读 DB / 加密 / 启业务流程：它只做参数解析 + preflight + spawn。所有共享解析逻辑住在 `lib/preflight.mjs`（plain JS，既能被 CLI 直接 import，又能被 server-side `config.ts` 复用）。
 
 ## Provider 类型
 
@@ -43,20 +48,32 @@
 
 Azure 模式下 `providers.apiVersion` 留空则默认 `2024-10-21`；`models.upstreamModelId` 是 Azure **部署名**而非模型名。所有分支逻辑集中在 `lib/server/gateway.ts` 的 `upstreamUrl` / `buildUpstreamHeaders`，以及 `forwardChatCompletions` / `forwardEmbeddings` 里对 `provider.type === "azure"` 的判断。
 
-## 本地配置文件（`lib/server/config.ts`）
+## 模型解析（discovery + override）
 
-- 启动时由 `ensureInit()` 调一次 `loadConfigFile()`（在 admin bootstrap 之后）。
-- **搜索顺序**（首个命中为准）：
-  1. `AIUI_CONFIG_PATH`
-  2. `<userCwd>/aiui.config.{yaml,yml,json}`
-  3. `<userCwd>/.config/aiui.{yaml,yml,json}`
-  4. `$XDG_CONFIG_HOME/aiui.{yaml,yml,json}`（默认 `~/.config/`）
-- **顶层 `master_key`**：解析完文件第一件事就 hoist 到 `process.env.AIUI_MASTER_KEY`（**仅在 env 未设时**），这样后续 `encryptSecret()` 不会因没 key 抛错。修这块时务必保证 master_key 应用早于任何 provider upsert。
-- 按 `name` upsert `providers` + `models`。**文件中没有的 DB 条目不会被删除**。
-- 值支持 `${ENV_VAR}` 插值（`interpolateEnv`）。
-- `api_key` 字段**省略**时不会覆盖 DB 里现有的密钥；显式写 `null` 才会清空。
-- 任何解析/写入错误只 `console.error`，不阻塞启动。
-- Sample 在仓库根的 `aiui.config.example.yaml`（已 commit），真实文件名 `aiui.config.{yaml,yml,json}` 与 `.config/aiui.{yaml,yml,json}` 已 gitignore。
+**模型不进配置文件**。`lib/server/discovery.ts` 负责动态发现：
+
+- 对每个 enabled provider，fetch 它的 `/models`（OpenAI）或 `/openai/deployments?...` 回落 `/openai/models?...`（Azure），按 `AIUI_MODELS_CACHE_TTL`（默认 300s）缓存。
+- `listAllDiscovered()` 返回所有 enabled provider 的并集；调用者可传 `{ force: true }` 强刷。
+- `resolveByDiscovery(name)` 扫所有 provider 缓存找匹配；命中即用，多个 provider 都有的话第一个赢。
+- `clearDiscoveryCache()` 在 provider 增/改/删时调用（已埋在 `/api/providers` 路由），用户也可手动 `POST /api/providers/reload`。
+
+`gateway.ts:resolveModel(name)`（**现已是 async**）的查找顺序：
+1. DB `models` 表（admin UI 加的 override，专门用于 Azure 部署 / 别名 / 调 context_window）
+2. discovery 缓存里 fuzzy hit
+3. 否则 404
+
+DB 命中时直接返回；discovery 命中时合成一个 transient `Model`，type 默认 `chat`、`upstreamModelId == name`、`defaultParams` 空，传给下游 forward。
+
+`GET /api/v1/models` 和 admin 用的 `GET /api/models` 都返回 **DB rows ∪ discovered**（按 name 去重，DB 优先），后者额外打 `is_discovered: true` 标志便于 UI 隐藏 edit/delete 按钮。
+
+## 本地配置文件（`lib/server/config.ts` + `lib/preflight.mjs`）
+
+- 共享 parser 在 `lib/preflight.mjs`（plain JS，无 `server-only`）：定位文件、parse YAML/JSON、interpolate `${ENV_VAR}`、`applyConfigEnv(cfg)` hoist 全部 infra 字段到 env vars（已设的不覆盖）。
+- 服务端 `lib/server/config.ts:loadConfigFile()` 调 preflight 后再 upsert `providers[]`（按 `name`，UI 与文件可共存）。
+- 文件里 `models[]` 段**已废弃**；遇到打 warning 但不 fail。模型由 discovery 接管。
+- `init.ts:ensureInit()` 现在先 `loadConfigFile()`，再 `bootstrapAdmin()`，这样 admin 引导能用配置里设的 `admin.*`。
+- `database.path` 必须通过 CLI preflight 生效——`db/index.ts` 在 module load 时就读 `process.env.AIUI_DB_PATH`，所以 `bun run start` 直跑时配置文件里的 `database.path` 不会生效（要么用 CLI，要么用 env）。
+- Sample 在仓库根的 `aiui.config.example.yaml`，真实文件名 `aiui.config.{yaml,yml,json}` 与 `.config/aiui.{yaml,yml,json}` 已 gitignore。
 
 ## 架构
 
@@ -84,9 +101,10 @@ Azure 模式下 `providers.apiVersion` 留空则默认 `2024-10-21`；`models.up
 | `crypto.ts` | AES-256-GCM `encryptSecret`/`decryptSecret` + `maskSecret` 用于上游 API key；`generateApiKey` 生成 `sk-aiui-…` 凭据并返回 hash。 |
 | `response.ts` | `BaseResponse<T>` 信封 + `ok(data)`/`fail(msg)` + `HttpError` 体系（`badRequest` / `unauthorized` / `forbidden` / `notFound`）+ `handle(err)` 统一 catch。 |
 | `serializers.ts` | DB row → API DTO（`serializeProvider` / `serializeModel`，含 `n_models` 计数与 `api_key_mask`）。 |
-| `gateway.ts` | **网关核心**：`resolveModel(name)`、`forwardChatCompletions(user, body, opts)`（流式时用 `TransformStream` tee 一份做日志累积）、`forwardEmbeddings(user, body)`、`mergeParams`（user > model defaults > provider defaults）、`upstreamUrl(provider, model, path)` 和 `buildUpstreamHeaders(provider, key)` 按 `provider.type` 分支 OpenAI/Azure 形态。**所有上游调用都自动写 `generation_logs`**。 |
-| `config.ts` | 启动时一次性 upsert 本地 `aiui.config.{yaml,yml,json}` 中的 providers/models。支持 `${ENV_VAR}` 插值，按 `name` 为键，缺省字段不动 DB，错误只 warn。由 `init.ts:ensureInit()` 调用。 |
-| `bootstrap.ts` + `init.ts` | `ensureInit()` 先 `bootstrapAdmin()` 再 `loadConfigFile()`，懒加载且只跑一次。**每个 Route Handler 第一行必须 `await ensureInit()`**。 |
+| `gateway.ts` | **网关核心**：`resolveModel(name)` (**async**：先查 DB `models` 表，再走 discovery)、`forwardChatCompletions(user, body, opts)`（流式时用 `TransformStream` tee 一份做日志累积）、`forwardEmbeddings(user, body)`、`mergeParams`（user > model defaults > provider defaults）、`upstreamUrl(provider, model, path)` 和 `buildUpstreamHeaders(provider, key)` 按 `provider.type` 分支 OpenAI/Azure 形态。**所有上游调用都自动写 `generation_logs`**。 |
+| `discovery.ts` | 动态模型发现：`discoverModels(provider)` 抓 `/models`（OpenAI）或 `/openai/deployments?...` 回落 `/openai/models?...`（Azure）；in-memory `Map<providerId, CacheEntry>` 按 `AIUI_MODELS_CACHE_TTL` TTL 缓存；`listAllDiscovered()` 返 union；`resolveByDiscovery(name)` 给 `gateway.resolveModel` 用；`clearDiscoveryCache()` 在 provider 增/改/删时被调。 |
+| `config.ts` | 启动时调 `preflightFromConfig()`（共享自 `lib/preflight.mjs`）hoist 全部 infra env vars，再 upsert `providers[]`（按 `name`）。`models[]` 段已废弃，遇到 warn。由 `init.ts:ensureInit()` 调用。 |
+| `bootstrap.ts` + `init.ts` | `ensureInit()` 先 `loadConfigFile()`（设置 admin env vars）再 `bootstrapAdmin()`，懒加载且只跑一次。**每个 Route Handler 第一行必须 `await ensureInit()`**。 |
 
 ### 写新 Route Handler 的样板
 ```ts
