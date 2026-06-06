@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/card"
 import { RotateCcw, Check, Bot, User, MessageSquare, Palette, Settings, ChevronDown, Search } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { ProviderIcon } from "@/components/provider-icons"
+import { ProviderIcon } from "@/components/ProviderIcon"
 
 const AVATAR_OPTIONS = ['👤', '😀', '😎', '🤖', '🦊', '🐱', '🐶', '🦁', '🐼', '🐨', '🐸', '🦄', '🌟', '💫', '🎯', '🚀']
 
@@ -108,7 +108,7 @@ const ModelSelect = React.memo(({
                                         value === model.name ? "bg-accent" : "hover:bg-muted/50"
                                     )}
                                 >
-                                    <ProviderIcon provider={model.provider || "?"} />
+                                    <ProviderIcon providerName={model.provider || "?"} />
                                     <span className="truncate">{model.name}</span>
                                 </button>
                             ))

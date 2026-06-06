@@ -10,7 +10,7 @@ import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { useSettingsStore } from "@/lib/stores/settings-store"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
-import { ProviderIcon } from "@/components/provider-icons"
+import { ProviderIcon } from "@/components/ProviderIcon"
 import { useShallow } from "zustand/react/shallow"
 
 // Simple model item - minimal DOM
@@ -39,7 +39,7 @@ const ModelItem = React.memo(({
         )}>
             {isSelected && <span className="text-[10px]">✓</span>}
         </span>
-        <ProviderIcon provider={provider} />
+        <ProviderIcon providerName={provider} />
         <span className="truncate flex-1">{name}</span>
     </button>
 ), (prev, next) => {

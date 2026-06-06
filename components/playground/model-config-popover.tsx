@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Slider } from "@/components/ui/slider"
 import { RotateCcw, X, ChevronDown } from "lucide-react"
-import { ProviderIcon } from "@/components/provider-icons"
+import { ProviderIcon } from "@/components/ProviderIcon"
 import { cn } from "@/lib/utils"
 
 // Per-model configuration type - all fields optional (undefined = use API default)
@@ -349,7 +349,7 @@ export const ModelConfigPopover = React.memo(function ModelConfigPopover({
             {/* Header */}
             <div className="border-b px-4 py-3 flex items-center justify-between">
                 <div className="flex items-center gap-2 min-w-0">
-                    <ProviderIcon provider={provider} className="h-4 w-4 shrink-0" />
+                    <ProviderIcon providerName={provider} className="h-4 w-4 shrink-0" />
                     <span className="font-medium text-sm truncate">{modelId}</span>
                     {enabledCount > 0 && (
                         <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">
@@ -460,7 +460,7 @@ export const ModelConfigPopover = React.memo(function ModelConfigPopover({
                         : "bg-muted/50 border-border/50 text-muted-foreground hover:text-foreground hover:border-border"
                 )}
             >
-                <ProviderIcon provider={provider} className="h-3.5 w-3.5" />
+                <ProviderIcon providerName={provider} className="h-3.5 w-3.5" />
                 <span className="max-w-[120px] truncate">{modelId}</span>
                 {hasCustomConfig && (
                     <span className="bg-primary text-primary-foreground text-[10px] px-1 rounded-sm font-medium">
