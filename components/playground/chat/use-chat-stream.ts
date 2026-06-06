@@ -6,8 +6,7 @@ import { ThrottledUpdater } from "./throttled-updater"
 import type { Message, StreamConfig } from "./types"
 
 type SetMessages = React.Dispatch<React.SetStateAction<Message[]>>
-/** Reuses the existing any-typed shape from `StreamConfig` so we don't
- *  introduce additional `any` usage here. */
+/** Avoids adding new `any` — borrows the existing one from StreamConfig. */
 type ModelConfig = StreamConfig['additionalConfig']
 
 type StreamParams = {
@@ -26,19 +25,12 @@ export function useChatStream(
 ) {
     const clientsRef = useRef<StreamClient[]>([])
 
-    /**
-     * Stop all active streams
-     */
     const stopAll = useCallback(() => {
         clientsRef.current.forEach(client => client.abort())
         clientsRef.current = []
     }, [])
 
-    /**
-     * Stream a single assistant slot. Used both for the initial fan-out
-     * inside `streamMultiple` and for per-message retries from the error
-     * card — both paths share the same content/error/abort handling.
-     */
+    /** Shared by initial fan-out and per-message retry. */
     const streamOne = useCallback(async (params: {
         userMessageId: string
         userContent: string
@@ -63,6 +55,8 @@ export function useChatStream(
                     model: params.model,
                     message: params.userContent,
                     userMessageId: params.userMessageId,
+                    // Upsert key — same id across retries replaces the row server-side.
+                    assistantMessageId: params.assistantMsgId,
                     parentMessageId: params.parentMessageId,
                     additionalConfig: params.modelConfig
                 },
@@ -81,22 +75,24 @@ export function useChatStream(
                     }
                 }
             )
-            // Final flush
             updater.flush(true)
         } catch (err) {
             if (err instanceof Error && err.name === "AbortError") {
-                // Aborted - flush what we have
                 updater.flush(true)
             } else {
-                // Mark the placeholder as errored — the UI renders it
-                // as an inline error card with its own retry button.
                 const message = err instanceof Error ? err.message : String(err)
+                const serverId = updater.getServerMessageId()
+                const serverGenId = updater.getServerGenerationId()
                 setMessages(prev =>
-                    prev.map(m =>
-                        m.id === params.assistantMsgId
-                            ? { ...m, error: message || "Failed to generate response" }
-                            : m
-                    )
+                    prev.map(m => {
+                        if (m.id !== params.assistantMsgId && m.id !== serverId) return m
+                        return {
+                            ...m,
+                            id: serverId ?? m.id,
+                            generation_id: serverGenId ?? m.generation_id,
+                            error: message || "Failed to generate response",
+                        }
+                    })
                 )
             }
         } finally {
@@ -104,13 +100,10 @@ export function useChatStream(
         }
     }, [conversationId, setMessages, updateInterval])
 
-    /**
-     * Stream responses for multiple models
-     */
+    /** Stream responses for multiple models in parallel. */
     const streamMultiple = useCallback(async (params: StreamParams): Promise<void> => {
         const { userMessageId, userContent, parentMessageId, models, config, getModelConfig } = params
 
-        // Create assistant placeholders
         const assistantMsgs: Message[] = models.map(model => ({
             id: crypto.randomUUID(),
             role: "assistant" as const,
@@ -120,10 +113,8 @@ export function useChatStream(
             created_at: new Date()
         }))
 
-        // Add placeholders to messages
         setMessages(prev => [...prev, ...assistantMsgs])
 
-        // Create streaming tasks
         const tasks = assistantMsgs.map((assistantMsg, idx) => {
             const model = models[idx]
             const modelConfig = getModelConfig ? getModelConfig(model) : config
@@ -142,10 +133,8 @@ export function useChatStream(
     }, [setMessages, streamOne])
 
     /**
-     * Retry a single failed assistant slot. Replaces the errored
-     * placeholder with a fresh one bound to the same id (so React
-     * reuses the DOM node) and streams that single model again. Used
-     * by the retry button on the inline error card.
+     * Reset the failed slot in place and re-stream just that model.
+     * The same id is reused so the server upserts the same row.
      */
     const retryFailedMessage = useCallback(async (
         failedMessage: Message,
@@ -154,8 +143,6 @@ export function useChatStream(
     ): Promise<void> => {
         if (!failedMessage.model_id || !failedMessage.parent_id) return
 
-        // Reset the slot: clear error/content, keep the id so the
-        // ChatMessage component instance is preserved across the retry.
         setMessages(prev => prev.map(m =>
             m.id === failedMessage.id
                 ? {

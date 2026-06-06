@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { db, schema } from "../db";
 import { forwardGeneration, resolveModel } from "../gateway";
 import { forbidden } from "../response";
@@ -19,10 +19,10 @@ function asContentText(content: unknown): string {
 }
 
 /**
- * Send a playground chat turn. Persists the user message + conversation,
- * forwards through the gateway, and writes the assistant message + log on
- * completion. Returns a streaming Response with `X-Conversation-ID`,
- * `X-Message-ID`, `X-Generation-ID` headers for the client to thread.
+ * Send a playground chat turn. Persists the user message + assistant
+ * slot via upsert keyed on `assistant_message_id` — so a retry from
+ * the inline error card replaces the same row instead of leaving an
+ * orphaned sibling. Returns a streaming Response with `X-*` headers.
  */
 export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChatInput): Promise<Response> {
     // Fail fast with a sensible 4xx if the model is bad before we touch the DB.
@@ -65,7 +65,13 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
 
     const limit = Math.max(1, body.history_limit ?? body.conv_histrory_limit ?? 20);
     const recent = db.select().from(schema.messages)
-        .where(and(eq(schema.messages.conversationId, conversationId), eq(schema.messages.isActive, true)))
+        .where(and(
+            eq(schema.messages.conversationId, conversationId),
+            eq(schema.messages.isActive, true),
+            // Skip errored assistant slots — they have empty content
+            // and would poison the upstream prompt on subsequent turns.
+            isNull(schema.messages.error),
+        ))
         .orderBy(desc(schema.messages.createdAt))
         .limit(limit)
         .all();
@@ -85,33 +91,95 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
         if (v !== undefined) reqBody[k] = v;
     }
 
-    const assistantMessageId = randomUUID();
-    const { response, logId } = await forwardGeneration(user, "chat", reqBody, {
-        conversationId,
-        messageId: assistantMessageId,
-        onComplete: ({ content, reasoning }) => {
-            db.insert(schema.messages).values({
-                id: assistantMessageId,
-                conversationId,
-                role: "assistant",
-                content: [{ type: "text", text: content }],
-                reasoningContent: reasoning || null,
+    // Same id across attempts → retry replaces the row, no orphan sibling.
+    const assistantMessageId = body.assistant_message_id ?? randomUUID();
+
+    const upsertAssistant = (fields: {
+        content: string;
+        reasoning?: string | null;
+        generationId?: string | null;
+        error?: string | null;
+    }) => {
+        const tsNow = new Date().toISOString();
+        const errorValue = fields.error ?? null;
+        db.insert(schema.messages).values({
+            id: assistantMessageId,
+            conversationId,
+            role: "assistant",
+            content: [{ type: "text", text: fields.content }],
+            reasoningContent: fields.reasoning || null,
+            modelId: body.model,
+            generationId: fields.generationId ?? null,
+            parentId: userMessageId,
+            isActive: true,
+            error: errorValue,
+            createdAt: tsNow,
+        }).onConflictDoUpdate({
+            target: schema.messages.id,
+            set: {
+                content: [{ type: "text", text: fields.content }],
+                reasoningContent: fields.reasoning || null,
                 modelId: body.model,
-                generationId: logId,
-                parentId: userMessageId,
-                isActive: true,
-                createdAt: new Date().toISOString(),
-            }).run();
-            db.update(schema.conversations)
-                .set({ updatedAt: new Date().toISOString() })
-                .where(eq(schema.conversations.id, conversationId))
-                .run();
-        },
-    });
+                generationId: fields.generationId ?? null,
+                error: errorValue,
+            },
+        }).run();
+        db.update(schema.conversations)
+            .set({ updatedAt: tsNow })
+            .where(eq(schema.conversations.id, conversationId))
+            .run();
+    };
+
+    let logId: string | undefined;
+    let response: Response;
+    try {
+        const result = await forwardGeneration(user, "chat", reqBody, {
+            conversationId,
+            messageId: assistantMessageId,
+            onComplete: ({ content, reasoning }) => {
+                upsertAssistant({
+                    content,
+                    reasoning,
+                    generationId: logId ?? null,
+                    error: null,
+                });
+            },
+        });
+        logId = result.logId;
+        response = result.response;
+    } catch (err) {
+        // Thrown (network / resolveModel / empty-stream) — persist
+        // as error slot and return structured response with the id.
+        const message = err instanceof Error ? err.message : String(err);
+        upsertAssistant({ content: "", error: message, generationId: null });
+        return new Response(JSON.stringify({ code: 1, msg: message, data: null }), {
+            status: 502,
+            headers: {
+                "Content-Type": "application/json",
+                "X-Conversation-ID": conversationId,
+                "X-Message-ID": assistantMessageId,
+            },
+        });
+    }
+
+    // Upstream returned non-stream error — persist slot, pass body through.
+    if (!response.ok) {
+        const text = await response.text();
+        upsertAssistant({
+            content: "",
+            error: `HTTP ${response.status}: ${text.slice(0, 500)}`,
+            generationId: logId ?? null,
+        });
+        const headers = new Headers(response.headers);
+        headers.set("X-Message-ID", assistantMessageId);
+        if (logId) headers.set("X-Generation-ID", logId);
+        headers.set("X-Conversation-ID", conversationId);
+        return new Response(text, { status: response.status, headers });
+    }
 
     const headers = new Headers(response.headers);
     headers.set("X-Message-ID", assistantMessageId);
-    headers.set("X-Generation-ID", logId);
+    if (logId) headers.set("X-Generation-ID", logId);
     headers.set("X-Conversation-ID", conversationId);
     return new Response(response.body, { status: response.status, headers });
 }

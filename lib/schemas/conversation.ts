@@ -31,6 +31,8 @@ export const messageDTOSchema = z.object({
     is_active: z.boolean(),
     rating: z.enum(["up", "down"]).optional(),
     feedback: z.string().optional(),
+    /** Failure marker for assistant slots. */
+    error: z.string().optional(),
     created_at: z.string(),
 });
 

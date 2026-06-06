@@ -30,6 +30,9 @@ export class ThrottledUpdater {
         this.serverGenerationId = generationId
     }
 
+    getServerMessageId() { return this.serverMessageId }
+    getServerGenerationId() { return this.serverGenerationId }
+
     /**
      * Append content and trigger throttled update
      */

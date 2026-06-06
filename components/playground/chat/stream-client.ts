@@ -28,22 +28,24 @@ export class StreamClient {
                     model: config.model,
                     message: config.message,
                     user_message_id: config.userMessageId,
+                    assistant_message_id: config.assistantMessageId,
                     parent_message_id: config.parentMessageId ?? null,
                     ...config.additionalConfig
                 }),
                 signal: this.abortController.signal
             })
 
+            // Read header IDs before any potential throw so the FE
+            // placeholder picks up the server's assistant id and can
+            // retry on the same row.
+            const messageId = res.headers.get("X-Message-ID")
+            const generationId = res.headers.get("X-Generation-ID")
+            if (messageId || generationId) callbacks.onComplete(messageId, generationId)
+
             if (!res.ok) {
                 const text = await res.text()
                 throw new Error(text || res.statusText)
             }
-
-            const messageId = res.headers.get("X-Message-ID")
-            const generationId = res.headers.get("X-Generation-ID")
-
-            // Notify about server IDs early
-            callbacks.onComplete(messageId, generationId)
 
             if (!res.body) {
                 throw new Error("No response body")

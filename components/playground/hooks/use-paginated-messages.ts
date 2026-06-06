@@ -37,6 +37,7 @@ export function transformMessage(m: MessageDTO): Message {
         generation_id: m.generation_id,
         feedback: m.feedback,
         parent_id: m.parent_id,
+        error: m.error,
     }
 }
 

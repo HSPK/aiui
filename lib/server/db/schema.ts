@@ -121,6 +121,8 @@ export const messages = sqliteTable("messages", {
     isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
     rating: text("rating", { enum: ["up", "down"] }),
     feedback: text("feedback"),
+    /** Non-null = failed generation; rendered as error card client-side. */
+    error: text("error"),
     createdAt: text("created_at").notNull().default(now),
 }, (t) => [
     index("messages_conv_idx").on(t.conversationId),

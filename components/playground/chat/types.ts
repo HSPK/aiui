@@ -23,6 +23,8 @@ export type StreamConfig = {
     model: string
     message: string
     userMessageId: string
+    /** Upsert id for the assistant slot (set on retry). */
+    assistantMessageId?: string
     parentMessageId?: string | null
     additionalConfig?: Record<string, any>
 }

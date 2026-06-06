@@ -99,6 +99,7 @@ export function listMessages(userId: string, conversationId: string, query: Mess
         is_active: !!m.isActive,
         rating: m.rating ?? undefined,
         feedback: m.feedback ?? undefined,
+        error: m.error ?? undefined,
         created_at: m.createdAt,
     }));
     return { items, total, page: query.page, page_size: query.page_size };

@@ -6,6 +6,8 @@ export const playgroundChatSchema = z.object({
     conversation_id: z.string().optional(),
     parent_message_id: z.string().nullable().optional(),
     user_message_id: z.string().optional(),
+    /** Upsert key for retries — same id replaces, missing id creates new. */
+    assistant_message_id: z.string().optional(),
     system: z.string().optional(),
     temperature: z.number().optional(),
     max_tokens: z.number().int().optional(),
