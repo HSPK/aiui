@@ -8,31 +8,15 @@ import { Slider } from "@/components/ui/slider"
 import { RotateCcw, X, ChevronDown } from "lucide-react"
 import { ProviderIcon } from "@/components/ProviderIcon"
 import { cn } from "@/lib/utils"
+import {
+    DEFAULT_MODEL_CONFIG,
+    isEmptyConfig,
+    type ModelConfig,
+} from "@/lib/stores/playground-store"
 
-// Per-model configuration type - all fields optional (undefined = use API default)
-export interface ModelConfig {
-    temperature?: number
-    maxTokens?: number
-    topP?: number
-    frequencyPenalty?: number
-    presencePenalty?: number
-    reasoningEffort?: "low" | "medium" | "high"
-}
-
-// Empty config - all undefined means use API defaults
-export const DEFAULT_MODEL_CONFIG: ModelConfig = {}
-
-// Check if config is empty (all undefined)
-export function isEmptyConfig(config: ModelConfig): boolean {
-    return (
-        config.temperature === undefined &&
-        config.maxTokens === undefined &&
-        config.topP === undefined &&
-        config.frequencyPenalty === undefined &&
-        config.presencePenalty === undefined &&
-        config.reasoningEffort === undefined
-    )
-}
+// Re-export shared shape so callers keep their existing imports.
+export { DEFAULT_MODEL_CONFIG, isEmptyConfig }
+export type { ModelConfig }
 
 interface ModelConfigPopoverProps {
     modelId: string

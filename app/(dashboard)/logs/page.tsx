@@ -17,15 +17,12 @@ import {
 } from "@/components/ui/select"
 import { TablePagination } from "@/components/ui/table-pagination"
 import { RefreshButton } from "@/components/ui/refresh-button"
-import { SortingState } from "@tanstack/react-table"
+import { useTableQueryState } from "@/lib/hooks/use-table-query-state"
 
 type StatusFilter = "pending" | "completed" | "failed" | "all"
 
 export default function LogsPage() {
-    // Pagination & sorting
-    const [page, setPage] = useState(1)
-    const [pageSize, setPageSize] = useState(20)
-    const [sorting, setSorting] = useState<SortingState>([{ id: "created_at", desc: true }])
+    const table = useTableQueryState()
 
     // Filter inputs
     const [userId, setUserId] = useState("")
@@ -41,9 +38,9 @@ export default function LogsPage() {
 
     // Build query params
     const queryParams: LogFilterParams = {
-        page,
-        page_size: pageSize,
-        sort: sorting[0] ? `${sorting[0].desc ? "-" : ""}${sorting[0].id}` : "-created_at",
+        page: table.page,
+        page_size: table.pageSize,
+        sort: table.sort,
         user_id: activeFilters.userId || null,
         model_name: activeFilters.modelName || null,
         status: status === "all" ? null : status,
@@ -53,22 +50,17 @@ export default function LogsPage() {
 
     // Handlers
     const handleSearch = useCallback(() => {
-        setPage(1)
+        table.setPage(1)
         setActiveFilters({ userId, modelName })
-    }, [userId, modelName])
+    }, [userId, modelName, table])
 
     const handleClear = useCallback(() => {
         setUserId("")
         setModelName("")
         setStatus("all")
         setActiveFilters({ userId: "", modelName: "" })
-        setPage(1)
-    }, [])
-
-    const handlePageSizeChange = useCallback((size: number) => {
-        setPageSize(size)
-        setPage(1)
-    }, [])
+        table.setPage(1)
+    }, [table])
 
     const handleViewDetail = useCallback((id: string) => {
         setSelectedLogId(id)
@@ -97,7 +89,7 @@ export default function LogsPage() {
                             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
                             className="w-[140px] md:w-[180px] h-8 text-xs shrink-0"
                         />
-                        <Select value={status} onValueChange={(v) => { setStatus(v as StatusFilter); setPage(1) }}>
+                        <Select value={status} onValueChange={(v) => { setStatus(v as StatusFilter); table.setPage(1) }}>
                             <SelectTrigger className="w-[120px] h-8 text-xs shrink-0">
                                 <SelectValue />
                             </SelectTrigger>
@@ -137,19 +129,19 @@ export default function LogsPage() {
                     <div className="flex-1 overflow-auto">
                         <LogsTable
                             data={data?.items || []}
-                            sorting={sorting}
-                            onSortingChange={setSorting}
+                            sorting={table.sorting}
+                            onSortingChange={table.setSorting}
                             onViewDetail={handleViewDetail}
                         />
                     </div>
 
                     <TablePagination
-                        page={page}
-                        pageSize={pageSize}
+                        page={table.page}
+                        pageSize={table.pageSize}
                         total={data?.total || 0}
                         isLoading={isLoading}
-                        onPageChange={setPage}
-                        onPageSizeChange={handlePageSizeChange}
+                        onPageChange={table.setPage}
+                        onPageSizeChange={table.setPageSize}
                     />
                 </div>
 

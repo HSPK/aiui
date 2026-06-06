@@ -19,16 +19,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { ProviderCard } from "@/components/providers/provider-card"
 import { ModelsTable } from "@/components/providers/models-table"
 import { ProviderFormDialog } from "@/components/providers/provider-form-dialog"
@@ -257,45 +248,26 @@ export default function ProvidersPage() {
                 model={modelDialog.model}
             />
 
-            <AlertDialog open={!!deleteProvider} onOpenChange={(o) => !o && setDeleteProvider(null)}>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Delete provider?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            This will permanently delete <b>{deleteProvider?.name}</b> and all of its models. This cannot be undone.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                            onClick={() => deleteProvider && deleteProviderMutation.mutate(deleteProvider.id)}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        >
-                            Delete
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
-
-            <AlertDialog open={!!deleteModel} onOpenChange={(o) => !o && setDeleteModel(null)}>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Delete model?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            This will permanently delete model <b>{deleteModel?.name}</b>. This cannot be undone.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                            onClick={() => deleteModel && deleteModelMutation.mutate(deleteModel.id)}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        >
-                            Delete
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
+            <ConfirmDialog
+                open={!!deleteProvider}
+                onOpenChange={(o) => !o && setDeleteProvider(null)}
+                title="Delete provider?"
+                description={<>This will permanently delete <b>{deleteProvider?.name}</b> and all of its models. This cannot be undone.</>}
+                confirmLabel="Delete"
+                destructive
+                isLoading={deleteProviderMutation.isPending}
+                onConfirm={() => deleteProvider && deleteProviderMutation.mutate(deleteProvider.id)}
+            />
+            <ConfirmDialog
+                open={!!deleteModel}
+                onOpenChange={(o) => !o && setDeleteModel(null)}
+                title="Delete model?"
+                description={<>This will permanently delete model <b>{deleteModel?.name}</b>. This cannot be undone.</>}
+                confirmLabel="Delete"
+                destructive
+                isLoading={deleteModelMutation.isPending}
+                onConfirm={() => deleteModel && deleteModelMutation.mutate(deleteModel.id)}
+            />
         </div>
     )
 }

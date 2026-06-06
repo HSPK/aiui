@@ -7,20 +7,17 @@ import { useState, useCallback } from "react"
 import { useAuth } from "@/context/auth-context"
 import { UsersTable } from "@/components/users/users-table"
 import { UserFormDialog } from "@/components/users/user-form-dialog"
-import { DeleteUserDialog } from "@/components/users/delete-user-dialog"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { UserFilters } from "@/components/users/user-filters"
 import { TablePagination } from "@/components/ui/table-pagination"
 import { ShieldAlert } from "lucide-react"
 import { toast } from "sonner"
-import { SortingState } from "@tanstack/react-table"
+import { useTableQueryState } from "@/lib/hooks/use-table-query-state"
 
 export default function UsersPage() {
     const { user: currentUser } = useAuth()
 
-    // Pagination & sorting
-    const [page, setPage] = useState(1)
-    const [pageSize, setPageSize] = useState(20)
-    const [sorting, setSorting] = useState<SortingState>([{ id: "created_at", desc: true }])
+    const table = useTableQueryState()
 
     // Filter inputs
     const [keyword, setKeyword] = useState("")
@@ -34,9 +31,9 @@ export default function UsersPage() {
 
     // Build query params
     const queryParams: UserFilterParams = {
-        page,
-        page_size: pageSize,
-        sort: sorting[0] ? `${sorting[0].desc ? "-" : ""}${sorting[0].id}` : "-created_at",
+        page: table.page,
+        page_size: table.pageSize,
+        sort: table.sort,
         keyword: activeFilters.keyword || undefined,
         filter_admin: activeFilters.filterAdmin === "admin" ? true : activeFilters.filterAdmin === "user" ? false : undefined,
     }
@@ -55,21 +52,16 @@ export default function UsersPage() {
 
     // Handlers
     const handleSearch = useCallback(() => {
-        setPage(1)
+        table.setPage(1)
         setActiveFilters({ keyword, filterAdmin })
-    }, [keyword, filterAdmin])
+    }, [keyword, filterAdmin, table])
 
     const handleClear = useCallback(() => {
         setKeyword("")
         setFilterAdmin("all")
         setActiveFilters({ keyword: "", filterAdmin: "all" })
-        setPage(1)
-    }, [])
-
-    const handlePageSizeChange = useCallback((size: number) => {
-        setPageSize(size)
-        setPage(1)
-    }, [])
+        table.setPage(1)
+    }, [table])
 
     const isFiltering = !!activeFilters.keyword || activeFilters.filterAdmin !== "all"
 
@@ -116,8 +108,8 @@ export default function UsersPage() {
                     <div className="flex-1 overflow-auto">
                         <UsersTable
                             data={data?.items || []}
-                            sorting={sorting}
-                            onSortingChange={setSorting}
+                            sorting={table.sorting}
+                            onSortingChange={table.setSorting}
                             currentUser={currentUser}
                             onEdit={setEditingUser}
                             onDelete={setDeletingUser}
@@ -126,22 +118,25 @@ export default function UsersPage() {
                     </div>
 
                     <TablePagination
-                        page={page}
-                        pageSize={pageSize}
+                        page={table.page}
+                        pageSize={table.pageSize}
                         total={data?.total || 0}
                         isLoading={isLoading}
-                        onPageChange={setPage}
-                        onPageSizeChange={handlePageSizeChange}
+                        onPageChange={table.setPage}
+                        onPageSizeChange={table.setPageSize}
                     />
                 </div>
 
                 {/* Dialogs */}
                 <UserFormDialog open={isCreateOpen} onOpenChange={setIsCreateOpen} mode="create" />
                 <UserFormDialog open={!!editingUser} onOpenChange={(o) => !o && setEditingUser(null)} mode="edit" user={editingUser} />
-                <DeleteUserDialog
+                <ConfirmDialog
                     open={!!deletingUser}
                     onOpenChange={(o) => !o && setDeletingUser(null)}
-                    user={deletingUser}
+                    title="Delete user?"
+                    description={<>This will permanently delete user <span className="font-medium text-foreground">"{deletingUser?.username}"</span>. This action cannot be undone.</>}
+                    confirmLabel="Delete"
+                    destructive
                     isLoading={deleteMutation.isPending}
                     onConfirm={() => deletingUser && deleteMutation.mutate(deletingUser.username)}
                 />

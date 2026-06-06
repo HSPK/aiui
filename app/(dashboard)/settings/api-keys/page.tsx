@@ -24,16 +24,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog"
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import { Plus, Trash2, Copy, KeyRound } from "lucide-react"
@@ -174,25 +165,16 @@ export default function ApiKeysPage() {
                 </DialogContent>
             </Dialog>
 
-            <AlertDialog open={!!toDelete} onOpenChange={(o) => !o && setToDelete(null)}>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Revoke API key?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            <b>{toDelete?.name}</b> will stop working immediately. Existing integrations using this key will fail.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                            onClick={() => toDelete && deleteMutation.mutate(toDelete.id)}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        >
-                            Revoke
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
+            <ConfirmDialog
+                open={!!toDelete}
+                onOpenChange={(o) => !o && setToDelete(null)}
+                title="Revoke API key?"
+                description={<><b>{toDelete?.name}</b> will stop working immediately. Existing integrations using this key will fail.</>}
+                confirmLabel="Revoke"
+                destructive
+                isLoading={deleteMutation.isPending}
+                onConfirm={() => toDelete && deleteMutation.mutate(toDelete.id)}
+            />
         </div>
     )
 }

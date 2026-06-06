@@ -4,7 +4,9 @@ import type { MessageDTO } from "@/lib/schemas/conversation";
 
 export type TabType = "chat" | "prompt" | "embedding" | "rerank" | "new";
 
-// Per-model configuration - all fields optional (undefined = use API default)
+// Per-model configuration — all fields optional (undefined = use API default).
+// SHARED via the popover component so the form and the store agree on
+// the shape.
 export interface ModelConfig {
     temperature?: number;
     maxTokens?: number;
@@ -12,6 +14,21 @@ export interface ModelConfig {
     frequencyPenalty?: number;
     presencePenalty?: number;
     reasoningEffort?: "low" | "medium" | "high";
+}
+
+// Empty config — all undefined means use API defaults.
+export const DEFAULT_MODEL_CONFIG: ModelConfig = {};
+
+// Check if config is empty (all undefined).
+export function isEmptyConfig(config: ModelConfig): boolean {
+    return (
+        config.temperature === undefined &&
+        config.maxTokens === undefined &&
+        config.topP === undefined &&
+        config.frequencyPenalty === undefined &&
+        config.presencePenalty === undefined &&
+        config.reasoningEffort === undefined
+    );
 }
 
 export interface PlaygroundTab {
