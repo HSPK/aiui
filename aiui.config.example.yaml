@@ -1,0 +1,63 @@
+# AIUI gateway sample configuration
+# -----------------------------------------------------------------------------
+# Drop a file named `aiui.config.yaml`, `aiui.config.yml`, or `aiui.config.json`
+# in the project root (or point at one with the AIUI_CONFIG_PATH env var) and
+# its contents will be upserted into the database on each server boot, keyed by
+# `name`. Entries already in the database but absent from the file are left
+# untouched, so UI-managed and file-managed entries can coexist.
+#
+# Values support ${ENV_VAR} interpolation, which keeps secrets out of source
+# control — set the variable in your shell, .env.local, or deployment manifest.
+
+providers:
+  - name: openai
+    type: openai
+    base_url: https://api.openai.com/v1
+    api_key: ${OPENAI_API_KEY}
+    document_page: https://platform.openai.com/docs
+    model_page: https://platform.openai.com/docs/models
+    default_params:
+      timeout: 30
+
+  - name: azure-eastus
+    type: azure
+    base_url: https://my-resource.openai.azure.com
+    api_version: "2024-10-21"
+    api_key: ${AZURE_OPENAI_API_KEY}
+    document_page: https://learn.microsoft.com/azure/ai-services/openai/
+
+  - name: deepseek
+    type: openai
+    base_url: https://api.deepseek.com/v1
+    api_key: ${DEEPSEEK_API_KEY}
+
+models:
+  - name: gpt-4o-mini
+    provider: openai
+    upstream_model_id: gpt-4o-mini
+    type: chat
+    context_window: 128000
+    max_tokens: 16384
+    description: Cheap, fast, capable OpenAI default
+
+  - name: text-embedding-3-small
+    provider: openai
+    upstream_model_id: text-embedding-3-small
+    type: embedding
+    output_dimension: 1536
+
+  # Azure-mode: upstream_model_id is the **deployment name** in your Azure
+  # resource, NOT the underlying model name. Requests are routed to
+  # `${base_url}/openai/deployments/${upstream_model_id}/chat/completions?api-version=...`
+  # and authenticated with the `api-key` header.
+  - name: azure-gpt-4o
+    provider: azure-eastus
+    upstream_model_id: gpt-4o-prod-deployment
+    type: chat
+    context_window: 128000
+
+  - name: deepseek-chat
+    provider: deepseek
+    upstream_model_id: deepseek-chat
+    type: chat
+    context_window: 64000

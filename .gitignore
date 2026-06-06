@@ -43,3 +43,8 @@ next-env.d.ts
 # aiui runtime data (SQLite, uploads)
 /data
 
+# user-provided gateway config (only the example file is committed)
+/aiui.config.yaml
+/aiui.config.yml
+/aiui.config.json
+

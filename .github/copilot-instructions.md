@@ -18,7 +18,28 @@
 |---|---|
 | `AIUI_MASTER_KEY` | **必填**。AES-256-GCM 主密钥，加密 Provider 的 `api_key`。轮换会让已存的 key 解不开。 |
 | `AIUI_DB_PATH` | SQLite 路径，默认 `./data/aiui.db`（已在 `.gitignore`）。 |
+| `AIUI_CONFIG_PATH` | 启动时加载的配置文件路径；默认查找根目录的 `aiui.config.yaml/.yml/.json`。 |
 | `AIUI_ADMIN_USERNAME` / `AIUI_ADMIN_PASSWORD` | 首次启动且 `users` 表为空时引导首位 admin；不设置就不引导。 |
+
+## Provider 类型
+
+`providers.type` 字段决定 gateway 如何拼 URL 和带鉴权头：
+
+| `type` | URL | 鉴权 |
+|---|---|---|
+| `openai`（默认） | `{base_url}/chat/completions` / `/embeddings` | `Authorization: Bearer {key}` |
+| `azure` | `{base_url}/openai/deployments/{model.upstreamModelId}/chat/completions?api-version=…` | `api-key: {key}` header；body 自动剥离 `model` 字段 |
+
+Azure 模式下 `providers.apiVersion` 留空则默认 `2024-10-21`；`models.upstreamModelId` 是 Azure **部署名**而非模型名。所有分支逻辑集中在 `lib/server/gateway.ts` 的 `upstreamUrl` / `buildUpstreamHeaders`，以及 `forwardChatCompletions` / `forwardEmbeddings` 里对 `provider.type === "azure"` 的判断。
+
+## 本地配置文件（`lib/server/config.ts`）
+
+- 启动时由 `ensureInit()` 调一次 `loadConfigFile()`（在 admin bootstrap 之后），按 `name` upsert `providers` + `models`。**文件中没有的 DB 条目不会被删除**。
+- 路径优先级：`AIUI_CONFIG_PATH` → `./aiui.config.yaml` → `.yml` → `.json`。
+- 值支持 `${ENV_VAR}` 插值（实现于 `interpolateEnv`）。
+- `api_key` 字段**省略**时不会覆盖 DB 里现有的密钥；显式写 `null` 才会清空。
+- 任何解析/写入错误只 `console.error`，不阻塞启动。
+- Sample 在仓库根的 `aiui.config.example.yaml`（已 commit），真实文件名 `aiui.config.{yaml,yml,json}` 已 gitignore。
 
 ## 架构
 
@@ -46,8 +67,9 @@
 | `crypto.ts` | AES-256-GCM `encryptSecret`/`decryptSecret` + `maskSecret` 用于上游 API key；`generateApiKey` 生成 `sk-aiui-…` 凭据并返回 hash。 |
 | `response.ts` | `BaseResponse<T>` 信封 + `ok(data)`/`fail(msg)` + `HttpError` 体系（`badRequest` / `unauthorized` / `forbidden` / `notFound`）+ `handle(err)` 统一 catch。 |
 | `serializers.ts` | DB row → API DTO（`serializeProvider` / `serializeModel`，含 `n_models` 计数与 `api_key_mask`）。 |
-| `gateway.ts` | **网关核心**：`resolveModel(name)`、`forwardChatCompletions(user, body, opts)`（流式时用 `TransformStream` tee 一份做日志累积）、`forwardEmbeddings(user, body)`、`mergeParams`（user > model defaults > provider defaults）。**所有上游调用都自动写 `generation_logs`**。 |
-| `bootstrap.ts` + `init.ts` | `ensureInit()` 引导首位 admin，懒加载且只跑一次。**每个 Route Handler 第一行必须 `await ensureInit()`**。 |
+| `gateway.ts` | **网关核心**：`resolveModel(name)`、`forwardChatCompletions(user, body, opts)`（流式时用 `TransformStream` tee 一份做日志累积）、`forwardEmbeddings(user, body)`、`mergeParams`（user > model defaults > provider defaults）、`upstreamUrl(provider, model, path)` 和 `buildUpstreamHeaders(provider, key)` 按 `provider.type` 分支 OpenAI/Azure 形态。**所有上游调用都自动写 `generation_logs`**。 |
+| `config.ts` | 启动时一次性 upsert 本地 `aiui.config.{yaml,yml,json}` 中的 providers/models。支持 `${ENV_VAR}` 插值，按 `name` 为键，缺省字段不动 DB，错误只 warn。由 `init.ts:ensureInit()` 调用。 |
+| `bootstrap.ts` + `init.ts` | `ensureInit()` 先 `bootstrapAdmin()` 再 `loadConfigFile()`，懒加载且只跑一次。**每个 Route Handler 第一行必须 `await ensureInit()`**。 |
 
 ### 写新 Route Handler 的样板
 ```ts

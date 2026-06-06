@@ -36,6 +36,7 @@ bun run build && bun run start
 首次启动会自动：
 1. 在 `./data/` 下创建 SQLite 文件并跑 `drizzle/` 里的 migrations
 2. 根据 `AIUI_ADMIN_USERNAME`/`AIUI_ADMIN_PASSWORD` 引导首位 admin 账号（仅在 users 表为空时执行）
+3. 如果项目根存在 `aiui.config.yaml` / `.yml` / `.json`（或 `AIUI_CONFIG_PATH` 指向的文件），upsert 其中的 providers/models 到 DB（详见下文）
 
 ## 环境变量
 
@@ -43,9 +44,56 @@ bun run build && bun run start
 |------|------|------|
 | `AIUI_MASTER_KEY` | ✅ | AES-256-GCM 主密钥，加密 Provider 的 `api_key`。**轮换会导致已存储 key 无法解密**。 |
 | `AIUI_DB_PATH` | | SQLite 路径，默认 `./data/aiui.db` |
+| `AIUI_CONFIG_PATH` | | 启动时加载的配置文件路径；默认查找根目录的 `aiui.config.yaml/.yml/.json` |
 | `AIUI_ADMIN_USERNAME` | | 首位 admin 用户名（默认 `admin`） |
 | `AIUI_ADMIN_PASSWORD` | | 首位 admin 密码；不设置则不会自动引导 |
 | `NEXT_PUBLIC_API_URL` | | 前端 API 基址，默认 `/api`（同源） |
+
+## Provider 类型
+
+| `type` | URL 形态 | 鉴权 | 备注 |
+|---|---|---|---|
+| `openai`（默认） | `POST {base_url}/chat/completions` / `/embeddings` | `Authorization: Bearer {api_key}` | 适用 OpenAI 官方、DeepSeek、Together、Groq、本地 vLLM 等任何 OpenAI 兼容上游 |
+| `azure` | `POST {base_url}/openai/deployments/{deployment}/chat/completions?api-version=…` | `api-key: {api_key}` 头 | `Model` 表里的 **Upstream Model ID** 填 Azure **部署名**；`api_version` 留空时默认 `2024-10-21` |
+
+通过 admin UI 在 `/providers` 创建 provider 时可选择类型；或在配置文件中声明（见下）。
+
+## 本地配置文件
+
+通过文件声明 providers/models，启动时按 `name` 做 **upsert**（不删 DB 里多余的条目，UI 与文件可共存）。
+
+**路径**：默认查找项目根的 `aiui.config.yaml` / `aiui.config.yml` / `aiui.config.json`；或用 `AIUI_CONFIG_PATH=/path/to/config.yaml` 指定。
+
+**字段**：见仓库根的 `aiui.config.example.yaml`。要点：
+- 字符串支持 `${ENV_VAR}` 插值，方便把 secrets 留在环境里
+- `api_key` 字段省略时**不会**清空 DB 中已存的密钥（保护 UI 改过的值）
+- 文件里没有的 DB 条目**不会**被删除
+- 解析/写入失败仅 warning，不阻断启动
+
+最小示例：
+
+```yaml
+providers:
+  - name: openai
+    type: openai
+    base_url: https://api.openai.com/v1
+    api_key: ${OPENAI_API_KEY}
+  - name: azure-eastus
+    type: azure
+    base_url: https://my-resource.openai.azure.com
+    api_version: "2024-10-21"
+    api_key: ${AZURE_OPENAI_API_KEY}
+
+models:
+  - name: gpt-4o-mini
+    provider: openai
+    upstream_model_id: gpt-4o-mini
+    type: chat
+  - name: azure-gpt-4o          # 调用网关时用这个 name
+    provider: azure-eastus
+    upstream_model_id: gpt-4o-prod-deployment  # Azure 部署名
+    type: chat
+```
 
 ## 数据模型
 
