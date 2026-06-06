@@ -22,16 +22,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const searchParams = useSearchParams()
     const queryClient = useQueryClient()
 
-    const { data: user, isLoading } = useQuery({
+    const { data: user, status, isFetching } = useQuery({
         queryKey: ["user", "me"],
         queryFn: api.getMe,
         retry: false,
+        // Treat 401 result as a value, not as undefined-due-to-loading.
+        staleTime: 1000 * 60 * 5,
     })
 
-    // Handle redirect based on session state (cookie is httpOnly so we drive off /users/me response)
+    // Handle redirect based on session state (cookie is httpOnly so we drive off /users/me response).
+    // IMPORTANT: only act once the query has actually settled. After a 401, `status === "error"` and
+    // a subsequent refetch (post-login) keeps `status === "error"` until new data arrives. Gating on
+    // `isFetching` prevents the effect from firing with a stale `user = undefined` after the pathname
+    // changes (which would bounce the user back to /login after a successful login).
     React.useEffect(() => {
-        if (isLoading) return
         if (typeof window === "undefined") return
+        if (status === "pending") return
+        if (isFetching) return
 
         const isPublicPage = pathname === "/login"
 
@@ -42,13 +49,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const from = searchParams?.get("from")
             router.push(from || "/")
         }
-    }, [user, isLoading, pathname, router, searchParams])
+    }, [user, status, isFetching, pathname, router, searchParams])
 
 
     const login = async (params: AuthParams) => {
         try {
-            await api.login(params)
-            await queryClient.invalidateQueries({ queryKey: ["user"] })
+            // The login response already returns the authenticated user — write it into the cache
+            // synchronously so any consumer (including the redirect effect) sees `user` defined
+            // before we navigate. Using invalidateQueries here would cause a refetch race with the
+            // pathname-change re-render and bounce the user back to /login.
+            const userData = await api.login(params)
+            queryClient.setQueryData(["user", "me"], userData)
 
             toast.success("Login successful")
 
@@ -79,7 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     return (
-        <AuthContext.Provider value={{ user: user ?? null, isLoading, login, logout }}>
+        <AuthContext.Provider value={{ user: user ?? null, isLoading: status === "pending", login, logout }}>
             {children}
         </AuthContext.Provider>
     )
