@@ -4,9 +4,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft, ExternalLink, RefreshCcw, ShieldCheck, Globe, FileText } from "lucide-react"
+import { ArrowLeft, RefreshCcw, ShieldCheck, Globe, FileText } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card } from "@/components/ui/card"
 import { ProviderIcon } from "@/components/ProviderIcon"
 import { ModelCard } from "@/components/providers/model-card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -15,36 +15,43 @@ import { toast } from "sonner"
 export default function ProviderDetailPage() {
     const params = useParams()
     const router = useRouter()
-    const providerId = params.providerId as string
+    // Folder is named [name] so the URL segment is the provider's stable
+    // human-readable name. The server route accepts either id or name so
+    // legacy URLs with UUIDs still resolve.
+    const slug = decodeURIComponent(params.name as string)
     const queryClient = useQueryClient()
 
     const { data: provider, isLoading: isLoadingProvider } = useQuery({
-        queryKey: ["provider", providerId],
-        queryFn: () => api.getProvider(providerId),
-        enabled: !!providerId,
+        queryKey: ["providers", slug],
+        queryFn: () => api.getProvider(slug),
+        enabled: !!slug,
     })
 
     const { data: models, isLoading: isLoadingModels } = useQuery({
-        queryKey: ["provider-models", providerId],
-        queryFn: () => api.getProviderModels(providerId),
-        enabled: !!providerId,
+        queryKey: ["providers", slug, "models"],
+        queryFn: () => api.getProviderModels(slug),
+        enabled: !!slug,
     })
 
-    const reloadMutation = useMutation({
-        mutationFn: () => api.reloadProviders(), // Or maybe a specific reload for this provider if API supported it
+    const refreshMutation = useMutation({
+        // The "reload" endpoint now just clears the in-memory discovery cache,
+        // so what the user gets is a freshly fetched /models from the upstream.
+        mutationFn: () => api.reloadProviders(),
         onSuccess: () => {
-            toast.success("Provider reloaded successfully")
-            queryClient.invalidateQueries({ queryKey: ["provider", providerId] })
-            queryClient.invalidateQueries({ queryKey: ["provider-models", providerId] })
+            toast.success("Refreshed model list")
+            // The hierarchical key invalidates this provider's models AND the
+            // global ones, so the providers tab also gets the new data.
+            queryClient.invalidateQueries({ queryKey: ["providers"] })
+            queryClient.invalidateQueries({ queryKey: ["models"] })
         },
         onError: (error) => {
-            toast.error(`Failed to reload: ${error.message}`)
+            toast.error(`Refresh failed: ${error.message}`)
         },
     })
 
     if (isLoadingProvider) {
         return (
-            <div className="space-y-6">
+            <div className="h-full overflow-y-auto scrollbar-thin space-y-6 p-4">
                 <div className="flex items-center gap-4">
                     <Skeleton className="h-10 w-10 rounded-full" />
                     <div className="space-y-2">
@@ -52,9 +59,9 @@ export default function ProviderDetailPage() {
                         <Skeleton className="h-4 w-32" />
                     </div>
                 </div>
-                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                    {[1, 2, 3].map((i) => (
-                        <Skeleton key={i} className="h-40 rounded-xl" />
+                <div className="space-y-3">
+                    {[1, 2, 3, 4].map((i) => (
+                        <Skeleton key={i} className="h-24 rounded-xl" />
                     ))}
                 </div>
             </div>
@@ -73,56 +80,52 @@ export default function ProviderDetailPage() {
         )
     }
 
+    const dbCount = models?.filter((m) => !m.is_discovered).length ?? 0
+    const discoveredCount = models?.filter((m) => m.is_discovered).length ?? 0
+
     return (
-        <div className="h-full overflow-y-auto scrollbar-thin space-y-8 p-4">
-            {/* Header / Nav */}
+        <div className="h-full overflow-y-auto scrollbar-thin space-y-6 p-4">
+            {/* Back / Refresh row */}
             <div className="flex items-center justify-between">
                 <Button variant="ghost" className="pl-0 hover:bg-transparent" onClick={() => router.push("/providers")}>
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    Back
+                    <ArrowLeft className="mr-2 h-4 w-4" /> Back
                 </Button>
                 <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => reloadMutation.mutate()}
-                    disabled={reloadMutation.isPending}
+                    onClick={() => refreshMutation.mutate()}
+                    disabled={refreshMutation.isPending}
                 >
-                    <RefreshCcw className={`mr-2 h-3.5 w-3.5 ${reloadMutation.isPending ? "animate-spin" : ""}`} />
-                    Refresh Data
+                    <RefreshCcw className={`mr-2 h-3.5 w-3.5 ${refreshMutation.isPending ? "animate-spin" : ""}`} />
+                    Refresh Models
                 </Button>
             </div>
 
-            {/* Provider Info Section */}
-            <div className="flex flex-col md:flex-row gap-6 md:items-start mr-4 ml-4 justify-between">
-                <div className="flex-1 space-y-4">
-                    <div className="flex items-center gap-4">
-                        <div className="h-16 w-16 bg-muted/30 rounded-xl flex items-center justify-center border">
-                            <ProviderIcon
-                                providerName={provider.provider_name}
-                                className="h-10 w-10"
-                                width={40}
-                                height={40}
-                            />
-                        </div>
-                        <div>
-                            <h1 className="text-3xl font-bold tracking-tight">{provider.provider_name}</h1>
-                            <div className="flex items-center gap-2 mt-1.5">
-                                <Badge variant="secondary" className="gap-1 rounded-sm px-2 font-normal">
-                                    <ShieldCheck className="h-3 w-3 text-green-500" />
-                                    Operational
-                                </Badge>
-                                <span className="text-muted-foreground">•</span>
-                                <span className="text-sm text-muted-foreground font-mono">
-                                    {models?.length || 0} Models Available
-                                </span>
-                            </div>
+            {/* Provider header */}
+            <div className="flex flex-col md:flex-row gap-6 md:items-start md:justify-between">
+                <div className="flex items-center gap-4 min-w-0">
+                    <div className="h-16 w-16 bg-muted/30 rounded-xl flex items-center justify-center border shrink-0">
+                        <ProviderIcon providerName={provider.provider_name} className="h-10 w-10" width={40} height={40} />
+                    </div>
+                    <div className="min-w-0">
+                        <h1 className="text-3xl font-bold tracking-tight truncate" title={provider.provider_name}>{provider.provider_name}</h1>
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                            <Badge variant="secondary" className="gap-1 rounded-sm px-2 font-normal">
+                                <ShieldCheck className="h-3 w-3 text-green-500" />
+                                Operational
+                            </Badge>
+                            {provider.type === "azure" && (
+                                <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-semibold">Azure</Badge>
+                            )}
+                            <span className="text-sm text-muted-foreground font-mono">
+                                {(models?.length ?? 0)} model{(models?.length ?? 0) === 1 ? "" : "s"} ({discoveredCount} discovered, {dbCount} override{dbCount === 1 ? "" : "s"})
+                            </span>
                         </div>
                     </div>
                 </div>
 
-                {/* Quick Actions / Links */}
-                <div className="flex flex-col items-end gap-3 md:justify-end">
-                    <div className="flex flex-wrap gap-2 justify-end">
+                <div className="flex flex-col items-start md:items-end gap-3 shrink-0">
+                    <div className="flex flex-wrap gap-2 md:justify-end">
                         {provider.model_page && (
                             <Button variant="outline" size="sm" asChild>
                                 <a href={provider.model_page} target="_blank" rel="noreferrer">
@@ -140,33 +143,35 @@ export default function ProviderDetailPage() {
                             </Button>
                         )}
                     </div>
-
-                    <Badge variant="outline" className="font-mono font-normal text-xs text-muted-foreground">
+                    <Badge variant="outline" className="font-mono font-normal text-xs text-muted-foreground max-w-full truncate">
                         endpoint: {provider.proxy || "Standard"}
                     </Badge>
                 </div>
             </div>
 
-            {/* Models List Section */}
-            <div className="space-y-4">
+            {/* Models list */}
+            <div className="space-y-3">
                 {isLoadingModels ? (
-                    <div className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-3">
                         {[1, 2, 3, 4].map((i) => (
-                            <Card key={i} className="h-24 w-full p-6 flex flex-col justify-center space-y-3">
+                            <Card key={i} className="h-24 w-full p-6 space-y-3">
                                 <Skeleton className="h-5 w-1/4" />
                                 <Skeleton className="h-4 w-1/2" />
                             </Card>
                         ))}
                     </div>
                 ) : models && models.length > 0 ? (
-                    <div className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-3">
                         {models.map((model) => (
-                            <ModelCard key={model.name} model={model} />
+                            <ModelCard key={`${model.is_discovered ? "d" : "o"}:${model.name}`} model={model} />
                         ))}
                     </div>
                 ) : (
                     <div className="text-center py-12 border-2 border-dashed rounded-lg">
-                        <p className="text-muted-foreground">No models found for this provider.</p>
+                        <p className="text-muted-foreground mb-3">No models exposed by this provider yet.</p>
+                        <Button variant="outline" size="sm" onClick={() => refreshMutation.mutate()} disabled={refreshMutation.isPending}>
+                            <RefreshCcw className={`mr-2 h-3.5 w-3.5 ${refreshMutation.isPending ? "animate-spin" : ""}`} /> Refresh Models
+                        </Button>
                     </div>
                 )}
             </div>

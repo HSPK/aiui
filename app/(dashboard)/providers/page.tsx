@@ -208,7 +208,7 @@ export default function ProvidersPage() {
                             <ProviderCard
                                 key={provider.id || provider.name}
                                 provider={provider}
-                                onClick={() => router.push(`/providers/${provider.id || provider.name}`)}
+                                onClick={() => router.push(`/providers/${encodeURIComponent(provider.name)}`)}
                                 hoverActions={isAdmin ? (
                                     <>
                                         <Button variant="secondary" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); setProviderDialog({ open: true, mode: "edit", provider }) }} title="Edit">
