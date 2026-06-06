@@ -318,7 +318,7 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                 ) : log ? (
                     <div className="px-6 py-6 space-y-8 flex-1 overflow-y-auto">
                         {/* KPI Grid */}
-                        <div className="grid grid-cols-2 md:grid-cols-[2fr_1.5fr_1fr_0.5fr] gap-4 p-4 bg-card rounded-lg border shadow-sm">
+                        <div className="grid grid-cols-2 md:grid-cols-[2fr_1.5fr_1fr_0.7fr_0.7fr] gap-4 p-4 bg-card rounded-lg border shadow-sm">
                             <div className="space-y-1">
                                 <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider flex items-center gap-1">
                                     <Terminal className="h-3 w-3" /> Model
@@ -340,9 +340,26 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                                 </div>
                             </div>
                             <div className="space-y-1">
+                                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Tokens</span>
+                                <div
+                                    className="text-sm font-mono"
+                                    title={
+                                        log.prompt_tokens != null || log.completion_tokens != null
+                                            ? `prompt: ${log.prompt_tokens ?? "—"} / completion: ${log.completion_tokens ?? "—"}`
+                                            : undefined
+                                    }
+                                >
+                                    {log.total_tokens != null ? log.total_tokens.toLocaleString() : "—"}
+                                </div>
+                            </div>
+                            <div className="space-y-1">
                                 <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Latency</span>
                                 <div className="text-sm font-mono">
-                                    -
+                                    {log.latency_ms != null
+                                        ? log.latency_ms < 1000
+                                            ? `${log.latency_ms}ms`
+                                            : `${(log.latency_ms / 1000).toFixed(2)}s`
+                                        : "—"}
                                 </div>
                             </div>
                         </div>

@@ -6,6 +6,7 @@ import {
     getCoreRowModel,
     useReactTable,
     SortingState,
+    OnChangeFn,
 } from "@tanstack/react-table"
 
 import {
@@ -18,15 +19,28 @@ import {
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ArrowUpDown, Eye, Files } from "lucide-react"
+import { ArrowUpDown, Files, Zap, Clock } from "lucide-react"
 import { GenerationLog } from "@/lib/types"
 import { formatToLocal } from "@/lib/utils"
 
 interface LogsTableProps {
     data: GenerationLog[];
     sorting: SortingState;
-    onSortingChange: (sorting: any) => void;
+    onSortingChange: OnChangeFn<SortingState>;
     onViewDetail: (id: string) => void;
+}
+
+function formatTokens(n: number | null | undefined): string {
+    if (n === null || n === undefined) return "—"
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
+    return n.toString()
+}
+
+function formatLatency(ms: number | null | undefined): string {
+    if (ms === null || ms === undefined) return "—"
+    if (ms < 1000) return `${ms}ms`
+    return `${(ms / 1000).toFixed(2)}s`
 }
 
 export function LogsTable({ data, sorting, onSortingChange, onViewDetail }: LogsTableProps) {
@@ -79,22 +93,63 @@ export function LogsTable({ data, sorting, onSortingChange, onViewDetail }: Logs
             cell: ({ row }) => <Badge variant="outline" className="font-mono font-normal text-[10px]">{row.getValue("model_name")}</Badge>
         },
         {
-            accessorKey: "input",
-            header: "Prompt",
-            cell: ({ row }) => (
-                <div className="max-w-[200px] truncate text-xs text-muted-foreground" title={row.getValue("input")}>
-                    {row.getValue("input")}
+            id: "tokens",
+            header: () => (
+                <div className="flex items-center gap-1 justify-end">
+                    <Zap className="h-3 w-3" /> Tokens
                 </div>
-            )
+            ),
+            cell: ({ row }) => {
+                const { prompt_tokens, completion_tokens, total_tokens } = row.original
+                const hasBreakdown = prompt_tokens != null || completion_tokens != null
+                const title = hasBreakdown
+                    ? `prompt: ${formatTokens(prompt_tokens)} / completion: ${formatTokens(completion_tokens)}`
+                    : undefined
+                return (
+                    <div className="text-right text-xs font-mono whitespace-nowrap" title={title}>
+                        {total_tokens != null ? (
+                            <>
+                                <span className="text-foreground font-medium">{formatTokens(total_tokens)}</span>
+                                {hasBreakdown && (
+                                    <span className="text-muted-foreground/70 ml-1">
+                                        ({formatTokens(prompt_tokens)} / {formatTokens(completion_tokens)})
+                                    </span>
+                                )}
+                            </>
+                        ) : (
+                            <span className="text-muted-foreground">—</span>
+                        )}
+                    </div>
+                )
+            }
         },
         {
-            accessorKey: "output",
-            header: "Completion",
-            cell: ({ row }) => (
-                <div className="max-w-[200px] truncate text-xs text-muted-foreground" title={row.getValue("output")}>
-                    {row.getValue("output")}
-                </div>
-            )
+            accessorKey: "latency_ms",
+            header: ({ column }) => (
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                    className="-ml-3 h-8"
+                >
+                    <Clock className="h-3 w-3 mr-1" /> Latency
+                    <ArrowUpDown className="ml-2 h-3 w-3" />
+                </Button>
+            ),
+            cell: ({ row }) => {
+                const ms = row.original.latency_ms
+                return (
+                    <div className="text-right text-xs font-mono whitespace-nowrap">
+                        {ms != null ? (
+                            <span className={ms > 5000 ? "text-amber-600 dark:text-amber-400" : "text-foreground"}>
+                                {formatLatency(ms)}
+                            </span>
+                        ) : (
+                            <span className="text-muted-foreground">—</span>
+                        )}
+                    </div>
+                )
+            }
         },
         {
             accessorKey: "status",
