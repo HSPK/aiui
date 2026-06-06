@@ -53,18 +53,39 @@ Azure 模式下 `providers.apiVersion` 留空则默认 `2024-10-21`；`models.up
 **模型不进配置文件**。`lib/server/discovery.ts` 负责动态发现：
 
 - 对每个 enabled provider，fetch 它的 `/models`（OpenAI）或 `/openai/deployments?...` 回落 `/openai/models?...`（Azure），按 `AIUI_MODELS_CACHE_TTL`（默认 300s）缓存。
-- `listAllDiscovered()` 返回所有 enabled provider 的并集；调用者可传 `{ force: true }` 强刷。
-- `resolveByDiscovery(name)` 扫所有 provider 缓存找匹配；命中即用，多个 provider 都有的话第一个赢。
-- `clearDiscoveryCache()` 在 provider 增/改/删时调用（已埋在 `/api/providers` 路由），用户也可手动 `POST /api/providers/reload`。
+- 每个发现到的 model 会被 `classifyModel(id)` 按 capability registry 分类（chat / embedding / image / audio.* / rerank），结果挂在 `DiscoveredModel.capability` 上。
+- `listAllDiscovered()` / `discoveredCountByProvider()` 给路由用；`resolveByDiscovery(name)` 给 gateway 用；`clearDiscoveryCache()` 在 provider 增/改/删时调用（已埋在 `/api/providers` 路由），用户也可手动 `POST /api/providers/reload`。
 
-`gateway.ts:resolveModel(name)`（**现已是 async**）的查找顺序：
-1. DB `models` 表（admin UI 加的 override，专门用于 Azure 部署 / 别名 / 调 context_window）
-2. discovery 缓存里 fuzzy hit
+`gateway.ts:resolveModel(name)`（**async**）的查找顺序：
+1. DB `models` 表（admin UI 加的 override，专门用于 Azure 部署 / 别名 / 调 context_window / 固定 capability）
+2. discovery 缓存里 fuzzy hit；命中后用 `classifyModel(upstreamId)` 推断 capability
 3. 否则 404
 
-DB 命中时直接返回；discovery 命中时合成一个 transient `Model`，type 默认 `chat`、`upstreamModelId == name`、`defaultParams` 空，传给下游 forward。
+DB 命中时直接返回；discovery 命中时合成一个 transient `Model`（type 从分类来，`upstreamModelId == name`、`defaultParams` 空）传给下游 forward。
 
-`GET /api/v1/models` 和 admin 用的 `GET /api/models` 都返回 **DB rows ∪ discovered**（按 name 去重，DB 优先），后者额外打 `is_discovered: true` 标志便于 UI 隐藏 edit/delete 按钮。
+`GET /api/v1/models` 和 admin 用的 `GET /api/models` 都返回 **DB rows ∪ discovered**（按 name 去重，DB 优先）；admin 路由额外打 `is_discovered: true` 标志，让 UI 给 discovered 行显示"Create override"按钮（点击后以 create 模式打开 ModelFormDialog，预填发现到的字段）。
+
+Provider 的 `n_models` 计数现在是 `DB 计数 + discovery 计数`（`discoveredCountByProvider()`）。
+
+## Capabilities（`lib/server/capabilities/`）
+
+模态注册系统。每个 capability 是一个 `CapabilityHandler`：
+
+| 字段 | 用途 |
+|---|---|
+| `id` | 写入 `models.type` 和 `generation_logs.capability` |
+| `endpoint.path` | 追加在 `provider.base_url` 后；Azure 模式自动包到 `/openai/deployments/{deployment}` |
+| `supportsStreaming` | 配合 body.stream 启用 SSE tee |
+| `matches(modelId)` | 分类发现的模型（按 priority 倒序逐个 try） |
+| `summarizeInput(body)` | 写入 `generation_logs.input_summary`（tracing 列表显示） |
+| `parseResponse(json)` | 提取 output + tokens 用于 log |
+| `parseStreamChunk(json)` | 流式增量 delta（chat 用） |
+
+**新增模态**：放一个文件在 `lib/server/capabilities/<id>.ts` 调 `registerCapability(...)`，在 `register.ts` 加一行 `import "./<id>"`，然后写一个 6 行 Route Handler `forwardGeneration(user, "<id>", body)`。`gateway.ts` 永远不需要改。
+
+**循环依赖陷阱**：side-effect imports 必须放在 `register.ts`，**不能**放回 `index.ts`，否则 TDZ 会让 `registry.set` 在 const 初始化之前执行。`gateway.ts` 和 `discovery.ts` 都 `import "./capabilities/register"` 确保注册先发生。
+
+`/api/capabilities` 暴露 registered list 给前端 ModelFormDialog 用。
 
 ## 本地配置文件（`lib/server/config.ts` + `lib/preflight.mjs`）
 
@@ -101,8 +122,9 @@ DB 命中时直接返回；discovery 命中时合成一个 transient `Model`，t
 | `crypto.ts` | AES-256-GCM `encryptSecret`/`decryptSecret` + `maskSecret` 用于上游 API key；`generateApiKey` 生成 `sk-aiui-…` 凭据并返回 hash。 |
 | `response.ts` | `BaseResponse<T>` 信封 + `ok(data)`/`fail(msg)` + `HttpError` 体系（`badRequest` / `unauthorized` / `forbidden` / `notFound`）+ `handle(err)` 统一 catch。 |
 | `serializers.ts` | DB row → API DTO（`serializeProvider` / `serializeModel`，含 `n_models` 计数与 `api_key_mask`）。 |
-| `gateway.ts` | **网关核心**：`resolveModel(name)` (**async**：先查 DB `models` 表，再走 discovery)、`forwardChatCompletions(user, body, opts)`（流式时用 `TransformStream` tee 一份做日志累积）、`forwardEmbeddings(user, body)`、`mergeParams`（user > model defaults > provider defaults）、`upstreamUrl(provider, model, path)` 和 `buildUpstreamHeaders(provider, key)` 按 `provider.type` 分支 OpenAI/Azure 形态。**所有上游调用都自动写 `generation_logs`**。 |
-| `discovery.ts` | 动态模型发现：`discoverModels(provider)` 抓 `/models`（OpenAI）或 `/openai/deployments?...` 回落 `/openai/models?...`（Azure）；in-memory `Map<providerId, CacheEntry>` 按 `AIUI_MODELS_CACHE_TTL` TTL 缓存；`listAllDiscovered()` 返 union；`resolveByDiscovery(name)` 给 `gateway.resolveModel` 用；`clearDiscoveryCache()` 在 provider 增/改/删时被调。 |
+| `gateway.ts` | **网关核心**：`resolveModel(name)` (**async**：先查 DB `models` 表，再走 discovery，命中 discovery 时用 `classifyModel` 推断 capability)、`forwardGeneration(user, capabilityId, body, opts)` 通用转发（流式时用 `TransformStream` tee 一份做日志累积）、`mergeParams`（user > model defaults > provider defaults）、`upstreamUrl(provider, model, capability)` 和 `buildUpstreamHeaders(provider, key)` 按 `provider.type` 分支 OpenAI/Azure 形态。`forwardChatCompletions` / `forwardEmbeddings` 是 backward-compat thin aliases。**所有上游调用都自动写 `generation_logs`**（含 capability、input_summary、tokens、latency）。 |
+| `capabilities/` | 注册表 + 每个 capability 一个文件（`chat`, `embedding`, `image`, `audio-speech`, `audio-transcription`, `rerank`）。`index.ts` 是纯 registry，`register.ts` 做 side-effect imports（避免 TDZ 循环）。`classifyModel(id)` 给 discovery 用。 |
+| `discovery.ts` | 动态模型发现：`discoverModels(provider)` 抓 `/models`（OpenAI）或 `/openai/deployments?...` 回落 `/openai/models?...`（Azure）；in-memory `Map<providerId, CacheEntry>` 按 `AIUI_MODELS_CACHE_TTL` TTL 缓存；每条 `DiscoveredModel` 带 `capability` 字段（来自 `classifyModel`）；`listAllDiscovered()` 返 union；`discoveredCountByProvider()` 给 provider count 用；`resolveByDiscovery(name)` 给 `gateway.resolveModel` 用；`clearDiscoveryCache()` 在 provider 增/改/删时被调。 |
 | `config.ts` | 启动时调 `preflightFromConfig()`（共享自 `lib/preflight.mjs`）hoist 全部 infra env vars，再 upsert `providers[]`（按 `name`）。`models[]` 段已废弃，遇到 warn。由 `init.ts:ensureInit()` 调用。 |
 | `bootstrap.ts` + `init.ts` | `ensureInit()` 先 `loadConfigFile()`（设置 admin env vars）再 `bootstrapAdmin()`，懒加载且只跑一次。**每个 Route Handler 第一行必须 `await ensureInit()`**。 |
 

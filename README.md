@@ -113,12 +113,34 @@ providers:                         # 文件 + admin UI 可共存；按 name upse
 
 | 顺序 | 来源 | 用途 |
 |---|---|---|
-| 1 | DB `models` 表 | 显式 override：Azure 部署、改 context window、设别名 |
+| 1 | DB `models` 表 | 显式 override：Azure 部署、改 context window、设别名、固定 capability |
 | 2 | Provider `/models` 动态发现（缓存） | 大多数 OpenAI 兼容 provider 全自动；无需任何配置 |
 
-`POST /v1/chat/completions { "model": "..." }` 走相同的解析链：先查 DB，再扫所有 enabled provider 的发现缓存。`POST /api/providers/reload` 会 flush 缓存，admin 改了 provider 之后系统也会自动 flush。
+`POST /v1/<endpoint> { "model": "..." }` 走相同的解析链：先查 DB，再扫所有 enabled provider 的发现缓存。
 
 **Azure 例外**：Azure 的 `/openai/deployments?...` 端点通常需要 management-plane 权限，data-plane api-key 一般够不到；回落到 `/openai/models?...` 只能拿到 base model 名（不是 deployment）。所以 Azure 用户通常要在 admin UI 的 Models 页**手动**注册一个 override 行：display name → deployment id。
+
+## Capabilities（可扩展模态）
+
+每个模型有一个 **capability**（chat / embedding / image / audio.speech / audio.transcription / rerank），决定上游 URL、是否流式、如何归类发现到的模型、以及怎么从响应里抽取 tokens 和 output。
+
+| Capability | 端点 | OpenAI 路径 | 说明 |
+|---|---|---|---|
+| `chat` | `POST /api/v1/chat/completions` | `/chat/completions` | 支持 `stream:true` |
+| `embedding` | `POST /api/v1/embeddings` | `/embeddings` | |
+| `image` | `POST /api/v1/images/generations` | `/images/generations` | DALL-E、gpt-image-1、SD、Flux、Imagen 等 |
+| `audio.speech` | `POST /api/v1/audio/speech` | `/audio/speech` | TTS，binary 响应直通 |
+| `audio.transcription` | `POST /api/v1/audio/transcriptions` | `/audio/transcriptions` | STT（Whisper 等） |
+| `rerank` | `POST /api/v1/rerank` | `/rerank` | Cohere/Jina rerank shape |
+
+**新增模态只需 2 个文件**：
+
+1. `lib/server/capabilities/<your-modality>.ts` — 调 `registerCapability({ id, label, endpoint, supportsStreaming, matches, summarizeInput, parseResponse, parseStreamChunk })`
+2. `app/api/v1/<your-path>/route.ts` — 6 行的 Route Handler 调 `forwardGeneration(user, "<id>", body)`
+
+再在 `lib/server/capabilities/register.ts` 加一行 `import "./<your-modality>"` 完事。Gateway 主体不用动。
+
+视频生成、custom multimodal endpoint、私有协议适配等都是这个模式。`/api/capabilities` 暴露注册列表，admin UI 的 Models 表自动列出所有 capability 让 admin 选。
 
 ## 环境变量
 
