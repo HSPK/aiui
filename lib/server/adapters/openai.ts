@@ -1,5 +1,6 @@
 import "server-only";
 import { registerAdapter, type ProviderAdapter, type UpstreamCallArgs } from ".";
+import { classifyModel } from "../capabilities";
 import type { NormalizedModelMeta, UpstreamApiId } from "@/lib/schemas/adapter";
 import type { Provider } from "../db/schema";
 
@@ -150,11 +151,27 @@ export const openaiAdapter: ProviderAdapter = {
         const id = typeof r?.id === "string" ? r.id : null;
         if (!id) return null;
 
+        // Bare /v1/models doesn't say what the model can do — fall back to
+        // id-based classification so embeddings/audio/image models don't
+        // all collapse to "chat".
+        const cap = classifyModel(id);
         return {
             upstream_id: id,
             label: id,
-            supported_apis: ["chat.completions"], // safe default; admin can widen
-            capabilities: { chat: true },
+            supported_apis: [
+                cap === "embedding" ? "embeddings"
+                : cap === "image" ? "images.generations"
+                : cap === "audio.speech" ? "audio.speech"
+                : cap === "audio.transcription" ? "audio.transcriptions"
+                : cap === "rerank" ? "rerank"
+                : "chat.completions",
+            ],
+            capabilities: {
+                chat: cap === "chat",
+                embeddings: cap === "embedding",
+                audio_in: cap === "audio.transcription",
+                audio_out: cap === "audio.speech",
+            },
             owned_by: typeof r.owned_by === "string" ? r.owned_by : null,
             // accepted_fields left undefined ⇒ trust everything
             raw: rawEntry,

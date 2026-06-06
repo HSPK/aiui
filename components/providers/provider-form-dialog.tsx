@@ -37,17 +37,18 @@ interface Props {
  *  Select forbids empty-string item values, so we use a marker string and
  *  translate it to `undefined` on submit. */
 const ADAPTER_AUTO = "__auto__"
-/** Sentinel for "use the same adapter as transport" in the schema dropdown. */
-const SCHEMA_INHERIT = "__inherit__"
 
 export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props) {
     const { data: adapterList } = adapters.useList(undefined, { enabled: open })
 
     const [name, setName] = useState("")
     const [adapterId, setAdapterId] = useState<string>(ADAPTER_AUTO)
-    const [schemaAdapterId, setSchemaAdapterId] = useState<string>(SCHEMA_INHERIT)
     const [baseUrl, setBaseUrl] = useState("")
     const [apiVersion, setApiVersion] = useState("")
+    /** Stored API key (server-side mask in edit mode until the user types).
+     *  Letting the input own the mask + relying on type="password" to render
+     *  it as dots is the cleanest way to communicate "a key is set" without
+     *  ever pasting the mask glyphs next to real password dots. */
     const [apiKey, setApiKey] = useState("")
     const [showKey, setShowKey] = useState(false)
     const [defaultParams, setDefaultParams] = useState("{}")
@@ -58,15 +59,21 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
     const [parseError, setParseError] = useState<string | null>(null)
     const [healthTesting, setHealthTesting] = useState(false)
 
+    /** The mask is what we initially seed the input with so the field shows
+     *  password dots (not empty). We track it so submit can tell whether the
+     *  user actually typed a new value. */
+    const initialMask = mode === "edit" ? (provider?.api_key_mask ?? "") : ""
+
     useEffect(() => {
         if (!open) return
         if (mode === "edit" && provider) {
             setName(provider.name)
             setAdapterId(provider.adapter_id ?? "openai")
-            setSchemaAdapterId(provider.schema_adapter_id ?? SCHEMA_INHERIT)
             setBaseUrl(provider.base_url)
             setApiVersion(provider.api_version ?? "")
-            setApiKey("")
+            // Seed with the mask — type="password" turns it into dots.
+            // First focus / first keystroke clears it so the user starts fresh.
+            setApiKey(provider.api_key_mask ?? "")
             setDefaultParams(JSON.stringify(provider.default_params ?? {}, null, 2))
             setDocumentPage(provider.document_page ?? "")
             setModelPage(provider.model_page ?? "")
@@ -75,7 +82,6 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
         } else {
             setName("")
             setAdapterId(ADAPTER_AUTO)
-            setSchemaAdapterId(SCHEMA_INHERIT)
             setBaseUrl("")
             setApiVersion("")
             setApiKey("")
@@ -88,6 +94,14 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
         setShowKey(false)
         setParseError(null)
     }, [open, mode, provider])
+
+    /** When the user focuses the API key field while it still holds the
+     *  server-supplied mask, wipe it so they can type a new key cleanly. */
+    const handleKeyFocus = () => {
+        if (apiKey === initialMask && initialMask !== "") {
+            setApiKey("")
+        }
+    }
 
     const createMutation = providers.useCreate({
         onSuccess: () => {
@@ -123,7 +137,6 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
         const payload: ProviderCreateInput = {
             name: name.trim(),
             adapter_id: adapterId === ADAPTER_AUTO ? undefined : adapterId,
-            schema_adapter_id: schemaAdapterId === SCHEMA_INHERIT ? null : schemaAdapterId,
             base_url: baseUrl.trim(),
             api_version: apiVersion.trim() || null,
             default_params: params,
@@ -132,13 +145,16 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
             health_check_url: healthCheckUrl.trim() || null,
             enabled,
         }
-        if (apiKey) payload.api_key = apiKey
+        // Treat the seed mask as "no change" — only send api_key when the
+        // user actually typed a fresh value.
+        if (apiKey && apiKey !== initialMask) payload.api_key = apiKey
 
         if (mode === "create") {
             createMutation.mutate(payload)
         } else if (provider) {
             const data: ProviderUpdateInput = { ...payload }
-            if (!apiKey) delete data.api_key  // don't overwrite stored key with empty
+            // Don't overwrite stored key with empty / mask placeholder
+            if (!apiKey || apiKey === initialMask) delete data.api_key
             updateMutation.mutate({ id: provider.id, data })
         }
     }
@@ -218,24 +234,14 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
                         )}
                         <div className="grid gap-2">
                             <Label htmlFor="p-key" className="text-xs">API Key</Label>
-                            {/* In edit mode show the existing masked key as a separate
-                                read-only chip so the input itself always carries the
-                                same plain placeholder — avoids the password-glyph /
-                                placeholder-glyph overlap that long mono masks caused. */}
-                            {mode === "edit" && provider?.api_key_mask && (
-                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                    <span>Current</span>
-                                    <code className="font-mono bg-muted/60 px-1.5 py-0.5 rounded text-foreground">{provider.api_key_mask}</code>
-                                    <span className="opacity-75">— leave field blank to keep</span>
-                                </div>
-                            )}
                             <div className="relative">
                                 <Input
                                     id="p-key"
                                     type={showKey ? "text" : "password"}
                                     value={apiKey}
+                                    onFocus={handleKeyFocus}
                                     onChange={(e) => setApiKey(e.target.value)}
-                                    placeholder={mode === "edit" ? "Enter a new key to replace" : "sk-..."}
+                                    placeholder={mode === "edit" ? "" : "sk-..."}
                                     className="h-9 text-sm pr-10 font-mono"
                                     autoComplete="off"
                                 />
@@ -272,25 +278,13 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
                         </div>
                         <div className="grid sm:grid-cols-2 gap-3">
                             <div className="grid gap-2 min-w-0">
-                                <Label className="text-xs">Schema adapter override</Label>
-                                <Select value={schemaAdapterId} onValueChange={setSchemaAdapterId}>
-                                    <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value={SCHEMA_INHERIT}>Inherit from adapter</SelectItem>
-                                        {(adapterList ?? []).map((a) => (
-                                            <SelectItem key={a.id} value={a.id}>{a.label}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div className="grid gap-2 min-w-0">
                                 <Label htmlFor="p-doc" className="text-xs">Docs URL</Label>
                                 <Input id="p-doc" value={documentPage} onChange={(e) => setDocumentPage(e.target.value)} className="h-9 text-sm" />
                             </div>
-                        </div>
-                        <div className="grid gap-2">
-                            <Label htmlFor="p-models" className="text-xs">Models page URL</Label>
-                            <Input id="p-models" value={modelPage} onChange={(e) => setModelPage(e.target.value)} className="h-9 text-sm" />
+                            <div className="grid gap-2 min-w-0">
+                                <Label htmlFor="p-models" className="text-xs">Models page URL</Label>
+                                <Input id="p-models" value={modelPage} onChange={(e) => setModelPage(e.target.value)} className="h-9 text-sm" />
+                            </div>
                         </div>
                         <div className="grid gap-2">
                             <Label htmlFor="p-params" className="text-xs">Default params (JSON)</Label>

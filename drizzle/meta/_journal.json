@@ -57,6 +57,13 @@
       "when": 1780742915590,
       "tag": "0007_provider_schema_adapter",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1780744757244,
+      "tag": "0008_drop_schema_adapter_id",
+      "breakpoints": true
     }
   ]
 }

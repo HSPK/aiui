@@ -14,7 +14,7 @@ import {
 // Side-effect import: registers every built-in capability with the registry.
 // Adding a new modality is a one-line change in capabilities/register.ts.
 import "../capabilities/register";
-import { resolveAdapter, getAdapter, type ProviderAdapter, type UpstreamCallArgs } from "../adapters";
+import { resolveAdapter, type ProviderAdapter, type UpstreamCallArgs } from "../adapters";
 // Side-effect import: registers every built-in adapter with the registry.
 // Adding a new upstream protocol variant is a one-line change in
 // adapters/register.ts.
@@ -28,49 +28,20 @@ export { authenticateGateway };
 export interface ResolvedModel {
     model: Model;
     provider: Provider;
-    /**
-     * Transport adapter — owns URL, auth, headers, response/stream chunk
-     * shape. Always comes from `provider.adapter_id`.
-     */
-    transport: ProviderAdapter;
-    /**
-     * Schema adapter — owns request body shape (accepted/rejected field
-     * filtering, supported API selection). Inherits from `transport` when
-     * `model.schemaAdapterId` is unset; otherwise resolved from that id.
-     *
-     * The split exists so users can proxy e.g. Azure Foundry behind an
-     * OpenAI-shaped URL while still applying Foundry's strict-field rules
-     * at the schema layer. Provider drives transport, model drives schema.
-     */
-    schema: ProviderAdapter;
+    /** The adapter for this provider — owns URL, auth, response shape,
+     *  AND request body shape (accepted/rejected fields, supported_apis).
+     *  Resolved from `provider.adapter_id` with auto-detect fallback.
+     *  To use a different field-filtering policy than the URL suggests
+     *  (e.g. a proxy that re-shapes Foundry as OpenAI), set
+     *  `provider.adapter_id` explicitly. */
+    adapter: ProviderAdapter;
     /** Adapter-projected metadata (drives field filtering, API selection, …).
      *  Sourced from `models.discoveredMetadata` for DB rows or from the
-     *  discovery cache for transient hits. Projected via `schema`. */
+     *  discovery cache for transient hits. */
     meta: NormalizedModelMeta | null;
     apiKey: string | null;
     /** True when the Model row was synthesized on-the-fly from discovery, not pulled from DB. */
     discovered: boolean;
-}
-
-/** Pick the schema adapter for a (model, provider). Three-level fallback:
- *    1. model.schemaAdapterId — finest grained per-model override
- *    2. provider.schemaAdapterId — covers all models of a proxy/wrapper
- *    3. transport (provider's adapter_id) — default, same as today
- *  Unknown ids fail-open with a warning rather than 500ing the gateway. */
-function pickSchemaAdapter(model: Model, provider: Provider, transport: ProviderAdapter): ProviderAdapter {
-    const candidates: Array<{ id: string | null | undefined; label: string }> = [
-        { id: model.schemaAdapterId, label: `model "${model.name}"` },
-        { id: provider.schemaAdapterId, label: `provider "${provider.name}"` },
-    ];
-    for (const c of candidates) {
-        if (!c.id) continue;
-        const override = getAdapter(c.id);
-        if (override) return override;
-        console.warn(
-            `[aiui] ${c.label} references unknown schema_adapter_id "${c.id}"; trying next fallback`,
-        );
-    }
-    return transport;
 }
 
 /** Build a transient Model object for a discovered upstream model. */
@@ -94,7 +65,6 @@ function transientModel(name: string, provider: Provider, upstreamModelId: strin
         httpProxy: null,
         enabled: true,
         discoveredMetadata: null,
-        schemaAdapterId: null,
         createdAt: now,
         updatedAt: now,
     } as Model;
@@ -117,20 +87,18 @@ export async function resolveModel(name: string): Promise<ResolvedModel> {
         const provider = db.select().from(schema.providers).where(eq(schema.providers.id, model.providerId)).get();
         if (!provider) throw notFound(`Provider for model "${name}" not found`);
         if (!provider.enabled) throw badRequest(`Provider "${provider.name}" is disabled`);
-        const transport = resolveAdapter(provider);
-        const schemaAdapter = pickSchemaAdapter(model, provider, transport);
-        // Project the stored discovery metadata via the SCHEMA adapter so
-        // the resulting accepted_fields/etc reflect what'll be applied at
-        // request time. If discovery never recorded anything (proxied URL
-        // that strips upstream metadata, for example), feed the adapter a
-        // minimal `{id}` so it still produces its built-in defaults.
+        const adapter = resolveAdapter(provider);
+        // Re-project the stored discovery metadata so we always reflect the
+        // adapter's current knowledge. If discovery never recorded anything
+        // (proxied URL that strips upstream metadata, for example), feed
+        // the adapter a minimal `{id}` so it still produces its built-in
+        // defaults (e.g. Foundry's accepted/rejected_fields).
         const rawMeta = model.discoveredMetadata ?? { id: model.upstreamModelId };
-        const meta = schemaAdapter.extractModelMeta(rawMeta, provider);
+        const meta = adapter.extractModelMeta(rawMeta, provider);
         return {
             model,
             provider,
-            transport,
-            schema: schemaAdapter,
+            adapter,
             meta,
             apiKey: decryptSecret(provider.apiKeyEncrypted),
             discovered: false,
@@ -140,29 +108,13 @@ export async function resolveModel(name: string): Promise<ResolvedModel> {
     const discovered = await resolveByDiscovery(name);
     if (!discovered) throw notFound(`Model "${name}" not found in any provider`);
 
-    const { provider, upstreamModelId, meta: discoveredMeta } = discovered;
-    const transport = resolveAdapter(provider);
+    const { provider, upstreamModelId, meta } = discovered;
+    const adapter = resolveAdapter(provider);
     const capability = classifyModel(upstreamModelId);
-    const transient = transientModel(name, provider, upstreamModelId, capability);
-    const schemaAdapter = pickSchemaAdapter(transient, provider, transport);
-    // Re-project meta via the schema adapter so accepted/rejected_fields
-    // reflect the active rules. discovery-supplied meta is the projection
-    // through transport's extractModelMeta; we re-do it via schema when the
-    // override changes things.
-    const meta = schemaAdapter === transport
-        ? discoveredMeta
-        : schemaAdapter.extractModelMeta(
-            // Prefer the raw upstream entry (saved by transport's
-            // extractModelMeta as `meta.raw`); fall back to a minimal
-            // `{id}` so the schema adapter still produces its defaults.
-            discoveredMeta?.raw ?? { id: upstreamModelId },
-            provider,
-        );
     return {
-        model: transient,
+        model: transientModel(name, provider, upstreamModelId, capability),
         provider,
-        transport,
-        schema: schemaAdapter,
+        adapter,
         meta,
         apiKey: decryptSecret(provider.apiKeyEncrypted),
         discovered: true,
@@ -285,19 +237,17 @@ export async function forwardGeneration(
     const requestedModel = typeof body.model === "string" ? body.model : "";
     if (!requestedModel) throw badRequest("`model` is required");
 
-    const { model, provider, transport, schema: schemaAdapter, meta, apiKey } = await resolveModel(requestedModel);
+    const { model, provider, adapter, meta, apiKey } = await resolveModel(requestedModel);
 
     const merged = mergeParams(body, model, provider);
     const stream = !!capability.supportsStreaming && !!merged.stream;
 
-    // Schema adapter decides which upstream API + how to shape the body.
-    const apiId = schemaAdapter.selectUpstreamApi(capability, model, meta);
+    const apiId = adapter.selectUpstreamApi(capability, model, meta);
     const callArgs: UpstreamCallArgs = { provider, model, meta, capability, apiId, stream };
 
-    // Schema adapter does ALL of: field filtering, model id sticking,
-    // stream_options injection (if model accepts it), Chat → Responses
-    // translation, etc.
-    const upstreamBody = schemaAdapter.transformRequest(merged, callArgs);
+    // Adapter handles field filtering, model-id sticking, stream_options
+    // injection (if model accepts it), Chat → Responses translation, etc.
+    const upstreamBody = adapter.transformRequest(merged, callArgs);
 
     const inputSummary = capability.summarizeInput?.(upstreamBody) ?? null;
     const logId = startLog({
@@ -313,9 +263,9 @@ export async function forwardGeneration(
     const started = Date.now();
     let upstream: Response;
     try {
-        upstream = await fetch(transport.upstreamUrl(callArgs), {
+        upstream = await fetch(adapter.upstreamUrl(callArgs), {
             method: "POST",
-            headers: transport.upstreamHeaders(callArgs, apiKey),
+            headers: adapter.upstreamHeaders(callArgs, apiKey),
             body: JSON.stringify(upstreamBody),
         });
     } catch (err) {
@@ -345,12 +295,10 @@ export async function forwardGeneration(
         const contentType = upstream.headers.get("Content-Type") ?? "";
         if (contentType.startsWith("application/json")) {
             const upstreamJson = await upstream.json().catch(() => ({}));
-            // Let the transport adapter normalize (e.g. Responses-API JSON
-            // → Chat Completions shape) so capability.parseResponse keeps
-            // working. Response shape is owned by transport because it's a
-            // function of the URL we POSTed to.
-            const json = transport.transformResponse
-                ? (transport.transformResponse(upstreamJson, callArgs) as Record<string, unknown>)
+            // Let the adapter normalize (e.g. Responses-API JSON → Chat
+            // Completions shape) so capability.parseResponse keeps working.
+            const json = adapter.transformResponse
+                ? (adapter.transformResponse(upstreamJson, callArgs) as Record<string, unknown>)
                 : (upstreamJson as Record<string, unknown>);
             const parsed = capability.parseResponse?.(json) ?? {};
             completeLog(logId, {
@@ -416,11 +364,11 @@ export async function forwardGeneration(
                 if (!data || data === "[DONE]") continue;
                 try {
                     const json = JSON.parse(data) as Record<string, unknown>;
-                    // Transport adapter parses first (for non-OpenAI
-                    // stream shapes); fall back to the capability's default
-                    // Chat-Completions parser.
+                    // Adapter parses first (for non-OpenAI stream shapes);
+                    // fall back to the capability's default Chat-Completions
+                    // parser.
                     const delta =
-                        transport.transformStreamChunk?.(json, callArgs) ??
+                        adapter.transformStreamChunk?.(json, callArgs) ??
                         capability.parseStreamChunk?.(json) ??
                         { content: "", reasoning: "" };
                     if (delta.content || delta.reasoning) {

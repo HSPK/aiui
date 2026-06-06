@@ -28,10 +28,6 @@ export const modelDTOSchema = z.object({
     provider_id: z.string(),
     is_local: z.boolean(),
     enabled: z.boolean(),
-    /** Optional per-model adapter override for SCHEMA decisions (accepted
-     *  /rejected fields, supported_apis). Provider's adapter still drives
-     *  transport. `null` ⇒ inherit from provider. */
-    schema_adapter_id: z.string().nullable().optional(),
     is_discovered: z.boolean().optional(),
     /** Adapter-projected metadata (supported_apis, capabilities,
      *  accepted_fields, rate_limits, …). Drives gateway routing
@@ -59,8 +55,6 @@ export const modelCreateSchema = z.object({
     max_retries: z.number().int().min(0).optional(),
     http_proxy: z.record(z.string(), z.string()).nullable().optional(),
     enabled: z.boolean().optional(),
-    /** Optional per-model schema-adapter override. See ModelDTO. */
-    schema_adapter_id: z.string().trim().nullable().optional(),
 });
 
 export const modelUpdateSchema = modelCreateSchema.partial();

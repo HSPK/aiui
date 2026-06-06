@@ -11,12 +11,6 @@ export const providerDTOSchema = z.object({
     /** Adapter id (from `lib/server/adapters/`) that handles transport
      *  + schema for this provider. Default `"openai"`. */
     adapter_id: adapterIdSchema,
-    /** Optional schema-only adapter override. When set, the provider
-     *  uses the transport adapter for URL/auth and THIS adapter for
-     *  request body shape (accepted_fields, supported_apis, …).
-     *  `null` ⇒ schema follows transport. Models can further override
-     *  on a per-row basis. */
-    schema_adapter_id: z.string().nullable(),
     base_url: z.string(),
     /** Alias of `base_url`. */
     proxy: z.string(),
@@ -48,8 +42,6 @@ export const providerCreateSchema = z.object({
     /** If omitted, the server auto-detects via the adapter registry's
      *  `matches()` pass over the configured base_url. */
     adapter_id: adapterIdSchema.optional(),
-    /** Optional schema-only override; trims to `null` when blank. */
-    schema_adapter_id: z.string().trim().nullable().optional(),
     base_url: z.string().trim().min(1, "base_url is required").url("base_url must be a URL"),
     api_version: z.string().trim().nullable().optional(),
     api_key: z.string().nullable().optional(),

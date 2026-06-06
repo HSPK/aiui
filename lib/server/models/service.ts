@@ -5,7 +5,7 @@ import { db } from "../db";
 import { models, providers, type Provider } from "../db/schema";
 import { discoverModels, listAllDiscovered, type DiscoveredModel } from "../discovery";
 import { findProviderByIdOrName } from "../providers";
-import { resolveAdapter, getAdapter } from "../adapters";
+import { resolveAdapter } from "../adapters";
 import "../adapters/register";
 import { badRequest, notFound } from "../response";
 import { serializeModel } from "./serializer";
@@ -20,48 +20,13 @@ export function findModelByIdOrName(idOrName: string) {
     );
 }
 
-/**
- * Pick the SCHEMA adapter for a model — the one that owns accepted_fields /
- * rejected_fields / API selection. Three-level fallback:
- *   1. model.schemaAdapterId (per-row override)
- *   2. provider.schemaAdapterId (covers all models of a proxy)
- *   3. provider's transport adapter (default)
- * Unknown ids fail-open (warn + try next) so a typo doesn't break the gateway.
- */
-function resolveSchemaAdapter(
-    model: typeof models.$inferSelect,
-    provider: Provider | undefined,
-) {
-    const transport = provider ? resolveAdapter(provider) : null;
-    if (!provider) return transport;
-    const candidates: Array<{ id: string | null | undefined; label: string }> = [
-        { id: model.schemaAdapterId, label: `model "${model.name}"` },
-        { id: provider.schemaAdapterId, label: `provider "${provider.name}"` },
-    ];
-    for (const c of candidates) {
-        if (!c.id) continue;
-        const override = getAdapter(c.id);
-        if (override) return override;
-        console.warn(
-            `[aiui] ${c.label} references unknown schema_adapter_id "${c.id}"; trying next fallback`,
-        );
-    }
-    return transport;
-}
-
-/** Re-project the stored discovered metadata for a DB-backed model row,
- *  returning a fresh NormalizedModelMeta. Uses the SCHEMA adapter (model
- *  override > provider's) so the projected accepted_fields/etc reflect the
- *  effective shape the gateway will apply at request time. */
+/** Re-project the stored discovered metadata for a DB-backed model row.
+ *  Uses the provider's adapter; when there's no stored metadata (e.g. a
+ *  proxy returned only bare /v1/models entries), feed the adapter a
+ *  minimal `{id}` so it still produces its built-in defaults. */
 function metaForDbModel(model: typeof models.$inferSelect, provider: Provider | undefined): NormalizedModelMeta | null {
     if (!provider) return null;
-    const adapter = resolveSchemaAdapter(model, provider);
-    if (!adapter) return null;
-    // Project from stored discovery metadata when available; otherwise feed
-    // the adapter a minimal `{id: upstreamModelId}` so it still produces
-    // its built-in defaults (e.g. Foundry's accepted/rejected_fields). This
-    // is exactly the proxied-Azure-as-OpenAI case: the upstream /models
-    // endpoint hid the Foundry metadata, but the user asserted the schema.
+    const adapter = resolveAdapter(provider);
     const raw = model.discoveredMetadata ?? { id: model.upstreamModelId };
     return adapter.extractModelMeta(raw, provider);
 }
@@ -88,7 +53,6 @@ function discoveredToDTO(d: DiscoveredModel, provider: Provider | undefined): Mo
         provider_id: d.provider_id,
         is_local: false,
         enabled: true,
-        schema_adapter_id: null,
         meta: d.meta,
         created_at: undefined,
         updated_at: undefined,
@@ -158,17 +122,6 @@ export async function getModel(idOrName: string): Promise<ModelDTO> {
     return serializeModel(model, provider?.name ?? null, provider?.baseUrl ?? null, metaForDbModel(model, provider));
 }
 
-/** Validate that a non-empty schema_adapter_id refers to a registered adapter. */
-function validateSchemaAdapterId(id: string | null | undefined): string | null {
-    if (id === null || id === undefined) return null;
-    const trimmed = id.trim();
-    if (!trimmed) return null;
-    if (!getAdapter(trimmed)) {
-        throw badRequest(`Unknown schema_adapter_id "${trimmed}"`);
-    }
-    return trimmed;
-}
-
 export async function createModel(input: ModelCreateInput): Promise<ModelDTO> {
     const name = input.name.trim();
     const providerKey = input.provider_id.trim();
@@ -198,7 +151,6 @@ export async function createModel(input: ModelCreateInput): Promise<ModelDTO> {
         maxRetries: input.max_retries ?? 2,
         httpProxy: input.http_proxy ?? null,
         enabled: input.enabled ?? true,
-        schemaAdapterId: validateSchemaAdapterId(input.schema_adapter_id),
     }).run();
 
     return getModel(id);
@@ -241,9 +193,6 @@ export async function updateModel(idOrName: string, input: ModelUpdateInput): Pr
     if (input.max_retries !== undefined) updates.maxRetries = input.max_retries;
     if (input.http_proxy !== undefined) updates.httpProxy = input.http_proxy ?? null;
     if (input.enabled !== undefined) updates.enabled = !!input.enabled;
-    if (input.schema_adapter_id !== undefined) {
-        updates.schemaAdapterId = validateSchemaAdapterId(input.schema_adapter_id);
-    }
 
     updates.updatedAt = new Date().toISOString();
 

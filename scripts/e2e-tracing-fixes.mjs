@@ -71,7 +71,15 @@ const stub = http.createServer((req, res) => {
             // Provider-level override version: also bare OpenAI shape.
             res.end(JSON.stringify({ object: "list", data: [{ id: "proxied-fara-pl", object: "model" }] }));
         } else {
-            res.end(JSON.stringify({ object: "list", data: [{ id: "stub-gpt", object: "model" }] }));
+            // Stub returns a chat model AND an embedding model — exercises
+            // the openai adapter's id-based capability classifier.
+            res.end(JSON.stringify({
+                object: "list",
+                data: [
+                    { id: "stub-gpt", object: "model" },
+                    { id: "text-embedding-3-small", object: "model" },
+                ],
+            }));
         }
         return;
     }
@@ -136,20 +144,21 @@ providers:
     api_key: sk-test
     enabled: true
   - name: proxy-foundry
-    # Transport adapter auto-detects as "openai" because the URL is /v1/...
-    # — but the actual upstream behind the proxy rejects stream_options.
-    # Model-level schema_adapter_id override must save us.
+    # Proxy is OpenAI-shaped at the URL layer but the upstream rejects
+    # OpenAI-only fields. Setting adapter_id explicitly lets the gateway
+    # apply Foundry's strict filtering despite the openai URL pattern.
+    adapter_id: azure-foundry
     base_url: http://127.0.0.1:${UPSTREAM_PORT}/proxy-foundry/v1
     api_key: sk-test
     health_check_url: http://127.0.0.1:${UPSTREAM_PORT}/health-bad
     enabled: true
-  - name: proxy-foundry-pl
-    # Same proxy scenario as above, but the schema-adapter override is set
-    # at the PROVIDER level — every model served by this provider should be
-    # auto-protected, no per-row override needed.
+  - name: optout
+    # Health-bad provider, openai transport, but we disable stream_options
+    # injection at the default_params layer — no adapter trickery needed.
     base_url: http://127.0.0.1:${UPSTREAM_PORT}/proxy-foundry-pl/v1
-    schema_adapter_id: azure-foundry
     api_key: sk-test
+    default_params:
+      stream_options: null
     enabled: true
 `;
 writeFileSync(path.join(tmp, ".config", "aiui.yaml"), config);
@@ -306,6 +315,18 @@ try {
     expect("Foundry model meta rejects stream_options", foundryModel?.meta?.rejected_fields?.includes("stream_options") === true);
     expect("Foundry model meta supports chat.completions", foundryModel?.meta?.supported_apis?.includes("chat.completions") === true);
 
+    // openai adapter's extractModelMeta must classify by id, not collapse
+    // every entry to chat.
+    const embedModel = (modelsJson.data ?? []).find((m) => m.name === "text-embedding-3-small");
+    expect("openai discovery surfaces non-chat models", !!embedModel);
+    expect(
+        "openai adapter classifies text-embedding-3-small as embedding (id-based)",
+        embedModel?.type === "embedding",
+        `type=${embedModel?.type}`,
+    );
+    const chatModel = (modelsJson.data ?? []).find((m) => m.name === "stub-gpt");
+    expect("openai adapter still classifies gpt-* as chat", chatModel?.type === "chat", `type=${chatModel?.type}`);
+
     // -------------------------------------------------------------------
     // Health-check persistence: providers with health_check_url should
     // (a) start with last_health_status === null (never probed), then
@@ -350,139 +371,80 @@ try {
     expect("proxy-foundry persists last_health_error", typeof proxyAfter?.last_health_error === "string" && proxyAfter.last_health_error.length > 0);
 
     // -------------------------------------------------------------------
-    // Model-level schema_adapter_id override: provider's transport is
-    // "openai" (URL is /proxy-foundry/v1/...), but we register an override
-    // model that pins schema to "azure-foundry". The gateway must use
-    // openai for URL/auth (transport), but Foundry's accepted_fields /
-    // rejected_fields for the request body — proving the two-adapter split.
+    // Explicit adapter_id covers the proxy case: provider URL looks like
+    // /v1/... (OpenAI-shaped) but the upstream actually rejects
+    // OpenAI-only fields. Setting `adapter_id: azure-foundry` in YAML
+    // tells the gateway to apply Foundry's strict filtering anyway.
+    // Streaming a discovered model must succeed (no per-model config).
     // -------------------------------------------------------------------
-    const overrideRes = await fetch(`${BASE}/api/models`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Cookie: cookie },
-        body: JSON.stringify({
-            name: "proxied-fara-override",
-            provider_id: proxyProvider.id,
-            upstream_model_id: "proxied-fara",
-            type: "chat",
-            schema_adapter_id: "azure-foundry",
-        }),
-    });
-    const overrideJson = await overrideRes.json();
-    expect("override model creation returned 0", overrideRes.ok && overrideJson?.code === 0);
-    expect("override model carries schema_adapter_id", overrideJson?.data?.schema_adapter_id === "azure-foundry");
-    expect(
-        "override model meta uses Foundry's rejected_fields (proves schema adapter wins)",
-        overrideJson?.data?.meta?.rejected_fields?.includes("stream_options") === true,
-    );
+    const proxyProviderAfter = providersAfter.find((p) => p.name === "proxy-foundry");
+    expect("proxy-foundry adapter_id was honored from YAML", proxyProviderAfter?.adapter_id === "azure-foundry");
 
-    // Fire a streaming chat through the override — would 400 without
-    // schema_adapter_id stripping stream_options.
     lastChatBody = null;
-    const overrideStream = await fetch(`${BASE}/api/v1/chat/completions`, {
+    const proxyStream = await fetch(`${BASE}/api/v1/chat/completions`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Cookie: cookie },
         body: JSON.stringify({
-            model: "proxied-fara-override",
+            model: "proxied-fara",  // discovered under proxy-foundry
             stream: true,
             messages: [{ role: "user", content: "hi" }],
         }),
     });
     expect(
-        "proxied-foundry stream succeeded thanks to schema_adapter_id override",
-        overrideStream.status === 200,
-        `status=${overrideStream.status}`,
+        "explicit adapter_id=azure-foundry on openai-shaped URL streams 200",
+        proxyStream.status === 200,
+        `status=${proxyStream.status}`,
     );
-    if (overrideStream.body) {
-        const oReader = overrideStream.body.getReader();
-        while (true) { const { done } = await oReader.read(); if (done) break; }
-    }
-    await sleep(300);
-    expect(
-        "gateway used the schema-adapter override to strip stream_options",
-        lastChatBody?.stream_options === undefined,
-        `stream_options=${JSON.stringify(lastChatBody?.stream_options)}`,
-    );
-
-    // Sanity: invalid schema_adapter_id is rejected by the server.
-    const badOverrideRes = await fetch(`${BASE}/api/models`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Cookie: cookie },
-        body: JSON.stringify({
-            name: "bad-override",
-            provider_id: proxyProvider.id,
-            upstream_model_id: "proxied-fara",
-            type: "chat",
-            schema_adapter_id: "definitely-not-a-real-adapter",
-        }),
-    });
-    expect("unknown schema_adapter_id is rejected", badOverrideRes.status === 400);
-
-    // -------------------------------------------------------------------
-    // Provider-level schema_adapter_id: every discovered model inherits the
-    // override without per-row config. The "proxy-foundry-pl" provider
-    // has schema_adapter_id=azure-foundry baked in via YAML; calling its
-    // discovered "proxied-fara-pl" with stream=true (no model-level row)
-    // must still strip stream_options.
-    // -------------------------------------------------------------------
-    const providerPL = providersBefore.find((p) => p.name === "proxy-foundry-pl");
-    expect("proxy-foundry-pl provider exists", !!providerPL);
-    expect("proxy-foundry-pl carries schema_adapter_id=azure-foundry", providerPL?.schema_adapter_id === "azure-foundry");
-
-    lastChatBody = null;
-    const plStream = await fetch(`${BASE}/api/v1/chat/completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Cookie: cookie },
-        body: JSON.stringify({
-            model: "proxied-fara-pl",  // pure discovery — no DB row, no model.schema_adapter_id
-            stream: true,
-            messages: [{ role: "user", content: "hi" }],
-        }),
-    });
-    expect(
-        "discovered model on provider-level override stream 200",
-        plStream.status === 200,
-        `status=${plStream.status}`,
-    );
-    if (plStream.body) {
-        const r = plStream.body.getReader();
+    if (proxyStream.body) {
+        const r = proxyStream.body.getReader();
         while (true) { const { done } = await r.read(); if (done) break; }
     }
     await sleep(300);
     expect(
-        "provider-level schema override strips stream_options for discovered models",
+        "Foundry filtering applied via explicit adapter_id — stream_options stripped",
         lastChatBody?.stream_options === undefined,
         `stream_options=${JSON.stringify(lastChatBody?.stream_options)}`,
     );
 
     // -------------------------------------------------------------------
-    // Three-level fallback priority: when a model defines schema_adapter_id
-    // AND the provider also defines one, the MODEL's wins. Register a model
-    // override on the provider-level-override provider with schema='openai'
-    // (= no field filtering); stream must then include stream_options
-    // again (because OpenAI adapter accepts it and would inject it back).
-    // This proves the 3-level resolution order rather than just OR-ing.
+    // Default-params escape hatch: provider sets `default_params.stream_options: null`
+    // → mergeParams puts null into the body → maybeInjectStreamUsage sees
+    // null and DROPS the field. No backend adapter magic needed.
     // -------------------------------------------------------------------
-    const fallbackRes = await fetch(`${BASE}/api/models`, {
+    const optoutProvider = providersAfter.find((p) => p.name === "optout");
+    expect("optout provider exists", !!optoutProvider);
+    expect(
+        "optout provider preserves default_params.stream_options=null from YAML",
+        // YAML's `null` becomes JSON null in the DTO
+        Object.prototype.hasOwnProperty.call(optoutProvider?.default_params ?? {}, "stream_options")
+            && optoutProvider?.default_params?.stream_options === null,
+        `default_params=${JSON.stringify(optoutProvider?.default_params)}`,
+    );
+
+    lastChatBody = null;
+    const optoutStream = await fetch(`${BASE}/api/v1/chat/completions`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Cookie: cookie },
         body: JSON.stringify({
-            name: "proxied-fara-pl-modeloverride",
-            provider_id: providerPL.id,
-            upstream_model_id: "proxied-fara-pl",
-            type: "chat",
-            schema_adapter_id: "openai",  // model says: ignore provider; use OpenAI filtering
+            model: "proxied-fara-pl",
+            stream: true,
+            messages: [{ role: "user", content: "hi" }],
         }),
     });
-    expect("model-level override on top of provider-level created", fallbackRes.ok);
-    // Note: the upstream still rejects stream_options (it's our stub),
-    // so we don't actually FIRE this one. We just assert the meta returned
-    // does NOT include the Foundry rejected_fields — proving the model's
-    // adapter id won the three-way pick.
-    const fallbackJson = await fallbackRes.json();
     expect(
-        "model-level wins over provider-level (no Foundry rejected_fields)",
-        !fallbackJson?.data?.meta?.rejected_fields?.includes("stream_options"),
-        `rejected_fields=${JSON.stringify(fallbackJson?.data?.meta?.rejected_fields)}`,
+        "default_params escape: stream succeeded (would 400 with stream_options)",
+        optoutStream.status === 200,
+        `status=${optoutStream.status}`,
+    );
+    if (optoutStream.body) {
+        const r = optoutStream.body.getReader();
+        while (true) { const { done } = await r.read(); if (done) break; }
+    }
+    await sleep(300);
+    expect(
+        "default_params.stream_options=null drops the field entirely",
+        lastChatBody?.stream_options === undefined,
+        `stream_options=${JSON.stringify(lastChatBody?.stream_options)}`,
     );
 } catch (err) {
     console.error("Test threw:", err);

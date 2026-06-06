@@ -39,13 +39,6 @@ export const providers = sqliteTable("providers", {
      *  when empty; the value is free text so users can register custom
      *  adapters without a schema change. */
     adapterId: text("adapter_id").notNull().default("openai"),
-    /** Optional override for SCHEMA-axis decisions (accepted/rejected
-     *  fields, supported_apis, transformRequest) when they differ from
-     *  transport (URL/auth/response). Used when a provider proxies one
-     *  upstream behind another's URL shape — e.g. Foundry behind an
-     *  OpenAI-style URL. Models can further override this. `null` means
-     *  "use the same adapter as transport". */
-    schemaAdapterId: text("schema_adapter_id"),
     baseUrl: text("base_url").notNull(),
     apiVersion: text("api_version"),
     apiKeyEncrypted: text("api_key_encrypted"),
@@ -93,12 +86,6 @@ export const models = sqliteTable("models", {
      *  Adapter-specific shape, persisted for the admin UI's raw-metadata
      *  panel and for re-running extractModelMeta when adapter logic changes. */
     discoveredMetadata: text("discovered_metadata", { mode: "json" }).$type<unknown>(),
-    /** Optional per-model adapter override for SCHEMA decisions
-     *  (accepted/rejected fields, supported API selection). The provider's
-     *  own adapter still drives transport (URL/auth/response shape).
-     *  Use case: proxy that re-shapes Foundry/Azure to OpenAI URL surface
-     *  but where the upstream model still rejects OpenAI-only fields. */
-    schemaAdapterId: text("schema_adapter_id"),
     createdAt: text("created_at").notNull().default(now),
     updatedAt: text("updated_at").notNull().default(now),
 }, (t) => [
