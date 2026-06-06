@@ -1,11 +1,11 @@
-import { ProviderConfig } from "@/lib/types"
+import type { ProviderDTO } from "@/lib/schemas/provider";
 import { Card, CardContent } from "@/components/ui/card"
 import { ProviderIcon } from "@/components/ProviderIcon"
 import { FileText, BookOpen, ChevronRight } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 
 interface ProviderCardProps {
-    provider: ProviderConfig;
+    provider: ProviderDTO;
     onClick?: () => void;
     /**
      * Right-hand slot rendered in place of the n_models badge on hover.

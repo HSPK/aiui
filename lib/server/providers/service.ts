@@ -6,8 +6,9 @@ import { models, providers } from "../db/schema";
 import { decryptSecret, encryptSecret } from "../crypto";
 import { badRequest, notFound } from "../response";
 import { clearDiscoveryCache, discoveredCountByProvider } from "../discovery";
-import { serializeProvider, type ProviderDTO } from "./serializer";
-import type { ProviderCreateInput, ProviderUpdateInput } from "./schemas";
+import { serializeProvider } from "./serializer";
+import type { ProviderDTO } from "@/lib/schemas/provider";
+import type { ProviderCreateInput, ProviderUpdateInput } from "@/lib/schemas/provider";
 import type { Provider } from "../db/schema";
 
 /** DB-only count of models per provider (excludes discovered). */

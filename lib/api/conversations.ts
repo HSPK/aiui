@@ -1,19 +1,17 @@
 import { fetcher, withQuery } from "./client";
-import type {
-    ConversationListResponse,
-    MessageListResponse,
-} from "@/lib/types/playground";
+import type { Paginated } from "@/lib/schemas/common";
+import type { ConversationDTO, MessageDTO } from "@/lib/schemas/conversation";
 
 export const conversationsApi = {
     list: (page = 1, pageSize = 20, keyword?: string) =>
-        fetcher<ConversationListResponse>(withQuery("/conversations", {
+        fetcher<Paginated<ConversationDTO>>(withQuery("/conversations", {
             page,
             page_size: pageSize,
             sort: "-updated_at",
             keyword,
         })),
     listMessages: (id: string, params?: { page?: number; page_size?: number; sort?: string }) =>
-        fetcher<MessageListResponse>(withQuery(`/conversations/${encodeURIComponent(id)}/messages`, {
+        fetcher<Paginated<MessageDTO>>(withQuery(`/conversations/${encodeURIComponent(id)}/messages`, {
             page: params?.page ?? 1,
             page_size: params?.page_size ?? 50,
             sort: params?.sort ?? "-created_at",

@@ -1,11 +1,8 @@
 import "server-only";
 import { z } from "zod";
 import { defineRoute } from "@/lib/server/route";
-import {
-    deleteUser,
-    updateUser,
-    userUpdateSchema,
-} from "@/lib/server/users";
+import { userUpdateSchema } from "@/lib/schemas/user";
+import { deleteUser, updateUser } from "@/lib/server/users";
 
 const paramsSchema = z.object({ username: z.string().min(1) });
 

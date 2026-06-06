@@ -1,4 +1,4 @@
-import type { BaseResponse } from "@/lib/types";
+import type { BaseResponse } from "@/lib/schemas/common";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api";
 

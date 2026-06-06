@@ -6,8 +6,9 @@ import { models, providers, type Provider } from "../db/schema";
 import { discoverModels, listAllDiscovered } from "../discovery";
 import { findProviderByIdOrName } from "../providers";
 import { badRequest, notFound } from "../response";
-import { serializeModel, type ModelDTO } from "./serializer";
-import type { ModelCreateInput, ModelUpdateInput } from "./schemas";
+import { serializeModel } from "./serializer";
+import type { ModelDTO } from "@/lib/schemas/model";
+import type { ModelCreateInput, ModelUpdateInput } from "@/lib/schemas/model";
 
 export function findModelByIdOrName(idOrName: string) {
     return (

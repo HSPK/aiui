@@ -1,5 +1,6 @@
 "use client"
 
+import type { UserDTO } from "@/lib/schemas/user";
 import {
     ColumnDef,
     SortingState,
@@ -7,7 +8,7 @@ import {
     getCoreRowModel,
     useReactTable,
 } from "@tanstack/react-table"
-import { User } from "@/lib/types"
+
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -29,13 +30,13 @@ import { ArrowUpDown, MoreHorizontal, Pencil, Shield, Trash2, User as UserIcon }
 import { formatToLocal } from "@/lib/utils"
 
 interface UsersTableProps {
-    data: User[]
+    data: UserDTO[]
     sorting: SortingState
     onSortingChange: (sorting: SortingState) => void
-    currentUser: User | null
-    onEdit: (user: User) => void
-    onDelete: (user: User) => void
-    onRowClick?: (user: User) => void
+    currentUser: UserDTO | null
+    onEdit: (user: UserDTO) => void
+    onDelete: (user: UserDTO) => void
+    onRowClick?: (user: UserDTO) => void
 }
 
 export function UsersTable({
@@ -47,7 +48,7 @@ export function UsersTable({
     onDelete,
     onRowClick,
 }: UsersTableProps) {
-    const columns: ColumnDef<User>[] = [
+    const columns: ColumnDef<UserDTO>[] = [
         {
             accessorKey: "username",
             header: ({ column }) => (

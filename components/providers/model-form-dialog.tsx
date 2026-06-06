@@ -1,9 +1,10 @@
 "use client"
 
+import type { ModelCreateInput, ModelDTO, ModelUpdateInput } from "@/lib/schemas/model";
 import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
-import { ModelConfig, ModelCreateParams, ModelUpdateParams } from "@/lib/types"
+
 import {
     Dialog,
     DialogContent,
@@ -31,7 +32,7 @@ interface Props {
     open: boolean
     onOpenChange: (open: boolean) => void
     mode: "create" | "edit"
-    model?: ModelConfig | null
+    model?: ModelDTO | null
     defaultProviderId?: string
 }
 
@@ -99,7 +100,7 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
     }, [open, mode, model, defaultProviderId])
 
     const createMutation = useMutation({
-        mutationFn: (data: ModelCreateParams) => api.createModel(data),
+        mutationFn: (data: ModelCreateInput) => api.createModel(data),
         onSuccess: () => {
             toast.success(isOverride ? "Override saved" : "Model created")
             queryClient.invalidateQueries({ queryKey: ["models"] })
@@ -110,7 +111,7 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
     })
 
     const updateMutation = useMutation({
-        mutationFn: ({ id, data }: { id: string; data: ModelUpdateParams }) =>
+        mutationFn: ({ id, data }: { id: string; data: ModelUpdateInput }) =>
             api.updateModel(id, data),
         onSuccess: () => {
             toast.success("Model updated")
@@ -136,7 +137,7 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
             return
         }
 
-        const payload: ModelCreateParams = {
+        const payload: ModelCreateInput = {
             name: name.trim(),
             provider_id: providerId,
             upstream_model_id: upstreamModelId.trim(),
@@ -201,7 +202,7 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
                                 </Select>
                             </div>
                             <div className="grid gap-2 min-w-0">
-                                <Label className="text-xs">Capability</Label>
+                                <Label className="text-xs">CapabilityDTO</Label>
                                 <Select value={type} onValueChange={setType}>
                                     <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                                     <SelectContent>

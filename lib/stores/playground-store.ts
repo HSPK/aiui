@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { Message } from '@/lib/types/playground';
+import type { MessageDTO } from "@/lib/schemas/conversation";
 
 export type TabType = "chat" | "prompt" | "embedding" | "rerank" | "new";
 
@@ -26,7 +26,7 @@ export interface PlaygroundTab {
     temperature?: number; // Global fallback
     maxTokens?: number;
     historyLimit?: number;
-    messages: Message[];
+    messages: MessageDTO[];
     scrollPosition?: number;
 }
 

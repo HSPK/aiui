@@ -4,7 +4,7 @@ import { modelsApi } from "@/lib/api/models";
 import { capabilitiesApi } from "@/lib/api/capabilities";
 import { queryKeys } from "./query-keys";
 import { useInvalidateProviders } from "./use-providers";
-import type { ModelCreateParams, ModelUpdateParams } from "@/lib/types";
+import type { ModelCreateInput, ModelUpdateInput } from "@/lib/schemas/model";
 
 export function useModels() {
     return useQuery({
@@ -24,7 +24,7 @@ export function useCapabilities() {
 export function useCreateModel() {
     const invalidate = useInvalidateProviders();
     return useMutation({
-        mutationFn: (data: ModelCreateParams) => modelsApi.create(data),
+        mutationFn: (data: ModelCreateInput) => modelsApi.create(data),
         onSuccess: invalidate,
     });
 }
@@ -32,7 +32,7 @@ export function useCreateModel() {
 export function useUpdateModel() {
     const invalidate = useInvalidateProviders();
     return useMutation({
-        mutationFn: ({ idOrName, data }: { idOrName: string; data: ModelUpdateParams }) =>
+        mutationFn: ({ idOrName, data }: { idOrName: string; data: ModelUpdateInput }) =>
             modelsApi.update(idOrName, data),
         onSuccess: invalidate,
     });

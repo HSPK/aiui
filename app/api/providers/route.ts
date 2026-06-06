@@ -1,10 +1,7 @@
 import "server-only";
 import { defineRoute } from "@/lib/server/route";
-import {
-    createProvider,
-    listProviders,
-    providerCreateSchema,
-} from "@/lib/server/providers";
+import { providerCreateSchema } from "@/lib/schemas/provider";
+import { createProvider, listProviders } from "@/lib/server/providers";
 
 export const GET = defineRoute({
     handler: () => listProviders(),

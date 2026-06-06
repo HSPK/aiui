@@ -1,10 +1,7 @@
 import "server-only";
 import { defineRoute } from "@/lib/server/route";
-import {
-    apiKeyCreateSchema,
-    createUserApiKey,
-    listApiKeys,
-} from "@/lib/server/apikeys";
+import { apiKeyCreateSchema } from "@/lib/schemas/apikey";
+import { createUserApiKey, listApiKeys } from "@/lib/server/apikeys";
 
 export const GET = defineRoute({
     handler: ({ user }) => listApiKeys(user.id),

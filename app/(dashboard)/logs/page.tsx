@@ -1,9 +1,10 @@
 "use client"
 
+import type { LogFilterParams } from "@/lib/schemas/log";
 import { useState, useCallback } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { api } from "@/lib/api"
-import { LogFilterParams } from "@/lib/types"
+
 import { LogsTable } from "@/components/logs/logs-table"
 import { LogDetails } from "@/components/logs/log-details"
 import { Input } from "@/components/ui/input"
@@ -88,7 +89,7 @@ export default function LogsPage() {
                 <div className="flex items-center gap-2 py-1 px-1">
                     <div className="flex flex-1 items-center gap-2 overflow-x-auto no-scrollbar">
                         <Input
-                            placeholder="User ID"
+                            placeholder="UserDTO ID"
                             value={userId}
                             onChange={(e) => setUserId(e.target.value)}
                             onKeyDown={(e) => e.key === "Enter" && handleSearch()}

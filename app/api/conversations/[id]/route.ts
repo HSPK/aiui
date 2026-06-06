@@ -1,11 +1,8 @@
 import "server-only";
 import { z } from "zod";
 import { defineRoute } from "@/lib/server/route";
-import {
-    conversationTitleSchema,
-    softDeleteConversation,
-    updateConversationTitle,
-} from "@/lib/server/conversations";
+import { conversationTitleSchema } from "@/lib/schemas/conversation";
+import { softDeleteConversation, updateConversationTitle } from "@/lib/server/conversations";
 
 const paramsSchema = z.object({ id: z.string().min(1) });
 

@@ -1,9 +1,10 @@
 "use client"
 
+import type { ProviderCreateInput, ProviderDTO, ProviderType, ProviderUpdateInput } from "@/lib/schemas/provider";
 import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
-import { ProviderConfig, ProviderCreateParams, ProviderType, ProviderUpdateParams } from "@/lib/types"
+
 import {
     Dialog,
     DialogContent,
@@ -31,7 +32,7 @@ interface Props {
     open: boolean
     onOpenChange: (open: boolean) => void
     mode: "create" | "edit"
-    provider?: ProviderConfig | null
+    provider?: ProviderDTO | null
 }
 
 export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props) {
@@ -76,7 +77,7 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
     }, [open, mode, provider])
 
     const createMutation = useMutation({
-        mutationFn: (data: ProviderCreateParams) => api.createProvider(data),
+        mutationFn: (data: ProviderCreateInput) => api.createProvider(data),
         onSuccess: () => {
             toast.success("Provider created")
             queryClient.invalidateQueries({ queryKey: ["providers"] })
@@ -87,7 +88,7 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
     })
 
     const updateMutation = useMutation({
-        mutationFn: ({ id, data }: { id: string; data: ProviderUpdateParams }) =>
+        mutationFn: ({ id, data }: { id: string; data: ProviderUpdateInput }) =>
             api.updateProvider(id, data),
         onSuccess: () => {
             toast.success("Provider updated")
@@ -117,7 +118,7 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
             return
         }
 
-        const payload: ProviderCreateParams = {
+        const payload: ProviderCreateInput = {
             name: name.trim(),
             type,
             base_url: baseUrl.trim(),
@@ -136,7 +137,7 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
             }
             createMutation.mutate(payload)
         } else if (provider) {
-            const data: ProviderUpdateParams = { ...payload }
+            const data: ProviderUpdateInput = { ...payload }
             if (!apiKey) delete data.api_key  // don't overwrite stored key with empty
             updateMutation.mutate({ id: provider.id, data })
         }

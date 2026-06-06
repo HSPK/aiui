@@ -5,7 +5,7 @@ import { db, schema } from "../db";
 import { forwardGeneration, resolveModel } from "../gateway";
 import { forbidden } from "../response";
 import type { SessionUser } from "../auth";
-import type { PlaygroundChatInput } from "./schemas";
+import type { PlaygroundChatInput } from "@/lib/schemas/playground";
 
 function asContentText(content: unknown): string {
     if (typeof content === "string") return content;

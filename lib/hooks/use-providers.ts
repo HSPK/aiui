@@ -2,7 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { providersApi } from "@/lib/api/providers";
 import { queryKeys } from "./query-keys";
-import type { ProviderCreateParams, ProviderUpdateParams } from "@/lib/types";
+import type { ProviderCreateInput, ProviderUpdateInput } from "@/lib/schemas/provider";
 
 export function useProviders() {
     return useQuery({
@@ -39,7 +39,7 @@ export function useInvalidateProviders() {
 export function useCreateProvider() {
     const invalidate = useInvalidateProviders();
     return useMutation({
-        mutationFn: (data: ProviderCreateParams) => providersApi.create(data),
+        mutationFn: (data: ProviderCreateInput) => providersApi.create(data),
         onSuccess: invalidate,
     });
 }
@@ -47,7 +47,7 @@ export function useCreateProvider() {
 export function useUpdateProvider() {
     const invalidate = useInvalidateProviders();
     return useMutation({
-        mutationFn: ({ idOrName, data }: { idOrName: string; data: ProviderUpdateParams }) =>
+        mutationFn: ({ idOrName, data }: { idOrName: string; data: ProviderUpdateInput }) =>
             providersApi.update(idOrName, data),
         onSuccess: invalidate,
     });

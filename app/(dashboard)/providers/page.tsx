@@ -1,8 +1,10 @@
 "use client"
 
+import type { ProviderDTO } from "@/lib/schemas/provider";
+import type { ModelDTO } from "@/lib/schemas/model";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
-import { ProviderConfig, ModelConfig } from "@/lib/types"
+
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -43,10 +45,10 @@ export default function ProvidersPage() {
     const [activeTab, setActiveTab] = useState("providers")
     const [sortOrder, setSortOrder] = useState("default")
 
-    const [providerDialog, setProviderDialog] = useState<{ open: boolean; mode: "create" | "edit"; provider?: ProviderConfig | null }>({ open: false, mode: "create" })
-    const [modelDialog, setModelDialog] = useState<{ open: boolean; mode: "create" | "edit"; model?: ModelConfig | null }>({ open: false, mode: "create" })
-    const [deleteProvider, setDeleteProvider] = useState<ProviderConfig | null>(null)
-    const [deleteModel, setDeleteModel] = useState<ModelConfig | null>(null)
+    const [providerDialog, setProviderDialog] = useState<{ open: boolean; mode: "create" | "edit"; provider?: ProviderDTO | null }>({ open: false, mode: "create" })
+    const [modelDialog, setModelDialog] = useState<{ open: boolean; mode: "create" | "edit"; model?: ModelDTO | null }>({ open: false, mode: "create" })
+    const [deleteProvider, setDeleteProvider] = useState<ProviderDTO | null>(null)
+    const [deleteModel, setDeleteModel] = useState<ModelDTO | null>(null)
 
     const { data: providers, isLoading: isLoadingProviders } = useQuery({
         queryKey: ["providers"],
@@ -58,7 +60,7 @@ export default function ProvidersPage() {
         queryFn: api.getModels,
     })
 
-    const getSortedProviders = (providers: ProviderConfig[]) => {
+    const getSortedProviders = (providers: ProviderDTO[]) => {
         const p = [...providers]
         if (sortOrder === "name") {
             p.sort((a, b) => a.provider_name.localeCompare(b.provider_name))
@@ -68,7 +70,7 @@ export default function ProvidersPage() {
         return p
     }
 
-    const getSortedModels = (models: ModelConfig[]) => {
+    const getSortedModels = (models: ModelDTO[]) => {
         const m = [...models]
         if (sortOrder === "name") {
             m.sort((a, b) => a.name.localeCompare(b.name))

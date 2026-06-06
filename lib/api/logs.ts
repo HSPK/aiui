@@ -1,13 +1,10 @@
 import { fetcher, withQuery } from "./client";
-import type {
-    GenerationLogDetail,
-    LogFilterParams,
-    LogListResponse,
-} from "@/lib/types";
+import type { Paginated } from "@/lib/schemas/common";
+import type { LogDetailDTO, LogFilterParams, LogListItemDTO } from "@/lib/schemas/log";
 
 export const logsApi = {
     list: (params: LogFilterParams = {}) =>
-        fetcher<LogListResponse>(withQuery("/logs/generations", { ...params })),
+        fetcher<Paginated<LogListItemDTO>>(withQuery("/logs/generations", { ...params })),
     get: (id: string) =>
-        fetcher<GenerationLogDetail>(`/logs/generations/${encodeURIComponent(id)}`),
+        fetcher<LogDetailDTO>(`/logs/generations/${encodeURIComponent(id)}`),
 };

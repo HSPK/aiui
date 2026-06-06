@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { conversations, messages } from "../db/schema";
 import { forbidden, notFound } from "../response";
-import type { MessageRatingInput } from "./schemas";
+import type { MessageRatingInput } from "@/lib/schemas/conversation";
 
 export function rateMessage(userId: string, messageId: string, input: MessageRatingInput): void {
     const message = db.select().from(messages).where(eq(messages.id, messageId)).get();

@@ -41,3 +41,12 @@ export type LoginInput = z.infer<typeof loginSchema>;
 export type UserCreateInput = z.infer<typeof userCreateSchema>;
 export type UserUpdateInput = z.infer<typeof userUpdateSchema>;
 export type UserListQuery = z.infer<typeof userListQuerySchema>;
+
+/** FE-friendly query type: boolean instead of `"true" | "false"` URL string. */
+export type UserFilterParams = {
+    page?: number;
+    page_size?: number;
+    sort?: string;
+    keyword?: string;
+    filter_admin?: boolean;
+};

@@ -25,6 +25,3 @@ export function serializeProvider(p: Provider, modelCount?: number): ProviderDTO
         updated_at: p.updatedAt,
     };
 }
-
-// Re-export the DTO type so callers can `from "@/lib/server/providers"`.
-export type { ProviderDTO } from "@/lib/schemas/provider";

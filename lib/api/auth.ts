@@ -1,12 +1,12 @@
 import { fetcher } from "./client";
-import type { AuthParams, User } from "@/lib/types";
+import type { LoginInput, UserDTO } from "@/lib/schemas/user";
 
 export const authApi = {
-    login: (data: AuthParams) => fetcher<User>("/login", {
+    login: (data: LoginInput) => fetcher<UserDTO>("/login", {
         method: "POST",
         body: JSON.stringify(data),
         skipAuthRedirect: true,
     }),
     logout: () => fetcher<null>("/logout", { method: "POST", skipAuthRedirect: true }),
-    me: () => fetcher<User>("/users/me"),
+    me: () => fetcher<UserDTO>("/users/me"),
 };

@@ -1,10 +1,10 @@
 import { fetcher } from "./client";
-import type { ApiKey } from "@/lib/types";
+import type { ApiKeyCreatedDTO, ApiKeyDTO } from "@/lib/schemas/apikey";
 
 export const apiKeysApi = {
-    list: () => fetcher<ApiKey[]>("/apikeys"),
+    list: () => fetcher<ApiKeyDTO[]>("/apikeys"),
     create: (name: string) =>
-        fetcher<ApiKey & { key: string }>("/apikeys", {
+        fetcher<ApiKeyCreatedDTO>("/apikeys", {
             method: "POST",
             body: JSON.stringify({ name }),
         }),

@@ -1,7 +1,8 @@
 import "server-only";
 import { z } from "zod";
 import { defineRoute } from "@/lib/server/route";
-import { messageRatingSchema, rateMessage } from "@/lib/server/messages";
+import { messageRatingSchema } from "@/lib/schemas/conversation";
+import { rateMessage } from "@/lib/server/messages";
 
 export const POST = defineRoute({
     params: z.object({ id: z.string().min(1) }),

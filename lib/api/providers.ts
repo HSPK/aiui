@@ -1,20 +1,16 @@
 import { fetcher } from "./client";
-import type {
-    ModelConfig,
-    ProviderConfig,
-    ProviderCreateParams,
-    ProviderUpdateParams,
-} from "@/lib/types";
+import type { ModelDTO } from "@/lib/schemas/model";
+import type { ProviderCreateInput, ProviderDTO, ProviderUpdateInput } from "@/lib/schemas/provider";
 
 export const providersApi = {
-    list: () => fetcher<ProviderConfig[]>("/providers"),
-    get: (idOrName: string) => fetcher<ProviderConfig>(`/providers/${encodeURIComponent(idOrName)}`),
+    list: () => fetcher<ProviderDTO[]>("/providers"),
+    get: (idOrName: string) => fetcher<ProviderDTO>(`/providers/${encodeURIComponent(idOrName)}`),
     listModels: (idOrName: string) =>
-        fetcher<ModelConfig[]>(`/providers/${encodeURIComponent(idOrName)}/models`),
-    create: (data: ProviderCreateParams) =>
-        fetcher<ProviderConfig>("/providers", { method: "POST", body: JSON.stringify(data) }),
-    update: (idOrName: string, data: ProviderUpdateParams) =>
-        fetcher<ProviderConfig>(`/providers/${encodeURIComponent(idOrName)}`, {
+        fetcher<ModelDTO[]>(`/providers/${encodeURIComponent(idOrName)}/models`),
+    create: (data: ProviderCreateInput) =>
+        fetcher<ProviderDTO>("/providers", { method: "POST", body: JSON.stringify(data) }),
+    update: (idOrName: string, data: ProviderUpdateInput) =>
+        fetcher<ProviderDTO>(`/providers/${encodeURIComponent(idOrName)}`, {
             method: "PATCH",
             body: JSON.stringify(data),
         }),

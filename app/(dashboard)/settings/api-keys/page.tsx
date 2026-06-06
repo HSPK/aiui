@@ -1,5 +1,6 @@
 "use client"
 
+import type { ApiKeyDTO } from "@/lib/schemas/apikey";
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
@@ -37,7 +38,7 @@ import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import { Plus, Trash2, Copy, KeyRound } from "lucide-react"
 import { formatToLocal } from "@/lib/utils"
-import { ApiKey } from "@/lib/types"
+
 import { PageHeader } from "@/components/ui/page-header"
 
 export default function ApiKeysPage() {
@@ -45,7 +46,7 @@ export default function ApiKeysPage() {
     const [createOpen, setCreateOpen] = useState(false)
     const [keyName, setKeyName] = useState("")
     const [newKey, setNewKey] = useState<{ name: string; key: string } | null>(null)
-    const [toDelete, setToDelete] = useState<ApiKey | null>(null)
+    const [toDelete, setToDelete] = useState<ApiKeyDTO | null>(null)
 
     const { data: keys = [], isLoading } = useQuery({
         queryKey: ["apikeys"],

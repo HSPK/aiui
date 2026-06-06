@@ -1,10 +1,7 @@
 import "server-only";
 import { defineRoute } from "@/lib/server/route";
-import {
-    createModel,
-    listAllModels,
-    modelCreateSchema,
-} from "@/lib/server/models";
+import { modelCreateSchema } from "@/lib/schemas/model";
+import { createModel, listAllModels } from "@/lib/server/models";
 
 export const GET = defineRoute({
     handler: () => listAllModels(),

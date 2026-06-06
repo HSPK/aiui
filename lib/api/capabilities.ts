@@ -1,6 +1,6 @@
 import { fetcher } from "./client";
-import type { Capability } from "@/lib/types";
+import type { CapabilityDTO } from "@/lib/schemas/capability";
 
 export const capabilitiesApi = {
-    list: () => fetcher<Capability[]>("/capabilities"),
+    list: () => fetcher<CapabilityDTO[]>("/capabilities"),
 };

@@ -1,12 +1,13 @@
 "use client"
 
+import type { ConversationDTO } from "@/lib/schemas/conversation";
 import * as React from "react"
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { Loader2, MessageSquare, MoreHorizontal, Pencil, Trash2, Check, X } from "lucide-react"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
-import { Conversation } from "@/lib/types/playground"
+
 import { useRouter, usePathname } from "next/navigation"
 import {
     DropdownMenu,
@@ -23,7 +24,7 @@ function ConversationItem({
     onDelete,
     onRename,
 }: {
-    conv: Conversation
+    conv: ConversationDTO
     isSelected: boolean
     onOpen: () => void
     onDelete: () => void
@@ -204,7 +205,7 @@ export function SidebarHistory() {
             }
             // Invalidate queries
             queryClient.invalidateQueries({ queryKey: ["conversations"] })
-            toast.success("Conversation deleted")
+            toast.success("ConversationDTO deleted")
         },
         onError: () => {
             toast.error("Failed to delete conversation")
@@ -223,7 +224,7 @@ export function SidebarHistory() {
             }
             // Invalidate queries
             queryClient.invalidateQueries({ queryKey: ["conversations"] })
-            toast.success("Conversation renamed")
+            toast.success("ConversationDTO renamed")
         },
         onError: () => {
             toast.error("Failed to rename conversation")
@@ -236,7 +237,7 @@ export function SidebarHistory() {
         return activeTab?.conversationId
     }, [tabs, activeTabId])
 
-    const handleOpenConversation = (conv: Conversation) => {
+    const handleOpenConversation = (conv: ConversationDTO) => {
         const existingTab = tabs.find(t => t.conversationId === conv.id)
         if (existingTab) {
             setActiveTab(existingTab.id)

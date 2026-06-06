@@ -1,16 +1,17 @@
 "use client"
 
+import type { LoginInput, UserDTO } from "@/lib/schemas/user";
 import * as React from "react"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { api, ApiError } from "@/lib/api"
-import { User, AuthParams } from "@/lib/types"
+
 import { toast } from "sonner"
 
 interface AuthContextType {
-    user: User | null
+    user: UserDTO | null
     isLoading: boolean
-    login: (params: AuthParams) => Promise<void>
+    login: (params: LoginInput) => Promise<void>
     logout: () => void
 }
 
@@ -52,7 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, [user, status, isFetching, pathname, router, searchParams])
 
 
-    const login = async (params: AuthParams) => {
+    const login = async (params: LoginInput) => {
         try {
             // The login response already returns the authenticated user — write it into the cache
             // synchronously so any consumer (including the redirect effect) sees `user` defined

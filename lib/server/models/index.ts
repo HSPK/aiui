@@ -1,6 +1,6 @@
 import "server-only";
 
-export { serializeModel, type ModelDTO } from "./serializer";
+export { serializeModel } from "./serializer";
 export {
     findModelByIdOrName,
     listAllModels,
@@ -10,9 +10,3 @@ export {
     updateModel,
     deleteModel,
 } from "./service";
-export {
-    modelCreateSchema,
-    modelUpdateSchema,
-    type ModelCreateInput,
-    type ModelUpdateInput,
-} from "./schemas";

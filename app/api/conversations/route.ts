@@ -1,9 +1,7 @@
 import "server-only";
 import { defineRoute } from "@/lib/server/route";
-import {
-    conversationListQuerySchema,
-    listConversations,
-} from "@/lib/server/conversations";
+import { conversationListQuerySchema } from "@/lib/schemas/conversation";
+import { listConversations } from "@/lib/server/conversations";
 
 export const GET = defineRoute({
     query: conversationListQuerySchema,

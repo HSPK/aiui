@@ -16,9 +16,9 @@ export const sessions = sqliteTable("sessions", {
     userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
     createdAt: text("created_at").notNull().default(now),
-}, (t) => ({
-    userIdx: index("sessions_user_idx").on(t.userId),
-}));
+}, (t) => [
+    index("sessions_user_idx").on(t.userId),
+]);
 
 export const apiKeys = sqliteTable("api_keys", {
     id: text("id").primaryKey(),
@@ -28,9 +28,9 @@ export const apiKeys = sqliteTable("api_keys", {
     keyHash: text("key_hash").notNull().unique(),
     lastUsedAt: text("last_used_at"),
     createdAt: text("created_at").notNull().default(now),
-}, (t) => ({
-    userIdx: index("api_keys_user_idx").on(t.userId),
-}));
+}, (t) => [
+    index("api_keys_user_idx").on(t.userId),
+]);
 
 export const providers = sqliteTable("providers", {
     id: text("id").primaryKey(),
@@ -70,10 +70,10 @@ export const models = sqliteTable("models", {
     enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
     createdAt: text("created_at").notNull().default(now),
     updatedAt: text("updated_at").notNull().default(now),
-}, (t) => ({
-    providerIdx: index("models_provider_idx").on(t.providerId),
-    typeIdx: index("models_type_idx").on(t.type),
-}));
+}, (t) => [
+    index("models_provider_idx").on(t.providerId),
+    index("models_type_idx").on(t.type),
+]);
 
 export const conversations = sqliteTable("conversations", {
     id: text("id").primaryKey(),
@@ -85,10 +85,10 @@ export const conversations = sqliteTable("conversations", {
     isDeleted: integer("is_deleted", { mode: "boolean" }).notNull().default(false),
     createdAt: text("created_at").notNull().default(now),
     updatedAt: text("updated_at").notNull().default(now),
-}, (t) => ({
-    userIdx: index("conversations_user_idx").on(t.userId),
-    updatedIdx: index("conversations_updated_idx").on(t.updatedAt),
-}));
+}, (t) => [
+    index("conversations_user_idx").on(t.userId),
+    index("conversations_updated_idx").on(t.updatedAt),
+]);
 
 export const messages = sqliteTable("messages", {
     id: text("id").primaryKey(),
@@ -104,10 +104,10 @@ export const messages = sqliteTable("messages", {
     rating: text("rating", { enum: ["up", "down"] }),
     feedback: text("feedback"),
     createdAt: text("created_at").notNull().default(now),
-}, (t) => ({
-    convIdx: index("messages_conv_idx").on(t.conversationId),
-    parentIdx: index("messages_parent_idx").on(t.parentId),
-}));
+}, (t) => [
+    index("messages_conv_idx").on(t.conversationId),
+    index("messages_parent_idx").on(t.parentId),
+]);
 
 export const generationLogs = sqliteTable("generation_logs", {
     id: text("id").primaryKey(),
@@ -132,13 +132,13 @@ export const generationLogs = sqliteTable("generation_logs", {
     isDeleted: integer("is_deleted", { mode: "boolean" }).notNull().default(false),
     createdAt: text("created_at").notNull().default(now),
     updatedAt: text("updated_at").notNull().default(now),
-}, (t) => ({
-    userIdx: index("gen_logs_user_idx").on(t.userId),
-    modelIdx: index("gen_logs_model_idx").on(t.modelName),
-    statusIdx: index("gen_logs_status_idx").on(t.status),
-    capabilityIdx: index("gen_logs_capability_idx").on(t.capability),
-    createdIdx: index("gen_logs_created_idx").on(t.createdAt),
-}));
+}, (t) => [
+    index("gen_logs_user_idx").on(t.userId),
+    index("gen_logs_model_idx").on(t.modelName),
+    index("gen_logs_status_idx").on(t.status),
+    index("gen_logs_capability_idx").on(t.capability),
+    index("gen_logs_created_idx").on(t.createdAt),
+]);
 
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;

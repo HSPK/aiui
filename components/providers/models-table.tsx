@@ -1,4 +1,4 @@
-import { ModelConfig } from "@/lib/types"
+import type { ModelDTO } from "@/lib/schemas/model";
 import {
     Table,
     TableBody,
@@ -19,9 +19,9 @@ import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 
 interface Props {
-    models: ModelConfig[]
-    onEdit?: (model: ModelConfig) => void
-    onDelete?: (model: ModelConfig) => void
+    models: ModelDTO[]
+    onEdit?: (model: ModelDTO) => void
+    onDelete?: (model: ModelDTO) => void
 }
 
 export function ModelsTable({ models, onEdit, onDelete }: Props) {

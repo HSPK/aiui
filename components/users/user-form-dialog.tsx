@@ -1,9 +1,10 @@
 "use client"
 
+import type { UserCreateInput, UserDTO, UserUpdateInput } from "@/lib/schemas/user";
 import { useState, useEffect } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
-import { User, UserCreateParams, UserUpdateParams } from "@/lib/types"
+
 import {
     Dialog,
     DialogContent,
@@ -29,7 +30,7 @@ interface UserFormDialogProps {
     open: boolean
     onOpenChange: (open: boolean) => void
     mode: "create" | "edit"
-    user?: User | null
+    user?: UserDTO | null
 }
 
 export function UserFormDialog({
@@ -63,9 +64,9 @@ export function UserFormDialog({
     }, [open, mode, user])
 
     const createMutation = useMutation({
-        mutationFn: (data: UserCreateParams) => api.createUser(data),
+        mutationFn: (data: UserCreateInput) => api.createUser(data),
         onSuccess: () => {
-            toast.success("User created successfully")
+            toast.success("UserDTO created successfully")
             queryClient.invalidateQueries({ queryKey: ["users"] })
             onOpenChange(false)
         },
@@ -75,10 +76,10 @@ export function UserFormDialog({
     })
 
     const updateMutation = useMutation({
-        mutationFn: ({ username, data }: { username: string; data: UserUpdateParams }) =>
+        mutationFn: ({ username, data }: { username: string; data: UserUpdateInput }) =>
             api.updateUser(username, data),
         onSuccess: () => {
-            toast.success("User updated successfully")
+            toast.success("UserDTO updated successfully")
             queryClient.invalidateQueries({ queryKey: ["users"] })
             onOpenChange(false)
         },
@@ -105,7 +106,7 @@ export function UserFormDialog({
                 role,
             })
         } else if (user) {
-            const updateData: UserUpdateParams = { role }
+            const updateData: UserUpdateInput = { role }
             if (password) {
                 updateData.password = password
             }
@@ -123,7 +124,7 @@ export function UserFormDialog({
             <DialogContent className="sm:max-w-[400px]">
                 <DialogHeader>
                     <DialogTitle>
-                        {mode === "create" ? "Add User" : "Edit User"}
+                        {mode === "create" ? "Add UserDTO" : "Edit UserDTO"}
                     </DialogTitle>
                     <DialogDescription>
                         {mode === "create"
@@ -184,7 +185,7 @@ export function UserFormDialog({
                                     <SelectItem value="user">
                                         <div className="flex items-center gap-2">
                                             <UserIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                                            <span>User</span>
+                                            <span>UserDTO</span>
                                         </div>
                                     </SelectItem>
                                     <SelectItem value="admin">

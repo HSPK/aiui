@@ -1,9 +1,10 @@
 "use client"
 
+import type { UserDTO, UserFilterParams } from "@/lib/schemas/user";
 import { useState, useCallback } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
-import { User, UserFilterParams } from "@/lib/types"
+
 import { useAuth } from "@/context/auth-context"
 import { UsersTable } from "@/components/users/users-table"
 import { UserFormDialog } from "@/components/users/user-form-dialog"
@@ -30,8 +31,8 @@ export default function UsersPage() {
 
     // Dialogs
     const [isCreateOpen, setIsCreateOpen] = useState(false)
-    const [editingUser, setEditingUser] = useState<User | null>(null)
-    const [deletingUser, setDeletingUser] = useState<User | null>(null)
+    const [editingUser, setEditingUser] = useState<UserDTO | null>(null)
+    const [deletingUser, setDeletingUser] = useState<UserDTO | null>(null)
 
     // Build query params
     const queryParams: UserFilterParams = {
@@ -52,7 +53,7 @@ export default function UsersPage() {
     const deleteMutation = useMutation({
         mutationFn: api.deleteUser,
         onSuccess: () => {
-            toast.success("User deleted successfully")
+            toast.success("UserDTO deleted successfully")
             queryClient.invalidateQueries({ queryKey: ["users"] })
             setDeletingUser(null)
         },
@@ -88,7 +89,7 @@ export default function UsersPage() {
                         <ShieldAlert className="h-8 w-8 text-destructive" />
                     </div>
                     <h1 className="text-2xl font-semibold">Access Denied</h1>
-                    <p className="text-muted-foreground">User management is restricted to administrators only.</p>
+                    <p className="text-muted-foreground">UserDTO management is restricted to administrators only.</p>
                 </div>
             </div>
         )

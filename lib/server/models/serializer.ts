@@ -27,5 +27,3 @@ export function serializeModel(m: Model, providerName?: string | null, providerP
         updated_at: m.updatedAt,
     };
 }
-
-export type { ModelDTO } from "@/lib/schemas/model";

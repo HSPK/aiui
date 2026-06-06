@@ -1,5 +1,6 @@
 "use client"
 
+import type { LogListItemDTO } from "@/lib/schemas/log";
 import {
     ColumnDef,
     flexRender,
@@ -20,11 +21,11 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ArrowUpDown, Files, Zap, Clock } from "lucide-react"
-import { GenerationLog } from "@/lib/types"
+
 import { formatToLocal } from "@/lib/utils"
 
 interface LogsTableProps {
-    data: GenerationLog[];
+    data: LogListItemDTO[];
     sorting: SortingState;
     onSortingChange: OnChangeFn<SortingState>;
     onViewDetail: (id: string) => void;
@@ -44,7 +45,7 @@ function formatLatency(ms: number | null | undefined): string {
 }
 
 export function LogsTable({ data, sorting, onSortingChange, onViewDetail }: LogsTableProps) {
-    const columns: ColumnDef<GenerationLog>[] = [
+    const columns: ColumnDef<LogListItemDTO>[] = [
         {
             accessorKey: "id",
             header: () => <div className="text-center">Trace ID</div>,
@@ -84,7 +85,7 @@ export function LogsTable({ data, sorting, onSortingChange, onViewDetail }: Logs
         },
         {
             accessorKey: "user_id",
-            header: "User",
+            header: "UserDTO",
             cell: ({ row }) => <div className="text-xs truncate max-w-[100px]" title={row.getValue("user_id")}>{row.getValue("user_id")}</div>
         },
         {
@@ -94,7 +95,7 @@ export function LogsTable({ data, sorting, onSortingChange, onViewDetail }: Logs
         },
         {
             accessorKey: "capability",
-            header: "Capability",
+            header: "CapabilityDTO",
             cell: ({ row }) => {
                 const cap = row.original.capability
                 return cap

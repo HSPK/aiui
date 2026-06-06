@@ -1,6 +1,6 @@
 "use client"
 
-import { User } from "@/lib/types"
+import type { UserDTO } from "@/lib/schemas/user";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -16,7 +16,7 @@ import { Loader2 } from "lucide-react"
 interface DeleteUserDialogProps {
     open: boolean
     onOpenChange: (open: boolean) => void
-    user: User | null
+    user: UserDTO | null
     isLoading: boolean
     onConfirm: () => void
 }
@@ -32,7 +32,7 @@ export function DeleteUserDialog({
         <AlertDialog open={open} onOpenChange={onOpenChange}>
             <AlertDialogContent>
                 <AlertDialogHeader>
-                    <AlertDialogTitle>Delete User</AlertDialogTitle>
+                    <AlertDialogTitle>Delete UserDTO</AlertDialogTitle>
                     <AlertDialogDescription>
                         Are you sure you want to delete user <span className="font-medium text-foreground">"{user?.username}"</span>?
                         This action cannot be undone.

@@ -1,12 +1,8 @@
 import "server-only";
 import { z } from "zod";
 import { defineRoute } from "@/lib/server/route";
-import {
-    deleteModel,
-    getModel,
-    modelUpdateSchema,
-    updateModel,
-} from "@/lib/server/models";
+import { modelUpdateSchema } from "@/lib/schemas/model";
+import { deleteModel, getModel, updateModel } from "@/lib/server/models";
 
 const paramsSchema = z.object({ id: z.string().min(1) });
 

@@ -1,6 +1,7 @@
 import "server-only";
 import { defineRoute } from "@/lib/server/route";
-import { listLogs, logListQuerySchema } from "@/lib/server/logs";
+import { logListQuerySchema } from "@/lib/schemas/log";
+import { listLogs } from "@/lib/server/logs";
 
 export const GET = defineRoute({
     query: logListQuerySchema,

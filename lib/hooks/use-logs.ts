@@ -2,7 +2,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { logsApi } from "@/lib/api/logs";
 import { queryKeys } from "./query-keys";
-import type { LogFilterParams } from "@/lib/types";
+import type { LogFilterParams } from "@/lib/schemas/log";
 
 export function useLogs(filters: LogFilterParams) {
     return useQuery({

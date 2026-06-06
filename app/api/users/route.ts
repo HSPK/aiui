@@ -1,11 +1,7 @@
 import "server-only";
 import { defineRoute } from "@/lib/server/route";
-import {
-    createUser,
-    listUsers,
-    userCreateSchema,
-    userListQuerySchema,
-} from "@/lib/server/users";
+import { userCreateSchema, userListQuerySchema } from "@/lib/schemas/user";
+import { createUser, listUsers } from "@/lib/server/users";
 
 export const GET = defineRoute({
     auth: "admin",

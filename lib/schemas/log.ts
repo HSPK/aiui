@@ -55,3 +55,14 @@ export type LogStatus = z.infer<typeof logStatusSchema>;
 export type LogListItemDTO = z.infer<typeof logListItemDTOSchema>;
 export type LogDetailDTO = z.infer<typeof logDetailDTOSchema>;
 export type LogListQuery = z.infer<typeof logListQuerySchema>;
+
+/** FE-friendly query type: nullable to allow "cleared" filters. */
+export type LogFilterParams = {
+    page?: number;
+    page_size?: number;
+    sort?: string;
+    user_id?: string | null;
+    model_name?: string | null;
+    capability?: string | null;
+    status?: LogStatus | null;
+};

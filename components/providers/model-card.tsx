@@ -1,4 +1,4 @@
-import { ModelConfig } from "@/lib/types"
+import type { ModelDTO } from "@/lib/schemas/model";
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Copy, Box, Cpu, Calendar, MessageSquare, Layers, ScanSearch, Image as ImageIcon, Mic, Volume2 } from "lucide-react"
@@ -7,10 +7,10 @@ import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
 interface ModelCardProps {
-    model: ModelConfig;
+    model: ModelDTO;
 }
 
-// Capability → (color, icon) — kept here in the UI layer so the registry stays
+// CapabilityDTO → (color, icon) — kept here in the UI layer so the registry stays
 // transport-only on the server. Unknown capabilities fall back to a neutral
 // box icon so the page never breaks when a new modality is added.
 const CAPABILITY_PRESENTATION: Record<string, { color: string; icon: React.ComponentType<{ className?: string }> }> = {
