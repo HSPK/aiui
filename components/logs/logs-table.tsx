@@ -95,7 +95,7 @@ export function LogsTable({ data, sorting, onSortingChange, onViewDetail }: Logs
         },
         {
             accessorKey: "capability",
-            header: "CapabilityDTO",
+            header: "Capability",
             cell: ({ row }) => {
                 const cap = row.original.capability
                 return cap

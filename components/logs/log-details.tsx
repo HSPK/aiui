@@ -2,7 +2,6 @@
 
 import { logs } from "@/lib/api";
 import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
 
 import {
     Sheet,
@@ -287,11 +286,7 @@ function ContentViewer({ title, content, colorClass }: { title: string, content:
 
 export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
     const { resolvedTheme } = useTheme()
-    const { data: log, isLoading } = useQuery({
-        queryKey: ["log", logId],
-        queryFn: () => logs.get(logId!),
-        enabled: !!logId && open,
-    })
+    const { data: log, isLoading } = logs.useGet(open ? logId : null)
 
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>

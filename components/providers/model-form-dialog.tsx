@@ -1,9 +1,8 @@
 "use client"
 
 import { capabilities, models, providers } from "@/lib/api";
-import type { ModelCreateInput, ModelDTO, ModelUpdateInput } from "@/lib/schemas/model";
+import type { ModelCreateInput, ModelDTO } from "@/lib/schemas/model";
 import { useEffect, useMemo, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import {
     Dialog,
@@ -37,18 +36,8 @@ interface Props {
 }
 
 export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProviderId }: Props) {
-    const queryClient = useQueryClient()
-    const { data: providerList } = useQuery({
-        queryKey: ["providers"],
-        queryFn: providers.list,
-        enabled: open,
-    })
-    const { data: capabilityList } = useQuery({
-        queryKey: ["capabilities"],
-        queryFn: capabilities.list,
-        enabled: open,
-        staleTime: 60_000,
-    })
+    const { data: providerList } = providers.useList(undefined, { enabled: open })
+    const { data: capabilityList } = capabilities.useList(undefined, { enabled: open })
 
     const [name, setName] = useState("")
     const [providerId, setProviderId] = useState<string>("")
@@ -99,26 +88,22 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
         setParseError(null)
     }, [open, mode, model, defaultProviderId])
 
-    const createMutation = useMutation({
-        mutationFn: (data: ModelCreateInput) => models.create(data),
+    // `models` resource has `invalidates: ["providers"]` so n_models on
+    // each provider card refreshes too.
+    const createMutation = models.useCreate({
         onSuccess: () => {
             toast.success(isOverride ? "Override saved" : "Model created")
-            queryClient.invalidateQueries({ queryKey: ["models"] })
-            queryClient.invalidateQueries({ queryKey: ["providers"] })
             onOpenChange(false)
         },
-        onError: (e: Error) => toast.error(e.message || "Create failed"),
+        onError: (e) => toast.error(e.message || "Create failed"),
     })
 
-    const updateMutation = useMutation({
-        mutationFn: ({ id, data }: { id: string; data: ModelUpdateInput }) =>
-            models.update(id, data),
+    const updateMutation = models.useUpdate({
         onSuccess: () => {
             toast.success("Model updated")
-            queryClient.invalidateQueries({ queryKey: ["models"] })
             onOpenChange(false)
         },
-        onError: (e: Error) => toast.error(e.message || "Update failed"),
+        onError: (e) => toast.error(e.message || "Update failed"),
     })
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -202,7 +187,7 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
                                 </Select>
                             </div>
                             <div className="grid gap-2 min-w-0">
-                                <Label className="text-xs">CapabilityDTO</Label>
+                                <Label className="text-xs">Capability</Label>
                                 <Select value={type} onValueChange={setType}>
                                     <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                                     <SelectContent>

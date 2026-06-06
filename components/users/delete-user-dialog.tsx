@@ -32,7 +32,7 @@ export function DeleteUserDialog({
         <AlertDialog open={open} onOpenChange={onOpenChange}>
             <AlertDialogContent>
                 <AlertDialogHeader>
-                    <AlertDialogTitle>Delete UserDTO</AlertDialogTitle>
+                    <AlertDialogTitle>Delete User</AlertDialogTitle>
                     <AlertDialogDescription>
                         Are you sure you want to delete user <span className="font-medium text-foreground">"{user?.username}"</span>?
                         This action cannot be undone.

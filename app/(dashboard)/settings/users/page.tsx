@@ -3,7 +3,6 @@
 import { users } from "@/lib/api";
 import type { UserDTO, UserFilterParams } from "@/lib/schemas/user";
 import { useState, useCallback } from "react"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { useAuth } from "@/context/auth-context"
 import { UsersTable } from "@/components/users/users-table"
@@ -17,7 +16,6 @@ import { SortingState } from "@tanstack/react-table"
 
 export default function UsersPage() {
     const { user: currentUser } = useAuth()
-    const queryClient = useQueryClient()
 
     // Pagination & sorting
     const [page, setPage] = useState(1)
@@ -43,21 +41,16 @@ export default function UsersPage() {
         filter_admin: activeFilters.filterAdmin === "admin" ? true : activeFilters.filterAdmin === "user" ? false : undefined,
     }
 
-    const { data, isLoading, isFetching, refetch } = useQuery({
-        queryKey: ["users", queryParams],
-        queryFn: () => users.list(queryParams),
+    const { data, isLoading, isFetching, refetch } = users.useList(queryParams, {
         enabled: currentUser?.role === "admin",
-        placeholderData: (prev) => prev,
     })
 
-    const deleteMutation = useMutation({
-        mutationFn: users.remove,
+    const deleteMutation = users.useDelete({
         onSuccess: () => {
             toast.success("User deleted successfully")
-            queryClient.invalidateQueries({ queryKey: ["users"] })
             setDeletingUser(null)
         },
-        onError: (err: Error) => toast.error(err.message || "Delete failed"),
+        onError: (err) => toast.error(err.message || "Delete failed"),
     })
 
     // Handlers
@@ -89,7 +82,7 @@ export default function UsersPage() {
                         <ShieldAlert className="h-8 w-8 text-destructive" />
                     </div>
                     <h1 className="text-2xl font-semibold">Access Denied</h1>
-                    <p className="text-muted-foreground">UserDTO management is restricted to administrators only.</p>
+                    <p className="text-muted-foreground">User management is restricted to administrators only.</p>
                 </div>
             </div>
         )

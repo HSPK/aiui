@@ -3,7 +3,6 @@
 import { conversations } from "@/lib/api";
 import type { ConversationDTO } from "@/lib/schemas/conversation";
 import * as React from "react"
-import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { cn } from "@/lib/utils"
 import { Loader2, MessageSquare, MoreHorizontal, Pencil, Trash2, Check, X } from "lucide-react"
@@ -174,7 +173,6 @@ export function SidebarHistory() {
     const { addTab, setActiveTab, tabs, activeTabId, removeTab, updateTabTitle } = usePlaygroundStore()
     const router = useRouter()
     const pathname = usePathname()
-    const queryClient = useQueryClient()
     const observerTarget = React.useRef<HTMLDivElement>(null)
     const scrollContainerRef = React.useRef<HTMLDivElement>(null)
 
@@ -184,28 +182,15 @@ export function SidebarHistory() {
         hasNextPage,
         isFetchingNextPage,
         isLoading,
-    } = useInfiniteQuery({
-        queryKey: ["conversations", "sidebar"],
-        initialPageParam: 1,
-        queryFn: ({ pageParam = 1 }) => conversations.list({ page: pageParam, page_size: 10 }),
-        getNextPageParam: (lastPage) => {
-            if (!lastPage) return undefined
-            const hasMore = lastPage.page * lastPage.page_size < lastPage.total
-            return hasMore ? lastPage.page + 1 : undefined
-        },
-    })
+    } = conversations.useInfinite({ pageSize: 10, scope: "sidebar" })
 
-    // Delete mutation
-    const deleteMutation = useMutation({
-        mutationFn: (convId: string) => conversations.remove(convId),
+    // Delete mutation — resource auto-invalidates ["conversations"].
+    const deleteMutation = conversations.useDelete({
         onSuccess: (_, convId) => {
-            // Close any tab with this conversation
             const tabToRemove = tabs.find(t => t.conversationId === convId)
             if (tabToRemove) {
                 removeTab(tabToRemove.id)
             }
-            // Invalidate queries
-            queryClient.invalidateQueries({ queryKey: ["conversations"] })
             toast.success("Conversation deleted")
         },
         onError: () => {
@@ -213,18 +198,13 @@ export function SidebarHistory() {
         },
     })
 
-    // Rename mutation
-    const renameMutation = useMutation({
-        mutationFn: ({ convId, title }: { convId: string; title: string }) =>
-            conversations.updateTitle(convId, title),
-        onSuccess: (_, { convId, title }) => {
-            // Update tab title if open
+    // Rename mutation — resource auto-invalidates ["conversations"].
+    const renameMutation = conversations.useUpdate({
+        onSuccess: (_, { id: convId, data }) => {
             const tabToUpdate = tabs.find(t => t.conversationId === convId)
-            if (tabToUpdate) {
-                updateTabTitle(tabToUpdate.id, title)
+            if (tabToUpdate && data.title) {
+                updateTabTitle(tabToUpdate.id, data.title)
             }
-            // Invalidate queries
-            queryClient.invalidateQueries({ queryKey: ["conversations"] })
             toast.success("Conversation renamed")
         },
         onError: () => {
@@ -316,7 +296,7 @@ export function SidebarHistory() {
                         isSelected={isConversationSelected(conv.id)}
                         onOpen={() => handleOpenConversation(conv)}
                         onDelete={() => deleteMutation.mutate(conv.id)}
-                        onRename={(newTitle) => renameMutation.mutate({ convId: conv.id, title: newTitle })}
+                        onRename={(newTitle) => renameMutation.mutate({ id: conv.id, data: { title: newTitle } })}
                     />
                 ))}
 

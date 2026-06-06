@@ -1,6 +1,6 @@
 "use client"
 
-import { auth, ApiError } from "@/lib/api";
+import { auth, ApiError, apiKeys, preferences } from "@/lib/api";
 import type { LoginInput, UserDTO } from "@/lib/schemas/user";
 import * as React from "react"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
@@ -63,8 +63,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             queryClient.setQueryData(["user", "me"], userData)
             // Drop any stale per-user caches from a previous session so the
             // next render fetches fresh data for the newly-logged-in account.
-            queryClient.removeQueries({ queryKey: ["preferences"] })
-            queryClient.removeQueries({ queryKey: ["apikeys"] })
+            queryClient.removeQueries({ queryKey: preferences.keys.all() })
+            queryClient.removeQueries({ queryKey: apiKeys.keys.all() })
 
             toast.success("Login successful")
 
@@ -90,8 +90,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         queryClient.setQueryData(["user", "me"], null)
         queryClient.removeQueries({ queryKey: ["user"] })
-        queryClient.removeQueries({ queryKey: ["preferences"] })
-        queryClient.removeQueries({ queryKey: ["apikeys"] })
+        queryClient.removeQueries({ queryKey: preferences.keys.all() })
+        queryClient.removeQueries({ queryKey: apiKeys.keys.all() })
         router.push("/login")
         toast.info("Logged out")
     }

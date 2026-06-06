@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { usePlaygroundStore, ModelConfig } from "@/lib/stores/playground-store"
 import { useShallow } from "zustand/react/shallow"
-import { useQuery } from "@tanstack/react-query"
 
 import { ModelConfigPopover, DEFAULT_MODEL_CONFIG } from "./model-config-popover"
 import {
@@ -37,12 +36,9 @@ export const ModelChipsWithConfig = React.memo(function ModelChipsWithConfig({
     historyLimit,
     onHistoryLimitChange,
 }: ModelChipsWithConfigProps) {
-    // Get models data for provider info
-    const { data: modelsData } = useQuery({
-        queryKey: ["models"],
-        queryFn: () => models.list(),
-        staleTime: 5 * 60 * 1000,
-    })
+    // Get models data for provider info — 5min staleTime, the catalog is
+    // small and refreshes via discovery cache on its own cadence.
+    const { data: modelsData } = models.useList(undefined, { staleTime: 5 * 60 * 1000 })
 
     const modelsMap = React.useMemo(() => {
         const map = new Map<string, { provider?: string }>()

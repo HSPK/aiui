@@ -3,7 +3,6 @@
 import { models, providers } from "@/lib/api";
 import type { ProviderDTO } from "@/lib/schemas/provider";
 import type { ModelDTO } from "@/lib/schemas/model";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -38,7 +37,6 @@ import { useAuth } from "@/context/auth-context"
 
 export default function ProvidersPage() {
     const router = useRouter()
-    const queryClient = useQueryClient()
     const { user } = useAuth()
     const isAdmin = user?.role === "admin"
     const [searchQuery, setSearchQuery] = useState("")
@@ -50,15 +48,8 @@ export default function ProvidersPage() {
     const [deleteProvider, setDeleteProvider] = useState<ProviderDTO | null>(null)
     const [deleteModel, setDeleteModel] = useState<ModelDTO | null>(null)
 
-    const { data: providerList, isLoading: isLoadingProviders } = useQuery({
-        queryKey: ["providers"],
-        queryFn: providers.list,
-    })
-
-    const { data: modelList, isLoading: isLoadingModels } = useQuery({
-        queryKey: ["models"],
-        queryFn: models.list,
-    })
+    const { data: providerList, isLoading: isLoadingProviders } = providers.useList()
+    const { data: modelList, isLoading: isLoadingModels } = models.useList()
 
     const getSortedProviders = (items: ProviderDTO[]) => {
         const p = [...items]
@@ -84,49 +75,42 @@ export default function ProvidersPage() {
         return m
     }
 
-    const filteredProviders = providerList ? getSortedProviders(providerList).filter(p =>
-        p.provider_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (p.proxy || "").toLowerCase().includes(searchQuery.toLowerCase())
-    ) : []
+    const filteredProviders = providerList
+        ? getSortedProviders(providerList).filter(p =>
+            p.provider_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (p.proxy || "").toLowerCase().includes(searchQuery.toLowerCase())
+        )
+        : []
 
-    const filteredModels = modelList ? getSortedModels(modelList).filter(m =>
-        m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (m.model_id || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (m.provider || "").toLowerCase().includes(searchQuery.toLowerCase())
-    ) : []
+    const filteredModels = modelList
+        ? getSortedModels(modelList).filter(m =>
+            m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (m.model_id || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (m.provider || "").toLowerCase().includes(searchQuery.toLowerCase())
+        )
+        : []
 
-    const reloadMutation = useMutation({
-        mutationFn: providers.reload,
-        onSuccess: () => {
-            toast.success("Refreshed")
-            queryClient.invalidateQueries({ queryKey: ["providers"] })
-            queryClient.invalidateQueries({ queryKey: ["models"] })
-        },
-        onError: (error) => {
-            toast.error(`Refresh failed: ${error.message}`)
-        },
+    // providers' `invalidates: ["models"]` in the resource descriptor cascades
+    // these mutations to the models cache automatically.
+    const reloadMutation = providers.useReload({
+        onSuccess: () => toast.success("Refreshed"),
+        onError: (error) => toast.error(`Refresh failed: ${error.message}`),
     })
 
-    const deleteProviderMutation = useMutation({
-        mutationFn: (id: string) => providers.remove(id),
+    const deleteProviderMutation = providers.useDelete({
         onSuccess: () => {
             toast.success("Provider deleted")
-            queryClient.invalidateQueries({ queryKey: ["providers"] })
-            queryClient.invalidateQueries({ queryKey: ["models"] })
             setDeleteProvider(null)
         },
-        onError: (e: Error) => toast.error(e.message || "Delete failed"),
+        onError: (e) => toast.error(e.message || "Delete failed"),
     })
 
-    const deleteModelMutation = useMutation({
-        mutationFn: (id: string) => models.remove(id),
+    const deleteModelMutation = models.useDelete({
         onSuccess: () => {
             toast.success("Model deleted")
-            queryClient.invalidateQueries({ queryKey: ["models"] })
-            queryClient.invalidateQueries({ queryKey: ["providers"] })
             setDeleteModel(null)
         },
-        onError: (e: Error) => toast.error(e.message || "Delete failed"),
+        onError: (e) => toast.error(e.message || "Delete failed"),
     })
 
     return (

@@ -1,9 +1,8 @@
 "use client"
 
 import { users } from "@/lib/api";
-import type { UserCreateInput, UserDTO, UserUpdateInput } from "@/lib/schemas/user";
+import type { UserDTO, UserUpdateInput } from "@/lib/schemas/user";
 import { useState, useEffect } from "react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import {
     Dialog,
@@ -39,7 +38,6 @@ export function UserFormDialog({
     mode,
     user,
 }: UserFormDialogProps) {
-    const queryClient = useQueryClient()
     const [showPassword, setShowPassword] = useState(false)
 
     // Form state
@@ -63,29 +61,20 @@ export function UserFormDialog({
         }
     }, [open, mode, user])
 
-    const createMutation = useMutation({
-        mutationFn: (data: UserCreateInput) => users.create(data),
+    const createMutation = users.useCreate({
         onSuccess: () => {
             toast.success("User created successfully")
-            queryClient.invalidateQueries({ queryKey: ["users"] })
             onOpenChange(false)
         },
-        onError: (error: Error) => {
-            toast.error(error.message || "Create failed")
-        },
+        onError: (error) => toast.error(error.message || "Create failed"),
     })
 
-    const updateMutation = useMutation({
-        mutationFn: ({ username, data }: { username: string; data: UserUpdateInput }) =>
-            users.update(username, data),
+    const updateMutation = users.useUpdate({
         onSuccess: () => {
             toast.success("User updated successfully")
-            queryClient.invalidateQueries({ queryKey: ["users"] })
             onOpenChange(false)
         },
-        onError: (error: Error) => {
-            toast.error(error.message || "Update failed")
-        },
+        onError: (error) => toast.error(error.message || "Update failed"),
     })
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -111,7 +100,7 @@ export function UserFormDialog({
                 updateData.password = password
             }
             updateMutation.mutate({
-                username: user.username,
+                id: user.username,
                 data: updateData,
             })
         }
@@ -124,7 +113,7 @@ export function UserFormDialog({
             <DialogContent className="sm:max-w-[400px]">
                 <DialogHeader>
                     <DialogTitle>
-                        {mode === "create" ? "Add UserDTO" : "Edit UserDTO"}
+                        {mode === "create" ? "Add User" : "Edit User"}
                     </DialogTitle>
                     <DialogDescription>
                         {mode === "create"
@@ -185,7 +174,7 @@ export function UserFormDialog({
                                     <SelectItem value="user">
                                         <div className="flex items-center gap-2">
                                             <UserIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                                            <span>UserDTO</span>
+                                            <span>User</span>
                                         </div>
                                     </SelectItem>
                                     <SelectItem value="admin">

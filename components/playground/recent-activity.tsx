@@ -2,7 +2,6 @@
 
 import { conversations } from "@/lib/api";
 import * as React from "react"
-import { useInfiniteQuery } from "@tanstack/react-query"
 
 import { formatToLocal } from "@/lib/utils"
 import { MessageSquare, ArrowRight, Clock, Loader2 } from "lucide-react"
@@ -21,16 +20,7 @@ export function RecentActivity({ onOpenConversation }: RecentActivityProps) {
         hasNextPage,
         isFetchingNextPage,
         isLoading,
-    } = useInfiniteQuery({
-        queryKey: ["conversations", "recent-home"],
-        initialPageParam: 1,
-        queryFn: ({ pageParam = 1 }) => conversations.list({ page: pageParam, page_size: 15 }),
-        getNextPageParam: (lastPage) => {
-            if (!lastPage) return undefined
-            const hasMore = lastPage.page * lastPage.page_size < lastPage.total
-            return hasMore ? lastPage.page + 1 : undefined
-        },
-    })
+    } = conversations.useInfinite({ pageSize: 15, scope: "recent-home" })
 
     // Intersection Observer for infinite scroll
     React.useEffect(() => {

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { conversations } from "@/lib/api"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
 import type { Message } from "@/components/playground/chat/types"
 
@@ -23,8 +23,8 @@ export function useMessageSync({
     messages,
     isLoading
 }: UseMessageSyncOptions): void {
-    const queryClient = useQueryClient()
     const updateTab = usePlaygroundStore((state) => state.updateTab)
+    const invalidateConversations = conversations.useInvalidate()
 
     // Sync messages to store (debounced)
     React.useEffect(() => {
@@ -63,10 +63,9 @@ export function useMessageSync({
     // Refresh sidebar when message sending completes
     const prevIsLoadingRef = React.useRef(isLoading)
     React.useEffect(() => {
-        // Detect transition from loading to not loading (message sent)
         if (prevIsLoadingRef.current && !isLoading && messages.length > 0) {
-            queryClient.invalidateQueries({ queryKey: ["conversations"] })
+            invalidateConversations()
         }
         prevIsLoadingRef.current = isLoading
-    }, [isLoading, messages.length, queryClient])
+    }, [isLoading, messages.length, invalidateConversations])
 }

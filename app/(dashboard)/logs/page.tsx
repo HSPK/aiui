@@ -3,7 +3,6 @@
 import { logs } from "@/lib/api";
 import type { LogFilterParams } from "@/lib/schemas/log";
 import { useState, useCallback } from "react"
-import { useQuery } from "@tanstack/react-query"
 
 import { LogsTable } from "@/components/logs/logs-table"
 import { LogDetails } from "@/components/logs/log-details"
@@ -50,11 +49,7 @@ export default function LogsPage() {
         status: status === "all" ? null : status,
     }
 
-    const { data, isLoading, isFetching, refetch } = useQuery({
-        queryKey: ["logs", queryParams],
-        queryFn: () => logs.list(queryParams),
-        placeholderData: (prev) => prev,
-    })
+    const { data, isLoading, isFetching, refetch } = logs.useList(queryParams)
 
     // Handlers
     const handleSearch = useCallback(() => {

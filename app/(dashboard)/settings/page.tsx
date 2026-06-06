@@ -2,7 +2,6 @@
 
 import { models, preferences } from "@/lib/api";
 import * as React from "react"
-import { useQuery } from "@tanstack/react-query"
 
 import { useDeviceSettingsStore } from "@/lib/stores/device-settings-store"
 import { defaultUserPreferences } from "@/lib/schemas/preferences"
@@ -177,10 +176,7 @@ export default function SettingsPage() {
     const deviceSettings = useDeviceSettingsStore()
     const [saved, setSaved] = React.useState(false)
 
-    const { data: modelsData, isLoading: modelsLoading } = useQuery({
-        queryKey: ["models"],
-        queryFn: () => models.list(),
-    })
+    const { data: modelsData, isLoading: modelsLoading } = models.useList()
 
     const modelOptions = React.useMemo(() => {
         if (!Array.isArray(modelsData)) return []

@@ -5,7 +5,6 @@ import * as React from "react"
 import { Bot } from "lucide-react"
 import { cn, formatRelativeDate, normalizeDate } from "@/lib/utils"
 
-import { useQuery } from "@tanstack/react-query"
 import { ChatMessage } from "./chat-message"
 
 const DateSeparator = React.memo(({ date }: { date: string | Date }) => (
@@ -40,11 +39,7 @@ export const MessageList = React.memo(({
     selectedSiblings,
     onSelectSibling
 }: MessageListProps) => {
-    const { data: modelsData } = useQuery({
-        queryKey: ["models"],
-        queryFn: () => models.list(),
-        staleTime: 1000 * 60 * 5, // Cache for 5 mins
-    })
+    const { data: modelsData } = models.useList(undefined, { staleTime: 5 * 60 * 1000 })
 
     const modelProviderMap = React.useMemo(() => {
         const map = new Map<string, string>()

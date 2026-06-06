@@ -1,5 +1,5 @@
 "use client";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type UseMutationOptions } from "@tanstack/react-query";
 import { defineResource } from "./resource";
 import { fetcher } from "./client";
 import type { ModelDTO } from "@/lib/schemas/model";
@@ -18,6 +18,13 @@ const base = defineResource<
     invalidates: ["models"],
 });
 
+export interface ProviderCheckResult {
+    ok: boolean;
+    models?: number;
+    error?: string;
+    latency_ms?: number;
+}
+
 export const providers = {
     ...base,
 
@@ -27,7 +34,7 @@ export const providers = {
     reload: () =>
         fetcher<null>("/providers/reload", { method: "POST" }),
     check: (id: string) =>
-        fetcher<{ ok: boolean; models?: number; error?: string; latency_ms?: number }>(
+        fetcher<ProviderCheckResult>(
             `/providers/${encodeURIComponent(id)}/check`,
             { method: "POST" },
         ),
@@ -35,8 +42,22 @@ export const providers = {
     // ---- custom hooks ----
     useModels: (id: string | undefined | null) =>
         useQuery({
-            queryKey: ["providers", id ?? "", "models"] as const,
+            queryKey: [...base.keys.one(id ?? ""), "models"] as const,
             queryFn: () => providers.listModels(id!),
             enabled: !!id,
         }),
+
+    /** POST /providers/reload — clears the discovery cache. Cascades same
+     *  invalidation as a CRUD mutation (providers + models). */
+    useReload: (opts?: Omit<UseMutationOptions<null, Error, void>, "mutationFn">) => {
+        const invalidate = base.useInvalidate();
+        return useMutation<null, Error, void>({
+            mutationFn: providers.reload,
+            ...opts,
+            onSuccess: (data, vars, onMutateResult, context) => {
+                invalidate();
+                opts?.onSuccess?.(data, vars, onMutateResult, context);
+            },
+        });
+    },
 };

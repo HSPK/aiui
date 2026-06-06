@@ -1,5 +1,5 @@
 "use client";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { defineResource } from "./resource";
 import { fetcher } from "./client";
 import type { Paginated } from "@/lib/schemas/common";
@@ -28,6 +28,20 @@ export const conversations = {
     // ---- shorthand: title-only update ----
     updateTitle: (id: string, title: string) => base.update(id, { title }),
 
+    // ---- infinite scroll variant of useList ----
+    useInfinite: (params?: { pageSize?: number; scope?: string }) =>
+        useInfiniteQuery({
+            queryKey: [...base.keys.all(), "infinite", params?.scope ?? "default", params?.pageSize ?? 20] as const,
+            initialPageParam: 1,
+            queryFn: ({ pageParam = 1 }) =>
+                base.list({ page: pageParam as number, page_size: params?.pageSize ?? 20 }),
+            getNextPageParam: (lastPage) => {
+                if (!lastPage) return undefined;
+                const hasMore = lastPage.page * lastPage.page_size < lastPage.total;
+                return hasMore ? lastPage.page + 1 : undefined;
+            },
+        }),
+
     // ---- nested: messages under a conversation ----
     listMessages: (id: string, params?: { page?: number; page_size?: number; sort?: string }) =>
         fetcher<Paginated<MessageDTO>>(
@@ -41,14 +55,16 @@ export const conversations = {
 
     useMessages: (id: string | null | undefined, params?: { page?: number; page_size?: number; sort?: string }) =>
         useQuery({
-            queryKey: ["conversations", id ?? "", "messages", params] as const,
+            queryKey: [...base.keys.one(id ?? ""), "messages", params] as const,
             queryFn: () => conversations.listMessages(id!, params),
             enabled: !!id,
         }),
 };
 
 // Messages are a sibling resource only used for rating today.
+const messagesKey = ["messages"] as const;
 export const messages = {
+    keys: { all: () => messagesKey },
     rate: (messageId: string, rating: "up" | "down" | "none", feedback?: string) =>
         fetcher<null>(`/messages/${encodeURIComponent(messageId)}/rate`, {
             method: "POST",

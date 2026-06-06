@@ -2,7 +2,6 @@
 
 import { conversations, gateway, preferences } from "@/lib/api";
 import * as React from "react"
-import { useQueryClient } from "@tanstack/react-query"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
 
 import type { Message } from "@/components/playground/chat/types"
@@ -26,7 +25,7 @@ export function useTitleGeneration({
     isLoading,
     getModelIds
 }: UseTitleGenerationOptions): void {
-    const queryClient = useQueryClient()
+    const invalidateConversations = conversations.useInvalidate()
     const { data: userPrefs } = preferences.useGet()
     const defaultSummaryModel = userPrefs?.default_summary_model ?? ""
     const defaultModel = userPrefs?.default_model ?? ""
@@ -79,10 +78,10 @@ export function useTitleGeneration({
                     // Ignore backend errors, local title is sufficient
                 })
                 // Refresh sidebar history
-                queryClient.invalidateQueries({ queryKey: ["conversations"] })
+                invalidateConversations()
             })
             .catch(err => {
                 console.error('Failed to generate title:', err)
             })
-    }, [messages, isLoading, conversationId, tabTitle, getModelIds, defaultSummaryModel, defaultModel, tabId, updateTabTitle, queryClient])
+    }, [messages, isLoading, conversationId, tabTitle, getModelIds, defaultSummaryModel, defaultModel, tabId, updateTabTitle, invalidateConversations])
 }

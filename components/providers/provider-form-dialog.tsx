@@ -3,7 +3,6 @@
 import { providers } from "@/lib/api";
 import type { ProviderCreateInput, ProviderDTO, ProviderType, ProviderUpdateInput } from "@/lib/schemas/provider";
 import { useEffect, useState } from "react"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 import {
     Dialog,
@@ -36,7 +35,6 @@ interface Props {
 }
 
 export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props) {
-    const queryClient = useQueryClient()
     const [name, setName] = useState("")
     const [type, setType] = useState<ProviderType>("openai")
     const [baseUrl, setBaseUrl] = useState("")
@@ -76,27 +74,22 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
         setParseError(null)
     }, [open, mode, provider])
 
-    const createMutation = useMutation({
-        mutationFn: (data: ProviderCreateInput) => providers.create(data),
+    // `providers` resource has `invalidates: ["models"]` so both caches
+    // refresh on success automatically.
+    const createMutation = providers.useCreate({
         onSuccess: () => {
             toast.success("Provider created")
-            queryClient.invalidateQueries({ queryKey: ["providers"] })
-            queryClient.invalidateQueries({ queryKey: ["models"] })
             onOpenChange(false)
         },
-        onError: (e: Error) => toast.error(e.message || "Create failed"),
+        onError: (e) => toast.error(e.message || "Create failed"),
     })
 
-    const updateMutation = useMutation({
-        mutationFn: ({ id, data }: { id: string; data: ProviderUpdateInput }) =>
-            providers.update(id, data),
+    const updateMutation = providers.useUpdate({
         onSuccess: () => {
             toast.success("Provider updated")
-            queryClient.invalidateQueries({ queryKey: ["providers"] })
-            queryClient.invalidateQueries({ queryKey: ["models"] })
             onOpenChange(false)
         },
-        onError: (e: Error) => toast.error(e.message || "Update failed"),
+        onError: (e) => toast.error(e.message || "Update failed"),
     })
 
     const handleSubmit = (e: React.FormEvent) => {

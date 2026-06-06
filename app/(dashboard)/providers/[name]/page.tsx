@@ -1,7 +1,6 @@
 "use client"
 
 import { providers } from "@/lib/api";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 
 import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -20,34 +19,13 @@ export default function ProviderDetailPage() {
     // human-readable name. The server route accepts either id or name so
     // legacy URLs with UUIDs still resolve.
     const slug = decodeURIComponent(params.name as string)
-    const queryClient = useQueryClient()
 
-    const { data: provider, isLoading: isLoadingProvider } = useQuery({
-        queryKey: ["providers", slug],
-        queryFn: () => providers.get(slug),
-        enabled: !!slug,
-    })
+    const { data: provider, isLoading: isLoadingProvider } = providers.useGet(slug)
+    const { data: models, isLoading: isLoadingModels } = providers.useModels(slug)
 
-    const { data: models, isLoading: isLoadingModels } = useQuery({
-        queryKey: ["providers", slug, "models"],
-        queryFn: () => providers.listModels(slug),
-        enabled: !!slug,
-    })
-
-    const refreshMutation = useMutation({
-        // The "reload" endpoint now just clears the in-memory discovery cache,
-        // so what the user gets is a freshly fetched /models from the upstream.
-        mutationFn: () => providers.reload(),
-        onSuccess: () => {
-            toast.success("Refreshed model list")
-            // The hierarchical key invalidates this provider's models AND the
-            // global ones, so the providers tab also gets the new data.
-            queryClient.invalidateQueries({ queryKey: ["providers"] })
-            queryClient.invalidateQueries({ queryKey: ["models"] })
-        },
-        onError: (error) => {
-            toast.error(`Refresh failed: ${error.message}`)
-        },
+    const refreshMutation = providers.useReload({
+        onSuccess: () => toast.success("Refreshed model list"),
+        onError: (error) => toast.error(`Refresh failed: ${error.message}`),
     })
 
     if (isLoadingProvider) {

@@ -3,7 +3,6 @@
 import { apiKeys } from "@/lib/api";
 import type { ApiKeyDTO } from "@/lib/schemas/apikey";
 import { useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -43,36 +42,28 @@ import { formatToLocal } from "@/lib/utils"
 import { PageHeader } from "@/components/ui/page-header"
 
 export default function ApiKeysPage() {
-    const queryClient = useQueryClient()
     const [createOpen, setCreateOpen] = useState(false)
     const [keyName, setKeyName] = useState("")
     const [newKey, setNewKey] = useState<{ name: string; key: string } | null>(null)
     const [toDelete, setToDelete] = useState<ApiKeyDTO | null>(null)
 
-    const { data: keys = [], isLoading } = useQuery({
-        queryKey: ["apikeys"],
-        queryFn: apiKeys.list,
-    })
+    const { data: keys = [], isLoading } = apiKeys.useList()
 
-    const createMutation = useMutation({
-        mutationFn: (name: string) => apiKeys.create(name),
+    const createMutation = apiKeys.useCreate({
         onSuccess: (key) => {
-            queryClient.invalidateQueries({ queryKey: ["apikeys"] })
             setCreateOpen(false)
             setKeyName("")
             setNewKey({ name: key.name, key: key.key })
         },
-        onError: (e: Error) => toast.error(e.message || "Create failed"),
+        onError: (e) => toast.error(e.message || "Create failed"),
     })
 
-    const deleteMutation = useMutation({
-        mutationFn: (id: string) => apiKeys.remove(id),
+    const deleteMutation = apiKeys.useDelete({
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ["apikeys"] })
             setToDelete(null)
             toast.success("API key revoked")
         },
-        onError: (e: Error) => toast.error(e.message || "Delete failed"),
+        onError: (e) => toast.error(e.message || "Delete failed"),
     })
 
     return (
