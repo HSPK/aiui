@@ -16,10 +16,21 @@
 
 | 变量 | 说明 |
 |---|---|
-| `AIUI_MASTER_KEY` | **必填**。AES-256-GCM 主密钥，加密 Provider 的 `api_key`。轮换会让已存的 key 解不开。 |
-| `AIUI_DB_PATH` | SQLite 路径，默认 `./data/aiui.db`（已在 `.gitignore`）。 |
-| `AIUI_CONFIG_PATH` | 启动时加载的配置文件路径；默认查找根目录的 `aiui.config.yaml/.yml/.json`。 |
+| `AIUI_MASTER_KEY` | AES-256-GCM 主密钥，加密 Provider 的 `api_key`。可改放配置文件里的 `master_key:`，env 优先。轮换会让已存的 key 解不开。 |
+| `AIUI_DB_PATH` | SQLite 路径，默认 `<userCwd>/data/aiui.db`（已在 `.gitignore`）。 |
+| `AIUI_CONFIG_PATH` | 配置文件路径覆盖；不设按下文顺序搜索。 |
+| `AIUI_USER_CWD` | **CLI 自动设置**——bin/aiui.mjs 把用户当前目录传给 Next，使 `config.ts` 和 `db/index.ts` 都基于用户工作目录而非包目录解析路径。手写代码时一律走 `process.env.AIUI_USER_CWD || process.cwd()`。 |
 | `AIUI_ADMIN_USERNAME` / `AIUI_ADMIN_PASSWORD` | 首次启动且 `users` 表为空时引导首位 admin；不设置就不引导。 |
+
+## CLI（`bin/aiui.mjs`）
+
+`package.json` `bin` 字段把它暴露为 `aiui` 命令。子命令：
+
+- `aiui init-config [--out PATH | --user | --print | --force]` — 生成带随机 `master_key` 的 YAML 模板（含 OpenAI/Azure 示例与所有注释）。默认写 `./aiui.config.yaml`。
+- `aiui start` / `aiui dev` — spawn 包目录里的 `next` binary；自动注入 `AIUI_USER_CWD=process.cwd()`。
+- 无参 → `aiui start`。
+
+不要在 CLI 里读 DB / 加密 / 启业务流程：它只做参数解析 + 写文件 + spawn next。
 
 ## Provider 类型
 
@@ -34,12 +45,18 @@ Azure 模式下 `providers.apiVersion` 留空则默认 `2024-10-21`；`models.up
 
 ## 本地配置文件（`lib/server/config.ts`）
 
-- 启动时由 `ensureInit()` 调一次 `loadConfigFile()`（在 admin bootstrap 之后），按 `name` upsert `providers` + `models`。**文件中没有的 DB 条目不会被删除**。
-- 路径优先级：`AIUI_CONFIG_PATH` → `./aiui.config.yaml` → `.yml` → `.json`。
-- 值支持 `${ENV_VAR}` 插值（实现于 `interpolateEnv`）。
+- 启动时由 `ensureInit()` 调一次 `loadConfigFile()`（在 admin bootstrap 之后）。
+- **搜索顺序**（首个命中为准）：
+  1. `AIUI_CONFIG_PATH`
+  2. `<userCwd>/aiui.config.{yaml,yml,json}`
+  3. `<userCwd>/.config/aiui.{yaml,yml,json}`
+  4. `$XDG_CONFIG_HOME/aiui.{yaml,yml,json}`（默认 `~/.config/`）
+- **顶层 `master_key`**：解析完文件第一件事就 hoist 到 `process.env.AIUI_MASTER_KEY`（**仅在 env 未设时**），这样后续 `encryptSecret()` 不会因没 key 抛错。修这块时务必保证 master_key 应用早于任何 provider upsert。
+- 按 `name` upsert `providers` + `models`。**文件中没有的 DB 条目不会被删除**。
+- 值支持 `${ENV_VAR}` 插值（`interpolateEnv`）。
 - `api_key` 字段**省略**时不会覆盖 DB 里现有的密钥；显式写 `null` 才会清空。
 - 任何解析/写入错误只 `console.error`，不阻塞启动。
-- Sample 在仓库根的 `aiui.config.example.yaml`（已 commit），真实文件名 `aiui.config.{yaml,yml,json}` 已 gitignore。
+- Sample 在仓库根的 `aiui.config.example.yaml`（已 commit），真实文件名 `aiui.config.{yaml,yml,json}` 与 `.config/aiui.{yaml,yml,json}` 已 gitignore。
 
 ## 架构
 

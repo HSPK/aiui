@@ -15,38 +15,95 @@
 
 ## 快速开始
 
-```bash
-# 1. 安装依赖
-bun install
+### 作为 CLI 工具使用（推荐）
 
-# 2. 准备环境变量
+```bash
+bun install
+bun run build
+
+# 一键生成带随机 master_key 的配置文件
+./bin/aiui.mjs init-config        # 写到 ./aiui.config.yaml
+# 或：./bin/aiui.mjs init-config --user  # 写到 ~/.config/aiui.yaml
+
+# 编辑配置：填 API key / 加 provider / 加 model
+$EDITOR aiui.config.yaml
+
+# 启动
+./bin/aiui.mjs                    # 默认 == start
+./bin/aiui.mjs start -p 3000
+./bin/aiui.mjs dev                # next dev
+./bin/aiui.mjs help
+```
+
+如果通过 `npm i -g .` 安装则可直接 `aiui` 调用，从任意目录启动；CLI 会把当前目录通过 `AIUI_USER_CWD` 透传给 Next，配置文件 / SQLite 文件都相对你的工作目录解析。
+
+### 作为开发仓库使用
+
+```bash
+bun install
 cat > .env.local <<'EOF'
-AIUI_DB_PATH=./data/aiui.db
-AIUI_MASTER_KEY=<32 字节随机串，用于加密上游 Provider 的 API key>
+AIUI_MASTER_KEY=<32 字节随机串，加密上游 Provider 的 api_key>
 AIUI_ADMIN_USERNAME=admin
 AIUI_ADMIN_PASSWORD=<引导首位 admin 用户的初始密码>
 EOF
-
-# 3. 启动开发
-bun run dev          # next dev
-# 或生产构建+启动
-bun run build && bun run start
+bun run dev
 ```
 
 首次启动会自动：
 1. 在 `./data/` 下创建 SQLite 文件并跑 `drizzle/` 里的 migrations
-2. 根据 `AIUI_ADMIN_USERNAME`/`AIUI_ADMIN_PASSWORD` 引导首位 admin 账号（仅在 users 表为空时执行）
-3. 如果项目根存在 `aiui.config.yaml` / `.yml` / `.json`（或 `AIUI_CONFIG_PATH` 指向的文件），upsert 其中的 providers/models 到 DB（详见下文）
+2. 根据 `AIUI_ADMIN_USERNAME`/`AIUI_ADMIN_PASSWORD` 引导首位 admin（仅在 `users` 表为空时）
+3. 查找配置文件（见下文搜索顺序）；如果有 `master_key` 且未设置环境变量，会自动应用；providers/models 按 `name` upsert 到 DB
+
+## 配置文件
+
+按以下顺序查找（首个命中即用）：
+
+1. `$AIUI_CONFIG_PATH`（显式覆盖）
+2. `./aiui.config.{yaml,yml,json}`（项目根，向后兼容）
+3. `./.config/aiui.{yaml,yml,json}`（项目本地 XDG 风格）
+4. `$XDG_CONFIG_HOME/aiui.{yaml,yml,json}`（用户级，默认 `~/.config/`）
+
+`./` 指 CLI 调用时的工作目录（通过 `AIUI_USER_CWD` 传给 Next），不是 Next 进程的 cwd。
+
+**最小可用文件**（`aiui init-config` 生成）：
+
+```yaml
+master_key: <32 字节随机 hex，本机敏感数据；env 优先>
+
+providers:
+  - name: openai
+    type: openai                       # openai | azure
+    base_url: https://api.openai.com/v1
+    api_key: ${OPENAI_API_KEY}         # 任意字符串字段都支持 ${ENV_VAR}
+
+models:
+  - name: gpt-4o-mini
+    provider: openai
+    upstream_model_id: gpt-4o-mini
+    type: chat                         # chat | embedding | audio | reranker
+    context_window: 128000
+```
+
+**约定**：
+- `master_key` 也可以放在配置文件里（CLI 场景方便），`AIUI_MASTER_KEY` 环境变量始终优先
+- 字符串字段支持 `${ENV_VAR}` 插值
+- providers/models 按 `name` upsert；DB 里多出的条目不动（UI + 文件可共存）
+- 省略 `api_key` 字段**不会**覆盖 DB 里已有的密钥；显式写 `null` 才会清空
+- 解析错误只 warn，不阻塞启动
+- 真实文件名（`aiui.config.yaml` / `.config/aiui.yaml`）已在 `.gitignore`
+
+⚠️ 配置里如果带了 `master_key` 或明文 API key，**不要提交到版本控制**。
 
 ## 环境变量
 
 | 变量 | 必填 | 说明 |
 |------|------|------|
-| `AIUI_MASTER_KEY` | ✅ | AES-256-GCM 主密钥，加密 Provider 的 `api_key`。**轮换会导致已存储 key 无法解密**。 |
-| `AIUI_DB_PATH` | | SQLite 路径，默认 `./data/aiui.db` |
-| `AIUI_CONFIG_PATH` | | 启动时加载的配置文件路径；默认查找根目录的 `aiui.config.yaml/.yml/.json` |
+| `AIUI_MASTER_KEY` | （二选一） | AES-256-GCM 主密钥；或写在配置文件 `master_key:`。**轮换会让已存的 Provider key 解不开**。 |
+| `AIUI_DB_PATH` | | SQLite 路径，默认 `<userCwd>/data/aiui.db` |
+| `AIUI_CONFIG_PATH` | | 配置文件路径覆盖；不设则按上文顺序搜索 |
+| `AIUI_USER_CWD` | | CLI 自动设置；服务端把它当工作目录解析配置/DB |
 | `AIUI_ADMIN_USERNAME` | | 首位 admin 用户名（默认 `admin`） |
-| `AIUI_ADMIN_PASSWORD` | | 首位 admin 密码；不设置则不会自动引导 |
+| `AIUI_ADMIN_PASSWORD` | | 首位 admin 密码；不设则不引导 |
 | `NEXT_PUBLIC_API_URL` | | 前端 API 基址，默认 `/api`（同源） |
 
 ## Provider 类型
@@ -57,43 +114,6 @@ bun run build && bun run start
 | `azure` | `POST {base_url}/openai/deployments/{deployment}/chat/completions?api-version=…` | `api-key: {api_key}` 头 | `Model` 表里的 **Upstream Model ID** 填 Azure **部署名**；`api_version` 留空时默认 `2024-10-21` |
 
 通过 admin UI 在 `/providers` 创建 provider 时可选择类型；或在配置文件中声明（见下）。
-
-## 本地配置文件
-
-通过文件声明 providers/models，启动时按 `name` 做 **upsert**（不删 DB 里多余的条目，UI 与文件可共存）。
-
-**路径**：默认查找项目根的 `aiui.config.yaml` / `aiui.config.yml` / `aiui.config.json`；或用 `AIUI_CONFIG_PATH=/path/to/config.yaml` 指定。
-
-**字段**：见仓库根的 `aiui.config.example.yaml`。要点：
-- 字符串支持 `${ENV_VAR}` 插值，方便把 secrets 留在环境里
-- `api_key` 字段省略时**不会**清空 DB 中已存的密钥（保护 UI 改过的值）
-- 文件里没有的 DB 条目**不会**被删除
-- 解析/写入失败仅 warning，不阻断启动
-
-最小示例：
-
-```yaml
-providers:
-  - name: openai
-    type: openai
-    base_url: https://api.openai.com/v1
-    api_key: ${OPENAI_API_KEY}
-  - name: azure-eastus
-    type: azure
-    base_url: https://my-resource.openai.azure.com
-    api_version: "2024-10-21"
-    api_key: ${AZURE_OPENAI_API_KEY}
-
-models:
-  - name: gpt-4o-mini
-    provider: openai
-    upstream_model_id: gpt-4o-mini
-    type: chat
-  - name: azure-gpt-4o          # 调用网关时用这个 name
-    provider: azure-eastus
-    upstream_model_id: gpt-4o-prod-deployment  # Azure 部署名
-    type: chat
-```
 
 ## 数据模型
 
