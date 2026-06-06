@@ -125,13 +125,23 @@ export default function ProvidersPage() {
                             <RefreshCcw className={`h-2 w-2 ${reloadMutation.isPending ? "animate-spin" : ""}`} />
                         </Button>
                         {isAdmin && activeTab === "providers" && (
-                            <Button size="sm" onClick={() => setProviderDialog({ open: true, mode: "create" })}>
-                                <Plus className="h-4 w-4 mr-1" /> Add Provider
+                            <Button
+                                size="icon-sm"
+                                onClick={() => setProviderDialog({ open: true, mode: "create" })}
+                                title="Add provider"
+                                aria-label="Add provider"
+                            >
+                                <Plus className="h-4 w-4" />
                             </Button>
                         )}
                         {isAdmin && activeTab === "models" && (
-                            <Button size="sm" onClick={() => setModelDialog({ open: true, mode: "create" })}>
-                                <Plus className="h-4 w-4 mr-1" /> Add Model
+                            <Button
+                                size="icon-sm"
+                                onClick={() => setModelDialog({ open: true, mode: "create" })}
+                                title="Add model"
+                                aria-label="Add model"
+                            >
+                                <Plus className="h-4 w-4" />
                             </Button>
                         )}
                     </div>
