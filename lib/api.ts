@@ -1,29 +1,8 @@
 import { BaseResponse, ModelConfig, ProviderConfig, User, AuthParams, LogFilterParams, LogListResponse, GenerationLogDetail, UserCreateParams, UserUpdateParams, UserListResponse, UserFilterParams } from "./types";
-import { ConversationListResponse, MessageListResponse, Conversation, Message } from "./types/playground";
+import { ConversationListResponse, MessageListResponse } from "./types/playground";
+import type { ApiKey, ProviderCreateParams, ProviderUpdateParams, ModelCreateParams, ModelUpdateParams } from "./types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
-
-
-const AUTH_STORAGE_KEY = "aiui_auth_credentials";
-
-export function getAuthHeader(): string | null {
-    if (typeof window !== "undefined") {
-        return localStorage.getItem(AUTH_STORAGE_KEY);
-    }
-    return null;
-}
-
-export function setAuthHeader(username: string, password?: string) {
-    if (typeof window !== "undefined") {
-        if (password) {
-            // Storing as "username:password" as requested.
-            // Note: In production, consider more secure storage or token-based auth.
-            localStorage.setItem(AUTH_STORAGE_KEY, `${username}:${password}`);
-        } else {
-            localStorage.removeItem(AUTH_STORAGE_KEY);
-        }
-    }
-}
 
 export class ApiError extends Error {
     status: number;
@@ -43,40 +22,28 @@ async function fetcher<T>(url: string, options?: RequestInit & { skipAuthRedirec
         ...(options?.headers as Record<string, string>),
     };
 
-    const auth = getAuthHeader();
-    if (auth) {
-        headers["Authorization"] = auth;
-    }
-
     const res = await fetch(`${BASE_URL}${url}`, {
         ...options,
         headers,
+        credentials: "include",
     });
 
     if (!res.ok) {
-        // Handle 401 specifically - but skip for login/auth endpoints
         if (res.status === 401 && !options?.skipAuthRedirect) {
-            // Clear invalid auth token
-            if (typeof window !== 'undefined') {
-                localStorage.removeItem(AUTH_STORAGE_KEY);
-
-                // Only redirect if NOT on the login page already
-                if (!window.location.pathname.includes('/login')) {
-                    const currentPath = window.location.pathname + window.location.search;
-                    window.location.href = `/login?from=${encodeURIComponent(currentPath)}`;
-                    // Throw to stop execution while redirecting
-                    throw new ApiError("Unauthorized - redirecting to login", 401);
-                }
+            if (typeof window !== "undefined" && !window.location.pathname.includes("/login")) {
+                const currentPath = window.location.pathname + window.location.search;
+                window.location.href = `/login?from=${encodeURIComponent(currentPath)}`;
+                throw new ApiError("Unauthorized - redirecting to login", 401);
             }
         }
 
         let errorMessage = `API Error: ${res.statusText}`;
-        let errorCode = undefined;
+        let errorCode: number | undefined = undefined;
 
         try {
             const errorBody = await res.json();
             errorMessage = errorBody.msg || errorMessage;
-            errorCode = errorBody.code; // Backend specific error code
+            errorCode = errorBody.code;
         } catch {
             // ignore JSON parse error
         }
@@ -95,24 +62,45 @@ async function fetcher<T>(url: string, options?: RequestInit & { skipAuthRedirec
 
 export const api = {
     // Auth - skipAuthRedirect to prevent infinite loop on login failure
-    login: (data: AuthParams) => fetcher<void>("/login", {
+    login: (data: AuthParams) => fetcher<User>("/login", {
         method: "POST",
         body: JSON.stringify(data),
-        skipAuthRedirect: true
+        skipAuthRedirect: true,
     }),
+    logout: () => fetcher<null>("/logout", { method: "POST", skipAuthRedirect: true }),
     getMe: () => fetcher<User>("/users/me"),
 
     // Providers & Models
     getProviders: () => fetcher<ProviderConfig[]>("/providers"),
     getModels: () => fetcher<ModelConfig[]>("/models"),
-    getModel: (id: string) => fetcher<ModelConfig>(`/models/${id}`),
-    getProvider: (id: string) => fetcher<ProviderConfig>(`/providers/${id}`),
-    getProviderModels: (providerId: string) => fetcher<ModelConfig[]>(`/providers/${providerId}/models`),
+    getModel: (id: string) => fetcher<ModelConfig>(`/models/${encodeURIComponent(id)}`),
+    getProvider: (id: string) => fetcher<ProviderConfig>(`/providers/${encodeURIComponent(id)}`),
+    getProviderModels: (providerId: string) => fetcher<ModelConfig[]>(`/providers/${encodeURIComponent(providerId)}/models`),
 
-    reloadProviders: () => fetcher<void>("/providers/reload", { method: "POST" }),
-    checkProvider: (id: string) => fetcher<void>(`/providers/${id}/check`, { method: "POST" }),
+    createProvider: (data: ProviderCreateParams) => fetcher<ProviderConfig>("/providers", {
+        method: "POST",
+        body: JSON.stringify(data),
+    }),
+    updateProvider: (id: string, data: ProviderUpdateParams) => fetcher<ProviderConfig>(`/providers/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+    }),
+    deleteProvider: (id: string) => fetcher<null>(`/providers/${encodeURIComponent(id)}`, { method: "DELETE" }),
 
-    health: () => fetcher<void>("/health"),
+    createModel: (data: ModelCreateParams) => fetcher<ModelConfig>("/models", {
+        method: "POST",
+        body: JSON.stringify(data),
+    }),
+    updateModel: (id: string, data: ModelUpdateParams) => fetcher<ModelConfig>(`/models/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+    }),
+    deleteModel: (id: string) => fetcher<null>(`/models/${encodeURIComponent(id)}`, { method: "DELETE" }),
+
+    reloadProviders: () => fetcher<null>("/providers/reload", { method: "POST" }),
+    checkProvider: (id: string) => fetcher<{ ok: boolean; models?: number; error?: string }>(`/providers/${encodeURIComponent(id)}/check`, { method: "POST" }),
+
+    health: () => fetcher<{ status: string }>("/health"),
     ping: () => fetcher<string>("/ping"),
 
     // Logs
@@ -127,7 +115,7 @@ export const api = {
 
         return fetcher<LogListResponse>(`/logs/generations?${searchParams.toString()}`);
     },
-    getLogDetail: (id: string) => fetcher<GenerationLogDetail>(`/logs/generations/${id}`),
+    getLogDetail: (id: string) => fetcher<GenerationLogDetail>(`/logs/generations/${encodeURIComponent(id)}`),
 
     // Playground
     getConversations: async (page: number = 1, pageSize: number = 20, keyword?: string) => {
@@ -153,95 +141,56 @@ export const api = {
         const searchParams = new URLSearchParams({
             page: (params?.page || 1).toString(),
             page_size: (params?.page_size || 50).toString(),
-            sort: params?.sort || "-created_at", // Default to latest first
+            sort: params?.sort || "-created_at",
         });
-        return fetcher<MessageListResponse>(`/conversations/${convId}/messages?${searchParams.toString()}`);
+        return fetcher<MessageListResponse>(`/conversations/${encodeURIComponent(convId)}/messages?${searchParams.toString()}`);
     },
 
     deleteConversation: async (convId: string) => {
-        return fetcher<void>(`/conversations/${convId}`, {
+        return fetcher<null>(`/conversations/${encodeURIComponent(convId)}`, {
             method: "DELETE",
         });
     },
 
     updateConversationTitle: async (convId: string, title: string) => {
         const params = new URLSearchParams({ title });
-        return fetcher<void>(`/conversations/${convId}/title?${params.toString()}`, {
+        return fetcher<null>(`/conversations/${encodeURIComponent(convId)}/title?${params.toString()}`, {
             method: "PUT",
         });
     },
 
-    // Rate a message (thumbs up/down)
     rateMessage: async (messageId: string, rating: "up" | "down" | "none", feedback?: string) => {
         const params = new URLSearchParams({ rating });
         if (feedback) params.append("feedback", feedback);
-        return fetcher<void>(`/messages/${messageId}/rate?${params.toString()}`, {
+        return fetcher<null>(`/messages/${encodeURIComponent(messageId)}/rate?${params.toString()}`, {
             method: "POST",
         });
     },
 
-    playgroundChat: async (data: {
-        message: string;
-        conversation_id?: string;
-        group_id?: string;
-        conv_histrory_limit?: number;
-        model?: string;
-        [key: string]: any;
-    }) => {
-        const auth = getAuthHeader();
-        const headers: Record<string, string> = {
-            "Content-Type": "application/json",
-        };
-        if (auth) {
-            headers["Authorization"] = auth;
-        }
+    // Streaming chat is handled directly by components/playground/chat/stream-client.ts
+    // (it needs the raw Response for SSE). Don't add a JSON helper here.
 
-        const res = await fetch(`${BASE_URL}/playground/chat`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify(data),
-        });
-
-        if (!res.ok) {
-            // Try to parse error if possible, otherwise throw generic
-            let errorMessage = `API Error: ${res.statusText}`;
-            try {
-                const errorBody = await res.json();
-                errorMessage = errorBody.msg || errorMessage;
-            } catch { }
-            throw new ApiError(errorMessage, res.status);
-        }
-
-        return res;
-    },
-
-    // Generate conversation title using summary model
+    // Title generation: calls the in-house OpenAI-compatible gateway via cookie.
     generateTitle: async (model: string, userMessage: string, assistantMessage: string): Promise<string> => {
-        const auth = getAuthHeader();
-        const headers: Record<string, string> = {
-            "Content-Type": "application/json",
-        };
-        if (auth) {
-            headers["Authorization"] = auth;
-        }
-
-        const res = await fetch(`${BASE_URL}/openai/v1/chat/completions`, {
+        const res = await fetch(`${BASE_URL}/v1/chat/completions`, {
             method: "POST",
-            headers,
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
             body: JSON.stringify({
                 model,
                 messages: [
                     {
                         role: "system",
-                        content: "Generate a concise title (3-6 words) for this conversation. Output only the title, no quotes or extra text."
+                        content: "Generate a concise title (3-6 words) for this conversation. Output only the title, no quotes or extra text.",
                     },
                     {
                         role: "user",
-                        content: `User: ${userMessage.slice(0, 500)}\n\nAssistant: ${assistantMessage.slice(0, 500)}`
-                    }
+                        content: `User: ${userMessage.slice(0, 500)}\n\nAssistant: ${assistantMessage.slice(0, 500)}`,
+                    },
                 ],
                 max_tokens: 30,
                 temperature: 0.7,
+                stream: false,
             }),
         });
 
@@ -251,8 +200,7 @@ export const api = {
 
         const json = await res.json();
         const title = json.choices?.[0]?.message?.content?.trim() || "New Chat";
-        // Clean up: remove quotes if present
-        return title.replace(/^["']|["']$/g, '').slice(0, 50);
+        return title.replace(/^["']|["']$/g, "").slice(0, 50);
     },
 
     // User Management
@@ -271,12 +219,20 @@ export const api = {
         body: JSON.stringify(data),
     }),
 
-    updateUser: (username: string, data: UserUpdateParams) => fetcher<void>(`/users/update/${username}`, {
+    updateUser: (username: string, data: UserUpdateParams) => fetcher<null>(`/users/update/${encodeURIComponent(username)}`, {
         method: "POST",
         body: JSON.stringify(data),
     }),
 
-    deleteUser: (username: string) => fetcher<void>(`/users/delete/${username}`, {
+    deleteUser: (username: string) => fetcher<null>(`/users/delete/${encodeURIComponent(username)}`, {
         method: "DELETE",
     }),
+
+    // API key management for the public OpenAI-compatible gateway
+    listApiKeys: () => fetcher<ApiKey[]>("/apikeys"),
+    createApiKey: (name: string) => fetcher<ApiKey & { key: string }>("/apikeys", {
+        method: "POST",
+        body: JSON.stringify({ name }),
+    }),
+    deleteApiKey: (id: string) => fetcher<null>(`/apikeys/${encodeURIComponent(id)}`, { method: "DELETE" }),
 };

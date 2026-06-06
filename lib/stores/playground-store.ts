@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { Conversation, Message } from '@/lib/types/playground';
+import { Message } from '@/lib/types/playground';
 
 export type TabType = "chat" | "prompt" | "embedding" | "rerank" | "new";
 

@@ -1,164 +1,163 @@
-## AIUI - 工业级 AI Gateway 前端设计方案
+# AIUI
 
-工业级（Industrial-Grade）的 AI Gateway 前端
-**稳定性、交互流畅度、数据可视化的性能以及类型安全**。
+工业级 AI Gateway，前后端一体化：**Next.js 16 App Router + React 19 + TypeScript + SQLite (Drizzle ORM)**，提供标准 **OpenAI 兼容** 协议的网关、Playground、日志审计、Provider/Model 管理、用户与 API Key 管理。
 
-后端已经用了 Python (FastAPI + Pydantic)
-前端技术栈: **Next.js (React) + TypeScript**。
+## 技术栈
 
-### 1. 技术栈选型 (Tech Stack)
+- **框架**：[Next.js 16 (App Router)](https://nextjs.org/) — Route Handlers 同时承载前端与后端
+- **UI**：[Shadcn/ui](https://ui.shadcn.com/) + [Tailwind CSS v4](https://tailwindcss.com/)
+- **服务端状态**：[TanStack Query](https://tanstack.com/query/latest) + [TanStack Table](https://tanstack.com/table/latest)
+- **客户端状态**：Zustand（带 `persist`）
+- **数据库**：SQLite + [Drizzle ORM](https://orm.drizzle.team/)（`better-sqlite3` 驱动）
+- **认证**：bcrypt + httpOnly session cookie；外部网关支持 `sk-aiui-…` Bearer API Key
+- **流式**：原生 `fetch`/SSE，自实现 stream-parser + throttled-updater（支持多模型并发对比）
+- **包管理**：[Bun](https://bun.sh/)
 
-- **框架**: [Next.js 14/15 (App Router)](https://nextjs.org/) - 工业级标准，SSR/CSR 混合，路由管理强大。
-    
-- **UI 组件库**: [Shadcn/ui](https://ui.shadcn.com/) + [Tailwind CSS](https://tailwindcss.com/) - 现在的 AI 产品（OpenAI, Vercel）都在用这种风格，高度可定制，支持深色模式。使用 shadcn cli来新建项目。
-    
-- **状态管理/数据请求**: [TanStack Query (React Query)](https://tanstack.com/query/latest) - 极其适合管理 Dashboard 数据、缓存、轮询和服务端状态。
-    
-- **表格/数据展示**: [TanStack Table](https://tanstack.com/table/latest) - 处理成千上万条日志记录不卡顿（Headless UI）。
-    
-- **图表**: [Recharts](https://recharts.org/) 或 [ECharts](https://echarts.apache.org/) - 绘制用量趋势图。
-    
-- **AI 流式交互**: [Vercel AI SDK](https://sdk.vercel.ai/docs) - 专门解决流式输出（Streaming）、多轮对话状态管理的库，省去手写 `fetch`流处理的麻烦。
+## 快速开始
 
----
+```bash
+# 1. 安装依赖
+bun install
 
-### 2. 核心功能模块设计
+# 2. 准备环境变量
+cat > .env.local <<'EOF'
+AIUI_DB_PATH=./data/aiui.db
+AIUI_MASTER_KEY=<32 字节随机串，用于加密上游 Provider 的 API key>
+AIUI_ADMIN_USERNAME=admin
+AIUI_ADMIN_PASSWORD=<引导首位 admin 用户的初始密码>
+EOF
 
-#### 模块一：仪表盘 (Dashboard) - 用量看板
+# 3. 启动开发
+bun run dev          # next dev
+# 或生产构建+启动
+bun run build && bun run start
+```
 
-**目标**：一目了然地看到 Token 消耗、成本和系统健康度。
+首次启动会自动：
+1. 在 `./data/` 下创建 SQLite 文件并跑 `drizzle/` 里的 migrations
+2. 根据 `AIUI_ADMIN_USERNAME`/`AIUI_ADMIN_PASSWORD` 引导首位 admin 账号（仅在 users 表为空时执行）
 
-- **布局**：
-    
-    - **顶部 KPI 卡片**：今日总请求数、今日消耗 Token、预估成本、平均延迟 (P99)。
-        
-    - **主图表 (Line Chart)**：过去 24 小时/7 天的 Token 消耗趋势，按 Model 分组（多条线）。
-        
-    - **饼图 (Pie Chart)**：各模型调用比例。
-        
-    - **错误率监控**：4xx/5xx 状态码的时间分布。
-        
-- **技术点**：
-    
-    - 使用 `Recharts` 绘制。
-        
-    - 后端提供 `/v1/statistics` 接口，前端用 React Query 缓存数据，支持右上角选择“日期范围”。
+## 环境变量
 
-#### 模块二：Playground (多任务调试工作台)
+| 变量 | 必填 | 说明 |
+|------|------|------|
+| `AIUI_MASTER_KEY` | ✅ | AES-256-GCM 主密钥，加密 Provider 的 `api_key`。**轮换会导致已存储 key 无法解密**。 |
+| `AIUI_DB_PATH` | | SQLite 路径，默认 `./data/aiui.db` |
+| `AIUI_ADMIN_USERNAME` | | 首位 admin 用户名（默认 `admin`） |
+| `AIUI_ADMIN_PASSWORD` | | 首位 admin 密码；不设置则不会自动引导 |
+| `NEXT_PUBLIC_API_URL` | | 前端 API 基址，默认 `/api`（同源） |
 
-**目标**：打造类似 IDE 的多标签页（Multi-Tab）调试环境，集成多种 AI 任务流。
+## 数据模型
 
-- **核心架构**：
-    - **Tab 标签页管理**：支持同时打开多个调试会话，类似浏览器 Tab。
-    - **任务类型支持**：新建 Tab 时可选择任务类型：
-        1.  **ChatFlow (默认)**：多轮对话调试。
-        2.  **Prompt Design**：提示词工程与单次测试。
-        3.  **Embedding**：向量生成与可视化测试。
-        4.  **Rerank**：重排序模型评分测试。
-    -- **历史记录保存**：新建 Tab 时可选择加载历史记录，方便复现问题。支持过滤和搜索历史对话。
+| 表 | 用途 |
+|---|---|
+| `users` | 系统用户（admin/user） |
+| `sessions` | 会话（cookie 值为 token，DB 存 SHA256） |
+| `api_keys` | 用户为 OpenAI 兼容网关签发的 `sk-aiui-…` 凭据（DB 存 SHA256） |
+| `providers` | OpenAI 兼容上游（name + base_url + 加密 api_key + default_params） |
+| `models` | name → (provider, upstream_model_id) 映射，含 type / context_window / pricing |
+| `conversations` / `messages` | Playground 对话 + 消息历史 |
+| `generation_logs` | 网关每次调用的审计记录（请求/响应/耗时/tokens/状态） |
 
-- **详细设计 - ChatFlow 模式**：
-    - **布局结构**：
-        - **顶部**：Tab 栏与模型选择器（支持**多选**进入对比模式）。
-        - **中间**：对话展示区（Message Stream），展示 User/Assistant 气泡。
-        - **底部**：增强型输入框（Textarea + Attachments）。
-        - **右侧栏**：参数配置（Temperature, MaxTokens）与 System Prompt 设置。
-    - **交互特性**：
-        - **多模型对比**：同时从多个模型接收流式响应，横向分栏对比效果。
-        - **思考过程 (CoT)**：折叠展示推理模型（o1/r1）的 `reasoning_content`。
-        - **流式渲染**：Markdown 实时渲染与代码高亮。
+## API 一览
 
-- **其他模式规划**：
-    - **Prompt Design**：左侧变量编辑器 ({input})，右侧实时预览与批跑。
-    - **Embedding/Rerank**：输入文本列表，输出向量维度/相似度分数可视化。
-        
-#### 模块三：日志审计 (Logs & Tracing)
+> 全部返回统一信封 `{ code, msg, data }`，`code !== 0` 视为业务错误。
 
-**目标**：快速定位 bad case，查看原始 JSON。
+### 认证
+- `POST /api/login` — 设置 session cookie
+- `POST /api/logout` — 清除 cookie
+- `GET /api/users/me`
 
-- **布局**：高密度数据表格。
-    
-- **列定义**：Trace ID (截断显示，点击复制)、时间、User、Model、Tokens (Prompt/Completion)、耗时、Status (带颜色 Tag)。
-    
-- **过滤器 (Filters)**：
+### 资源（cookie 鉴权；写操作需 admin）
+- `GET/POST /api/users`、`POST /api/users/create`、`POST /api/users/update/:username`、`DELETE /api/users/delete/:username`
+- `GET/POST /api/providers`、`GET/PUT/DELETE /api/providers/:id`、`POST /api/providers/:id/check`、`GET /api/providers/:id/models`
+- `GET/POST /api/models`、`GET/PUT/DELETE /api/models/:id`
+- `GET /api/conversations`、`DELETE /api/conversations/:id`、`PUT /api/conversations/:id/title`、`GET /api/conversations/:id/messages`
+- `POST /api/messages/:id/rate`
+- `GET /api/logs/generations`、`GET /api/logs/generations/:id`
+- `GET/POST /api/apikeys`、`DELETE /api/apikeys/:id`
 
-- **抽屉详情 (Drawer)**：点击某一行，右侧滑出 Drawer，展示完整的 Request Body 和 Response Body (使用 `react-json-view` 进行格式化展示)。
-    
+### Playground（cookie 鉴权）
+- `POST /api/playground/chat` — SSE 流；自动持久化对话/消息，响应头带 `X-Conversation-ID`/`X-Message-ID`/`X-Generation-ID`
 
-#### 模块四：供应商与模型管理 (Providers)
+### OpenAI 兼容网关（Bearer API Key 或 cookie 鉴权）
+- `POST /api/v1/chat/completions` — 标准 OpenAI 协议，支持 `stream`
+- `POST /api/v1/embeddings`
+- `GET /api/v1/models`
 
-**目标**：管理上游 API Key 和模型映射。
+#### 外部调用示例
 
-- **功能**：
-    
-    - **卡片式列表**：OpenAI, Google, Azure 等。
-        
-    - **状态检测**：前端定期 ping 后端接口，显示供应商健康状态（绿灯/红灯）。
-        
-    - **模型映射表**：编辑 `gpt-4-turbo` 映射到后端的哪个具体 deployment。
-        
+```bash
+curl https://your-aiui.example.com/api/v1/chat/completions \
+  -H "Authorization: Bearer sk-aiui-…" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o-mini",
+    "messages": [{"role":"user","content":"hello"}],
+    "stream": true
+  }'
+```
 
----
-
-### 3. 关键 UI 组件实现思路
-
-#### (1) 展示“思考过程”的 Chat Bubble
-
-#### (2) 使用 Vercel AI SDK 处理流式
-
-不需要自己写 `fetch` 和 `reader.read()`。
-
----
-
-### 4. 目录结构建议 (Next.js App Router)
+## 目录结构
 
 ```
 app/
-(auth)/             # 登录/注册页
-└── login/
-├── (dashboard)/        # 需要鉴权的页面布局
-│   ├── layout.tsx      # Sidebar, Header
-│   ├── page.tsx        # 仪表盘 (Dashboard)
-│   ├── chat/           # 对话页面
-│   ├── logs/           # 日志表格
-│   ├── providers/      # 供应商管理
-│   └── settings/       # 用户与Token管理
-└── layout.tsx
-components/
-├── ui/                 # Shadcn 基础组件 (Button, Input, Table...)
-├── charts/             # 封装的图表组件
-├── chat/               # ChatBubble, ModelSelector
-└── logs/               # LogTable, LogFilters
+├── (auth)/login/             # 公开页
+├── (dashboard)/              # 鉴权页（Sidebar + AuthProvider）
+│   ├── page.tsx              # Dashboard
+│   ├── chat/                 # Playground
+│   ├── logs/                 # 日志审计
+│   ├── providers/            # Provider / Model 管理
+│   └── settings/
+│       ├── page.tsx
+│       ├── api-keys/         # 用户级 API Key 管理
+│       └── users/            # 用户管理（admin only）
+└── api/                      # Route Handlers (Node runtime)
+    ├── login, logout, users/me
+    ├── users, providers, models, ...
+    ├── playground/chat       # SSE 流式（持久化对话）
+    └── v1/chat/completions   # 公共 OpenAI 兼容入口
+components/                   # UI + 业务组件（shadcn 基础组件在 ui/）
+context/auth-context.tsx      # AuthProvider（cookie + /users/me 驱动）
 lib/
-├── api.ts              # Axios/Fetch 封装
-├── utils.ts
-└── types.ts            # 与后端 Pydantic 对应的 TypeScript 接口
-hooks/
-├── use-metrics.ts      # React Query hooks
-└── use-stream.ts
+├── api.ts                    # 浏览器侧 fetch 封装
+├── server/                   # 服务端代码
+│   ├── db/                   # Drizzle schema + 初始化
+│   ├── auth.ts               # session + bearer 鉴权
+│   ├── crypto.ts             # AES-GCM、SHA256、API key 生成
+│   ├── gateway.ts            # OpenAI 兼容转发 + 日志
+│   ├── password.ts           # bcrypt
+│   ├── response.ts           # BaseResponse 信封 + HttpError
+│   ├── serializers.ts        # DB → API DTO
+│   └── bootstrap.ts          # 首位 admin 引导
+├── stores/                   # Zustand
+├── types/                    # 与后端共享的 DTO
+└── utils.ts
+drizzle/                      # 生成的 migration SQL（drizzle-kit）
+data/                         # 运行时 SQLite（已 .gitignore）
 ```
-### 5. 工业级体验的细节加分项
 
-1. **Dark Mode (深色模式)**: 开发者工具标配，使用 `next-themes` 实现一键切换。
-    
-2. **Command K (命令面板)**: 类似 VS Code，按 `Cmd+K` 弹出搜索框，快速跳转到某个 Model 的设置或某个 Log，可以使用 `cmdk` 库。
-    
-3. **Toast 通知**: 操作成功/失败的反馈，推荐 `sonner`，非常漂亮且高性能。
-    
-4. **Copy to cURL**: 在日志详情页，提供一个按钮 "Copy as cURL"，方便开发者直接在终端复现请求。
-    
-5. **Skeleton Loading (骨架屏)**: 图表加载时不要转圈圈，而是显示灰色的占位骨架，体验更丝滑。
-    
+## 开发要点
 
-### 总结
+- 任何后端路由开头必须 `await ensureInit()` 以保证首次启动跑过 migration 与 admin 引导。
+- 写操作走 `requireAdmin()`，读操作走 `requireUser()`；网关入口走 `authenticateGateway(req)`（Bearer 优先，cookie 兜底）。
+- 上游 Provider 的 `api_key` 一律走 `encryptSecret`/`decryptSecret`；列表接口仅返回 `api_key_mask`（`sk-…BEEF` 格式）。
+- 新增表：改 `lib/server/db/schema.ts` → `bunx drizzle-kit generate` → 重启服务自动跑 migration。
+- 不要在客户端直接 `fetch`；统一走 `lib/api.ts` 的 `api` 对象（自动带 cookie、统一错误处理、401 自动跳 `/login`）。
+- 流式：服务端用 `forwardChatCompletions` 的 tee（TransformStream）同时转发字节给客户端 + 累积 content 用于落日志。
 
-要设计一个工业级的前端：
+## 脚本
 
-1. **UI 风格**：选择 **Shadcn/ui**，它是目前 AI 领域的审美标准。
-    
-2. **数据层**：利用你后端强大的 SQL 聚合能力，前端只负责用 **Recharts** 展示。
-    
-3. **交互层**：利用 **Vercel AI SDK** 解决流式对话的复杂性，手动实现“思考过程”的可折叠 UI。
-    
-4. **管理层**：**TanStack Table** 是处理海量日志过滤和展示的唯一真神。
+```bash
+bun install                       # 装依赖
+bun run dev                       # next dev
+bun run build                     # 生产构建（包含 TS 类型检查）
+bun run start                     # 生产启动
+bun run lint                      # ESLint
 
+# Drizzle
+bunx drizzle-kit generate         # 根据 schema 生成 SQL migration
+bunx drizzle-kit studio           # 可视化 DB 浏览器
+```
+
+无测试套件；通过 `bun run build` + 手工 e2e 验证。

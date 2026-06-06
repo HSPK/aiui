@@ -1,10 +1,8 @@
 // Stream Client - handles SSE streaming from chat API
 
-import { getAuthHeader } from "@/lib/api"
 import { SSEParser } from "./stream-parser"
 import type { StreamConfig, StreamCallbacks } from "./types"
 
-// 获取 API 基础路径
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "/api"
 
 export class StreamClient {
@@ -23,10 +21,8 @@ export class StreamClient {
         try {
             const res = await fetch(`${API_BASE}/playground/chat`, {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    Authorization: getAuthHeader() || ""
-                },
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
                 body: JSON.stringify({
                     conversation_id: config.conversationId,
                     model: config.model,

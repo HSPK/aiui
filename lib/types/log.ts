@@ -9,12 +9,18 @@ export interface GenerationLog {
     input: string;
     output: string;
     reason: string | null;
+    prompt_tokens?: number | null;
+    completion_tokens?: number | null;
+    total_tokens?: number | null;
+    latency_ms?: number | null;
 }
 
 export interface GenerationLogDetail extends GenerationLog {
-    content: any; // Can be string or list of messages
-    generation_kwargs: Record<string, any>;
-    generation: any; // Detailed generation info
+    content: unknown;
+    generation_kwargs: Record<string, unknown>;
+    generation: Record<string, unknown> | null;
+    conversation_id?: string;
+    message_id?: string;
 }
 
 export interface LogFilterParams {
