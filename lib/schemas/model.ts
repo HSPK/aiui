@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizedModelMetaSchema } from "./adapter";
 
 // ---- DTO ----
 
@@ -28,6 +29,10 @@ export const modelDTOSchema = z.object({
     is_local: z.boolean(),
     enabled: z.boolean(),
     is_discovered: z.boolean().optional(),
+    /** Adapter-projected metadata (supported_apis, capabilities,
+     *  accepted_fields, rate_limits, …). Drives gateway routing
+     *  decisions and the model details UI panels. */
+    meta: normalizedModelMetaSchema.nullable().optional(),
     created_at: z.string().optional(),
     updated_at: z.string().optional(),
 });

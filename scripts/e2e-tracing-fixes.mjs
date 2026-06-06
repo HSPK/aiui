@@ -28,24 +28,50 @@ const expect = (name, ok, detail = "") => {
 let lastChatBody = null;
 
 const stub = http.createServer((req, res) => {
-    if (req.url === "/v1/models") {
+    const isFoundryUrl = req.url.startsWith("/foundry/");
+    if (req.url === "/v1/models" || req.url === "/foundry/v1/models") {
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ object: "list", data: [{ id: "stub-gpt", object: "model" }] }));
+        // Distinct model ids per endpoint so discovery routes the request
+        // through the intended provider + adapter.
+        if (isFoundryUrl) {
+            // Realistic Foundry shape: nested model.* block, capabilities,
+            // RateLimits — exercises azure-foundry adapter's extractModelMeta.
+            res.end(JSON.stringify({
+                object: "list",
+                data: [{
+                    id: "gcr-fara-7b",
+                    object: "model",
+                    model: { Publisher: "xAI", Format: "xAI", Name: "fara-7b", Version: "1" },
+                    capabilities: { chatCompletion: "true", batch: "true" },
+                    RateLimits: { requests: 850, tokens: 850000 },
+                    owned_by: "gcraifoundrysw",
+                }],
+            }));
+        } else {
+            res.end(JSON.stringify({ object: "list", data: [{ id: "stub-gpt", object: "model" }] }));
+        }
         return;
     }
-    if (req.url === "/v1/chat/completions") {
+    if (req.url === "/v1/chat/completions" || req.url === "/foundry/v1/chat/completions") {
         let body = "";
         req.on("data", (c) => { body += c; });
         req.on("end", async () => {
             lastChatBody = JSON.parse(body);
+            // Simulate Azure Foundry's strict `extra-parameters: error` policy
+            // by rejecting requests that include stream_options.
+            if (isFoundryUrl && lastChatBody.stream_options !== undefined) {
+                res.writeHead(400, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({
+                    detail: "Extra parameters ['stream_options'] are not allowed when extra-parameters is not set or set to be 'error'. Set extra-parameters to 'pass-through' to pass to the model.",
+                }));
+                return;
+            }
             if (lastChatBody.stream) {
                 res.writeHead(200, { "Content-Type": "text/event-stream" });
-                // Two content chunks
-                res.write(`data: ${JSON.stringify({ id: "stub-id-1", model: "stub-gpt", system_fingerprint: "fp_stub", choices: [{ delta: { content: "hello" } }] })}\n\n`);
+                res.write(`data: ${JSON.stringify({ id: "stub-id-1", model: lastChatBody.model, system_fingerprint: "fp_stub", choices: [{ delta: { content: "hello" } }] })}\n\n`);
                 await sleep(30);
-                res.write(`data: ${JSON.stringify({ id: "stub-id-1", model: "stub-gpt", choices: [{ delta: { content: " world" } }] })}\n\n`);
+                res.write(`data: ${JSON.stringify({ id: "stub-id-1", model: lastChatBody.model, choices: [{ delta: { content: " world" } }] })}\n\n`);
                 await sleep(30);
-                // Usage chunk — emitted because client requested include_usage=true
                 if (lastChatBody.stream_options?.include_usage) {
                     res.write(`data: ${JSON.stringify({ id: "stub-id-1", usage: { prompt_tokens: 7, completion_tokens: 4, total_tokens: 11 } })}\n\n`);
                 }
@@ -75,8 +101,12 @@ admin:
   password: tracepass
 providers:
   - name: stub
-    type: openai
     base_url: http://127.0.0.1:${UPSTREAM_PORT}/v1
+    api_key: sk-test
+    enabled: true
+  - name: foundry
+    adapter_id: azure-foundry
+    base_url: http://127.0.0.1:${UPSTREAM_PORT}/foundry/v1
     api_key: sk-test
     enabled: true
 `;
@@ -180,6 +210,59 @@ try {
     expect("generation carries upstream model", detail?.generation?.model === "stub-gpt");
     expect("generation carries system_fingerprint", detail?.generation?.system_fingerprint === "fp_stub");
     expect("generation.usage present", detail?.generation?.usage?.total_tokens === 11);
+
+    // -------------------------------------------------------------------
+    // bug-stream-opts-optout: when provider default_params.stream_options
+    // is null, the gateway must strip the field instead of injecting it
+    // — Azure Foundry / strict endpoints (here simulated by /foundry/...)
+    // would otherwise reject the request with HTTP 400.
+    // -------------------------------------------------------------------
+    lastChatBody = null;
+    const foundryStream = await fetch(`${BASE}/api/v1/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({
+            model: "gcr-fara-7b",
+            stream: true,
+            messages: [{ role: "user", content: "hi" }],
+        }),
+    });
+    expect("foundry streaming request 200 (would 400 without opt-out)", foundryStream.status === 200, `status=${foundryStream.status}`);
+    if (foundryStream.body) {
+        const fReader = foundryStream.body.getReader();
+        while (true) { const { done } = await fReader.read(); if (done) break; }
+    }
+    await sleep(300);
+    expect(
+        "gateway stripped stream_options for foundry provider",
+        lastChatBody?.stream_options === undefined,
+        `stream_options=${JSON.stringify(lastChatBody?.stream_options)}`,
+    );
+
+    // -------------------------------------------------------------------
+    // adapter registry: /api/adapters lists the registered adapters and
+    // includes our three OpenAI-family ones.
+    // -------------------------------------------------------------------
+    const adaptersRes = await fetch(`${BASE}/api/adapters`, { headers: { Cookie: cookie } });
+    const adaptersJson = await adaptersRes.json();
+    const adapterIds = (adaptersJson.data ?? []).map((a) => a.id);
+    expect("/api/adapters returns openai", adapterIds.includes("openai"));
+    expect("/api/adapters returns azure-openai", adapterIds.includes("azure-openai"));
+    expect("/api/adapters returns azure-foundry", adapterIds.includes("azure-foundry"));
+
+    // -------------------------------------------------------------------
+    // Adapter-projected metadata surfaces in /api/models for the
+    // discovered Foundry model — proves discoveredMetadata + extractModelMeta
+    // round-trip and the FE can render the rich Foundry RateLimits etc.
+    // -------------------------------------------------------------------
+    const modelsRes = await fetch(`${BASE}/api/models`, { headers: { Cookie: cookie } });
+    const modelsJson = await modelsRes.json();
+    const foundryModel = (modelsJson.data ?? []).find((m) => m.name === "gcr-fara-7b");
+    expect("Foundry model is listed", !!foundryModel);
+    expect("Foundry model has meta with rate_limits.requests=850", foundryModel?.meta?.rate_limits?.requests === 850);
+    expect("Foundry model meta publisher=xAI", foundryModel?.meta?.publisher === "xAI");
+    expect("Foundry model meta rejects stream_options", foundryModel?.meta?.rejected_fields?.includes("stream_options") === true);
+    expect("Foundry model meta supports chat.completions", foundryModel?.meta?.supported_apis?.includes("chat.completions") === true);
 } catch (err) {
     console.error("Test threw:", err);
 } finally {

@@ -97,20 +97,31 @@ providers:
   # OpenAI-compatible — works for OpenAI, DeepSeek, Together, Groq, vLLM,
   # Ollama, any service that speaks /chat/completions.
   - name: openai
-    type: openai
     base_url: https://api.openai.com/v1
     api_key: \${OPENAI_API_KEY}
     document_page: https://platform.openai.com/docs
+    # Optional dedicated health endpoint. Must return {"status":"ok"} when
+    # healthy. Falls back to probing /models via the adapter when omitted.
+    # health_check_url: https://status.openai.com/api/v2/status.json
 
   # Azure OpenAI — note that the /models catalog endpoint returns base
   # model names, NOT deployment names. To call your deployments through the
   # gateway, register each deployment as a row in the admin UI's Models
   # tab, mapping a display name (e.g. \`my-gpt-4o\`) to its deployment id.
   # - name: azure-eastus
-  #   type: azure
+  #   adapter_id: azure-openai
   #   base_url: https://my-resource.openai.azure.com
   #   api_version: "2024-10-21"
   #   api_key: \${AZURE_OPENAI_API_KEY}
+
+  # Azure AI Foundry (Inference) serves OSS / partner models. The
+  # \`azure-foundry\` adapter reads the rich Foundry metadata and
+  # auto-strips OpenAI-only fields (stream_options, parallel_tool_calls,
+  # …) that the upstream's \`extra-parameters: error\` default rejects.
+  # - name: foundry
+  #   adapter_id: azure-foundry
+  #   base_url: https://my-foundry.services.ai.azure.com
+  #   api_key: \${AZURE_FOUNDRY_API_KEY}
 `;
 }
 

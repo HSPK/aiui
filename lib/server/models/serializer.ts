@@ -1,8 +1,14 @@
 import "server-only";
 import type { Model } from "../db/schema";
 import type { ModelDTO } from "@/lib/schemas/model";
+import type { NormalizedModelMeta } from "@/lib/schemas/adapter";
 
-export function serializeModel(m: Model, providerName?: string | null, providerProxy?: string | null): ModelDTO {
+export function serializeModel(
+    m: Model,
+    providerName?: string | null,
+    providerProxy?: string | null,
+    meta?: NormalizedModelMeta | null,
+): ModelDTO {
     return {
         id: m.id,
         name: m.name,
@@ -23,6 +29,7 @@ export function serializeModel(m: Model, providerName?: string | null, providerP
         provider_id: m.providerId,
         is_local: false,
         enabled: !!m.enabled,
+        meta: meta ?? null,
         created_at: m.createdAt,
         updated_at: m.updatedAt,
     };

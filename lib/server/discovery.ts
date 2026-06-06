@@ -3,25 +3,25 @@ import { db, schema } from "./db";
 import { decryptSecret } from "./crypto";
 import { classifyModel } from "./capabilities";
 import "./capabilities/register";
+import { resolveAdapter } from "./adapters";
+import "./adapters/register";
+import type { NormalizedModelMeta } from "@/lib/schemas/adapter";
 import type { Provider } from "./db/schema";
 
 /**
- * Dynamic model discovery. Each provider exposes a `/models` (or
- * `/openai/models?api-version=…` for Azure) endpoint that lists what's
- * currently available. Results are cached per-provider with a short TTL so we
- * don't hammer upstreams on every request.
+ * Dynamic model discovery.
  *
- * Important Azure caveat: Azure's catalog endpoint returns base model names
- * like `gpt-4o`, not deployment names — and you can't call a model directly
- * by name in Azure, you have to call a deployment. Listing deployments
- * requires `/openai/deployments?api-version=…`, which usually needs
- * management-plane permissions that the data-plane api-key doesn't have.
+ * Each provider's `/models`-style endpoint is fetched by its registered
+ * ProviderAdapter (`lib/server/adapters/`). The adapter is the single
+ * point of variability — it handles URL/header quirks, parses the
+ * upstream-specific JSON, and projects each raw entry into a
+ * NormalizedModelMeta. Results are cached per-provider with a short TTL
+ * so we don't hammer upstreams on every request.
  *
- * So for Azure providers, dynamic discovery is best-effort: we try the
- * deployments endpoint first (callable IDs), then fall back to /models
- * (informational), and quietly tolerate failures. Azure users who want to
- * reliably call their deployments should register them as rows in the local
- * `models` table via the admin UI.
+ * Important Azure caveat: the Azure-OpenAI catalog endpoint returns base
+ * model names (`gpt-4o`), not callable deployment names. The
+ * `azure-openai` adapter surfaces those with `capabilities.chat=false`
+ * so admins know to register a deployment override row.
  */
 
 export interface DiscoveredModel {
@@ -31,12 +31,13 @@ export interface DiscoveredModel {
     provider_id: string;
     /** Convenience copy of the provider's name. */
     provider_name: string;
-    /** "deployment" for Azure deployments, "model" for the OpenAI catalog. */
-    object: "model" | "deployment";
-    /** Inferred capability id (chat | embedding | image | …) from name heuristics. */
+    /** Adapter id that fetched this entry. */
+    adapter_id: string;
+    /** Inferred capability id (chat | embedding | image | …) — adapter
+     *  projection first, then heuristic fallback. */
     capability: string;
-    /** Unix timestamp from upstream if available. */
-    created?: number;
+    /** Full normalized projection — see lib/schemas/adapter.ts. */
+    meta: NormalizedModelMeta;
 }
 
 interface CacheEntry {
@@ -57,77 +58,42 @@ function isFresh(entry: CacheEntry): boolean {
     return Date.now() - entry.fetchedAt < cacheTtlMs();
 }
 
-function buildHeaders(provider: Provider): Record<string, string> {
-    const h: Record<string, string> = { "Content-Type": "application/json" };
-    const key = decryptSecret(provider.apiKeyEncrypted);
-    if (key) {
-        if (provider.type === "azure") h["api-key"] = key;
-        else h["Authorization"] = `Bearer ${key}`;
+/**
+ * Walk the adapter's NormalizedModelMeta to decide which gateway
+ * capability id ("chat", "embedding", "image", …) this model serves.
+ * Falls back to name heuristics when the adapter didn't say.
+ */
+function capabilityFromMeta(meta: NormalizedModelMeta, fallbackId: string): string {
+    const c = meta.capabilities;
+    if (c.embeddings) return "embedding";
+    if (c.audio_in || c.audio_out) {
+        // Coarse — most providers won't distinguish here.
+        return c.audio_in ? "audio.transcription" : "audio.speech";
     }
-    return h;
+    if (c.chat || c.responses) return "chat";
+    return classifyModel(fallbackId);
 }
 
-async function fetchJson(url: string, headers: Record<string, string>): Promise<unknown> {
-    const res = await fetch(url, { headers, signal: AbortSignal.timeout(10_000) });
-    if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
-    return res.json();
-}
-
-/** Fetch the model list for a provider, bypassing the cache. */
+/** Fetch the model list for a provider via its adapter, bypassing the cache. */
 export async function discoverModels(provider: Provider): Promise<DiscoveredModel[]> {
-    const base = provider.baseUrl.replace(/\/$/, "");
-    const headers = buildHeaders(provider);
+    const adapter = resolveAdapter(provider);
+    const apiKey = decryptSecret(provider.apiKeyEncrypted);
 
-    if (provider.type === "azure") {
-        const apiVersion = provider.apiVersion?.trim() || "2024-10-21";
-        // Prefer deployments (callable IDs) if the api-key has access; fall back
-        // to the model catalog (informational) otherwise.
-        try {
-            const json = (await fetchJson(
-                `${base}/openai/deployments?api-version=${encodeURIComponent(apiVersion)}`,
-                headers,
-            )) as { data?: Array<{ id: string; model?: string; created?: number }> };
-            if (Array.isArray(json?.data)) {
-                return json.data.map((d) => ({
-                    id: d.id,
-                    provider_id: provider.id,
-                    provider_name: provider.name,
-                    object: "deployment" as const,
-                    capability: classifyModel(d.model ?? d.id),
-                    created: d.created,
-                }));
-            }
-        } catch {
-            // intentionally swallow — try the catalog fallback below
-        }
-        const json = (await fetchJson(
-            `${base}/openai/models?api-version=${encodeURIComponent(apiVersion)}`,
-            headers,
-        )) as { data?: Array<{ id: string; created?: number }> };
-        if (!Array.isArray(json?.data)) return [];
-        return json.data.map((m) => ({
-            id: m.id,
+    const rawEntries = await adapter.fetchModels(provider, apiKey);
+    const out: DiscoveredModel[] = [];
+    for (const raw of rawEntries) {
+        const meta = adapter.extractModelMeta(raw, provider);
+        if (!meta) continue;
+        out.push({
+            id: meta.upstream_id,
             provider_id: provider.id,
             provider_name: provider.name,
-            object: "model" as const,
-            capability: classifyModel(m.id),
-            created: m.created,
-        }));
+            adapter_id: adapter.id,
+            capability: capabilityFromMeta(meta, meta.upstream_id),
+            meta,
+        });
     }
-
-    // OpenAI-compatible
-    const json = (await fetchJson(`${base}/models`, headers)) as {
-        data?: Array<{ id: string; created?: number }>;
-    };
-    if (!Array.isArray(json?.data)) return [];
-    return json.data.map((m) => ({
-        id: m.id,
-        provider_id: provider.id,
-        provider_name: provider.name,
-        object: "model" as const,
-        capability: classifyModel(m.id),
-        created: m.created,
-    }));
+    return out;
 }
 
 async function refreshProvider(provider: Provider): Promise<CacheEntry> {
@@ -181,12 +147,12 @@ export async function discoveredCountByProvider(): Promise<Record<string, number
  */
 export async function resolveByDiscovery(
     modelName: string,
-): Promise<{ provider: Provider; upstreamModelId: string } | null> {
+): Promise<{ provider: Provider; upstreamModelId: string; meta: NormalizedModelMeta } | null> {
     const providers = enabledProviders();
     for (const p of providers) {
         const entry = await getEntry(p);
         const hit = entry.models.find((m) => m.id === modelName);
-        if (hit) return { provider: p, upstreamModelId: hit.id };
+        if (hit) return { provider: p, upstreamModelId: hit.id, meta: hit.meta };
     }
     return null;
 }

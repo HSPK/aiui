@@ -8,12 +8,13 @@
    - wire 字段 = 3 处（zod schema + Drizzle column + 1 行 serializer）
    - CRUD 端点 = 3 处（zod + `defineRoute` + service）
    - 新模态 = 2 文件（`capabilities/<id>.ts` + 1 行 `register.ts` import + 6 行 Route Handler 调 `forwardGeneration`）
+   - 新上游协议变体（Anthropic / Bedrock / 严格 schema 的厂家…）= 1 个 `adapters/<id>.ts` + 1 行 `adapters/register.ts` import；gateway 主体永远不动
    - 新 FE domain = 1 个 `defineResource(...)` 调用（5 行；api + hooks + keys 自动派生）
    - 新 CLI 子命令 = 1 个 `defineCommand({ meta, args, run })` 挂到 `bin/aiui.ts` 的 `subCommands`
 2. **功能原子性**：一个 domain 一个文件夹/文件，不起 thin re-export 中间层
 3. **单一真相**：`lib/schemas/<domain>.ts`（zod）是 wire 类型唯一来源，`lib/server/db/schema.ts`（Drizzle）是 DB 唯一来源。**所有** TS 类型通过 `z.infer` 派生，绝不手写并行 interface
 4. **开发期不保后向兼容**：thin wrapper / 过渡 alias / dead code 发现就删
-5. 优先用工厂（`defineRoute` / `defineResource` / `registerCapability` / `defineCommand`）；只有形态特殊（auth、SSE gateway、singleton prefs）才手写
+5. 优先用工厂（`defineRoute` / `defineResource` / `registerCapability` / `registerAdapter` / `defineCommand`）；只有形态特殊（auth、SSE gateway、singleton prefs）才手写
 
 ### SOLID — 映射到本仓库的具体执行规则
 
@@ -88,7 +89,8 @@ export const providers = {
 - **路由组**：`app/(auth)/login/` 公开；`app/(dashboard)/` 由 `context/auth-context.tsx` 兜底；`app/api/**` 全部 Route Handlers
 - **后端 `lib/server/<domain>/`** 每个文件夹 = `index.ts`（一行 `export * from "./service"`） + `service.ts` + 可选 `serializer.ts`。**不要**起 `schemas.ts` thin re-export——route 和 service 都直接 `import from "@/lib/schemas/<domain>"`。所有 server 文件首行 `import "server-only"`
 - **gateway**：`lib/server/gateway/index.ts` `resolveModel(name)` (async) 顺序 = DB `models` 表 → discovery cache → 404。`forwardGeneration(user, capabilityId, body, opts)` 统一转发。**流式用 TransformStream tee**：原样吐给客户端的同时累积日志。每次调用都写 `generation_logs`，含 capability、input_summary、tokens、`first_token_latency_ms` (TTFT, 仅流式)、`total_latency_ms` (E2E, 总是)
-- **Provider 类型** `openai`（默认）vs `azure`：URL 与 auth header 形态分支集中在 `gateway/index.ts:upstreamUrl/buildUpstreamHeaders`。Azure 时 `models.upstreamModelId` 是 **deployment 名**
+- **Provider Adapter（`lib/server/adapters/`）**：每个上游协议变体（OpenAI、Azure OpenAI、Azure Foundry、未来 Anthropic/Bedrock/...）一个 adapter 文件。Gateway 主体永远不 `if (provider.type === ...)`——URL/headers/字段过滤/`responses` vs `chat.completions` 选择全走 `resolveAdapter(provider)` 返回的实例。新增协议变体 = 一个文件 + 一行 `adapters/register.ts` side-effect import + `matches(provider)` 决定 auto-detect 优先级（更具体的先注册）。`/api/adapters` 暴露注册列表给前端 dropdown
+- **Provider 字段** `adapter_id`（默认 `"openai"`，空 = auto-detect）+ `health_check_url`（可选，GET 必须返 `{"status":"ok"}`，否则 fallback 走 `discoverModels` 探活）
 - **模型不进配置文件**——provider 的 `/models` 动态发现，按 `AIUI_MODELS_CACHE_TTL` 缓存；provider 增改删时自动 `clearDiscoveryCache()`
 - **HTTP** `lib/api/client.ts:fetcher<T>` 拆 `{code,msg,data}` envelope；**认证靠 httpOnly cookie**，全部请求 `credentials: "include"`；401 自动跳 `/login?from=…`；登录端点传 `skipAuthRedirect: true`
 - **Drizzle** schema 改完必须 `bunx drizzle-kit generate`，重启时 `db/index.ts` 自动跑 migration。`sqliteTable` extraConfig 用**数组**形式 `(t) => [index(...).on(t.x)]`（object 形式已废弃）

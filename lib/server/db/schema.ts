@@ -35,7 +35,10 @@ export const apiKeys = sqliteTable("api_keys", {
 export const providers = sqliteTable("providers", {
     id: text("id").primaryKey(),
     name: text("name").notNull().unique(),
-    type: text("type", { enum: ["openai", "azure"] }).notNull().default("openai"),
+    /** Adapter id from lib/server/adapters/. Auto-detected at write time
+     *  when empty; the value is free text so users can register custom
+     *  adapters without a schema change. */
+    adapterId: text("adapter_id").notNull().default("openai"),
     baseUrl: text("base_url").notNull(),
     apiVersion: text("api_version"),
     apiKeyEncrypted: text("api_key_encrypted"),
@@ -43,6 +46,10 @@ export const providers = sqliteTable("providers", {
     httpProxy: text("http_proxy", { mode: "json" }).$type<Record<string, string> | null>(),
     documentPage: text("document_page"),
     modelPage: text("model_page"),
+    /** Optional full URL that returns `{"status": "ok"}` when the upstream
+     *  is healthy. When set, the provider "Check" action GETs this URL
+     *  instead of probing /models. */
+    healthCheckUrl: text("health_check_url"),
     isLocal: integer("is_local", { mode: "boolean" }).notNull().default(false),
     enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
     createdAt: text("created_at").notNull().default(now),
@@ -68,6 +75,10 @@ export const models = sqliteTable("models", {
     maxRetries: integer("max_retries").notNull().default(2),
     httpProxy: text("http_proxy", { mode: "json" }).$type<Record<string, string> | null>(),
     enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    /** Verbatim entry from the upstream /models endpoint at last discovery.
+     *  Adapter-specific shape, persisted for the admin UI's raw-metadata
+     *  panel and for re-running extractModelMeta when adapter logic changes. */
+    discoveredMetadata: text("discovered_metadata", { mode: "json" }).$type<unknown>(),
     createdAt: text("created_at").notNull().default(now),
     updatedAt: text("updated_at").notNull().default(now),
 }, (t) => [

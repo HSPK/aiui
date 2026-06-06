@@ -47,9 +47,9 @@ export function ProviderCard({
                                         Operational
                                     </span>
                                 </div>
-                                {provider.type === "azure" && (
+                                {provider.adapter_id && provider.adapter_id !== "openai" && (
                                     <Badge variant="secondary" className="text-[9px] uppercase font-semibold h-4 px-1.5 tracking-wider">
-                                        Azure
+                                        {provider.adapter_id.replace(/^azure-/, "Azure ")}
                                     </Badge>
                                 )}
                             </div>

@@ -57,22 +57,39 @@ admin:
 # pinning).
 providers:
   - name: openai
-    type: openai
     base_url: https://api.openai.com/v1
     api_key: ${OPENAI_API_KEY}
     document_page: https://platform.openai.com/docs
     model_page: https://platform.openai.com/docs/models
+    # Optional dedicated health endpoint. Must return {"status":"ok"} when
+    # healthy. If omitted, the provider Check action falls back to
+    # probing /models via the adapter.
+    # health_check_url: https://status.openai.com/api/v2/status.json
 
   - name: deepseek
-    type: openai
     base_url: https://api.deepseek.com/v1
     api_key: ${DEEPSEEK_API_KEY}
 
-  # Azure: the catalog endpoint returns base model names (gpt-4o, ...), NOT
-  # callable deployment names. Register your deployments in the admin UI
-  # under Models, mapping a display name to its deployment id.
+  # Azure OpenAI — the catalog endpoint returns base model names
+  # (gpt-4o, ...), NOT callable deployment names. Register your
+  # deployments in the admin UI under Models, mapping a display name to
+  # its deployment id. The `azure-openai` adapter wraps each request into
+  # `/openai/deployments/<deployment>/chat/completions?api-version=…`.
   # - name: azure-eastus
-  #   type: azure
+  #   adapter_id: azure-openai
   #   base_url: https://my-resource.openai.azure.com
   #   api_version: "2024-10-21"
   #   api_key: ${AZURE_OPENAI_API_KEY}
+
+  # Azure AI Foundry (Inference) hosts OSS / partner models (Mistral,
+  # Llama, xAI Grok, Phi, …) behind a strict OpenAI-compatible surface.
+  # The `azure-foundry` adapter:
+  #   - reads the rich /models metadata (capabilities, RateLimits,
+  #     model.Publisher, etc.) and surfaces it in the admin UI
+  #   - auto-strips OpenAI-only fields (stream_options, parallel_tool_calls,
+  #     …) that Foundry's `extra-parameters: error` default rejects
+  # No more `default_params: stream_options: null` workarounds needed.
+  # - name: foundry
+  #   adapter_id: azure-foundry
+  #   base_url: https://my-foundry.services.ai.azure.com
+  #   api_key: ${AZURE_FOUNDRY_API_KEY}

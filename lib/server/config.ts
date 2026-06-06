@@ -4,6 +4,9 @@ import { eq } from "drizzle-orm";
 import { db, schema } from "./db";
 import { encryptSecret } from "./crypto";
 import { preflightFromConfig } from "@/lib/preflight";
+import { resolveAdapter } from "./adapters";
+import "./adapters/register";
+import type { Provider } from "./db/schema";
 
 /**
  * Local config file loader (server side).
@@ -23,14 +26,13 @@ import { preflightFromConfig } from "@/lib/preflight";
  *
  * `models[]` is intentionally NOT a config-file concept anymore — models are
  * discovered live from each provider's `/models` endpoint (see
- * lib/server/discovery.ts). The `models` DB table remains for per-model
- * overrides (Azure deployments, custom display names, context_window pinning).
- * If `models[]` is found in the config file we warn but don't act on it.
+ * lib/server/discovery.ts).
  */
 
 interface ProviderEntry {
     name?: string;
-    type?: "openai" | "azure";
+    /** Explicit adapter id; if omitted, the registry auto-detects via base_url. */
+    adapter_id?: string;
     base_url?: string;
     api_version?: string | null;
     api_key?: string | null;
@@ -38,8 +40,33 @@ interface ProviderEntry {
     http_proxy?: Record<string, string> | null;
     document_page?: string;
     model_page?: string;
+    health_check_url?: string | null;
     is_local?: boolean;
     enabled?: boolean;
+}
+
+/** Pick the adapter id for a config entry: explicit field wins, else
+ *  the registry's `matches()` pass against the entry's base_url. */
+function adapterIdFor(entry: ProviderEntry): string {
+    if (entry.adapter_id && entry.adapter_id.trim()) return entry.adapter_id.trim();
+    const probe: Provider = {
+        id: "",
+        name: "",
+        adapterId: "",
+        baseUrl: entry.base_url ?? "",
+        apiVersion: entry.api_version ?? null,
+        apiKeyEncrypted: null,
+        defaultParams: {},
+        httpProxy: null,
+        documentPage: null,
+        modelPage: null,
+        healthCheckUrl: null,
+        isLocal: false,
+        enabled: true,
+        createdAt: "",
+        updatedAt: "",
+    };
+    return resolveAdapter(probe).id;
 }
 
 function upsertProvider(entry: ProviderEntry): { id: string; name: string } | null {
@@ -53,19 +80,20 @@ function upsertProvider(entry: ProviderEntry): { id: string; name: string } | nu
         console.warn(`[aiui:config] provider "${name}" missing base_url; skipping`);
         return null;
     }
-    const type: "openai" | "azure" = entry.type === "azure" ? "azure" : "openai";
+    const adapterId = adapterIdFor({ ...entry, base_url: baseUrl });
 
     const existing = db.select().from(schema.providers).where(eq(schema.providers.name, name)).get();
 
     const apiKey = entry.api_key?.trim() ? entry.api_key.trim() : null;
     const updatesCommon = {
-        type,
+        adapterId,
         baseUrl,
         apiVersion: entry.api_version?.trim() || null,
         defaultParams: entry.default_params ?? {},
         httpProxy: entry.http_proxy ?? null,
         documentPage: entry.document_page ?? null,
         modelPage: entry.model_page ?? null,
+        healthCheckUrl: entry.health_check_url?.trim() || null,
         isLocal: !!entry.is_local,
         enabled: entry.enabled ?? true,
         updatedAt: new Date().toISOString(),

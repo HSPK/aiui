@@ -93,8 +93,8 @@ export default function ProviderDetailPage() {
                                 <ShieldCheck className="h-3 w-3 text-green-500" />
                                 Operational
                             </Badge>
-                            {provider.type === "azure" && (
-                                <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-semibold">Azure</Badge>
+                            {provider.adapter_id && provider.adapter_id !== "openai" && (
+                                <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-semibold">{provider.adapter_id.replace(/^azure-/, "Azure ")}</Badge>
                             )}
                             <span className="text-sm text-muted-foreground font-mono">
                                 {(models?.length ?? 0)} model{(models?.length ?? 0) === 1 ? "" : "s"} ({discoveredCount} discovered, {dbCount} override{dbCount === 1 ? "" : "s"})

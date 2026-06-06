@@ -29,8 +29,8 @@ export const GET = defineRoute({
             data.push({
                 id: m.id,
                 object: "model",
-                created: m.created ?? 0,
-                owned_by: m.provider_id,
+                created: 0,
+                owned_by: m.meta.owned_by ?? m.provider_id,
                 type: m.capability,
             });
         }

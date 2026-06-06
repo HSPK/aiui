@@ -9,3 +9,4 @@ export * from "./conversation";
 export * from "./playground";
 export * from "./preferences";
 export * from "./config";
+export * from "./adapter";

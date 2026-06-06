@@ -3,12 +3,15 @@ import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../db";
 import { models, providers, type Provider } from "../db/schema";
-import { discoverModels, listAllDiscovered } from "../discovery";
+import { discoverModels, listAllDiscovered, type DiscoveredModel } from "../discovery";
 import { findProviderByIdOrName } from "../providers";
+import { resolveAdapter } from "../adapters";
+import "../adapters/register";
 import { badRequest, notFound } from "../response";
 import { serializeModel } from "./serializer";
 import type { ModelDTO } from "@/lib/schemas/model";
 import type { ModelCreateInput, ModelUpdateInput } from "@/lib/schemas/model";
+import type { NormalizedModelMeta } from "@/lib/schemas/adapter";
 
 export function findModelByIdOrName(idOrName: string) {
     return (
@@ -17,11 +20,16 @@ export function findModelByIdOrName(idOrName: string) {
     );
 }
 
+/** Re-project the stored discovered metadata for a DB-backed model row,
+ *  returning a fresh NormalizedModelMeta if discovery has recorded one. */
+function metaForDbModel(model: typeof models.$inferSelect, provider: Provider | undefined): NormalizedModelMeta | null {
+    if (!provider || !model.discoveredMetadata) return null;
+    const adapter = resolveAdapter(provider);
+    return adapter.extractModelMeta(model.discoveredMetadata, provider);
+}
+
 /** Synthesize a transient ModelDTO for a discovered upstream model. */
-function discoveredToDTO(
-    d: { id: string; provider_id: string; provider_name: string; capability: string },
-    provider: Provider | undefined,
-): ModelDTO & { is_discovered: true } {
+function discoveredToDTO(d: DiscoveredModel, provider: Provider | undefined): ModelDTO & { is_discovered: true } {
     return {
         id: `discovered:${d.provider_id}:${d.id}`,
         name: d.id,
@@ -34,14 +42,15 @@ function discoveredToDTO(
         type: d.capability,
         pricing: null,
         output_dimension: null,
-        context_window: null,
-        max_tokens: null,
+        context_window: d.meta.context_window ?? null,
+        max_tokens: d.meta.max_output_tokens ?? null,
         description: null,
         knowledge_date: null,
         provider: provider?.name ?? d.provider_name,
         provider_id: d.provider_id,
         is_local: false,
         enabled: true,
+        meta: d.meta,
         created_at: undefined,
         updated_at: undefined,
         is_discovered: true,
@@ -59,7 +68,10 @@ export async function listAllModels(): Promise<ModelDTO[]> {
 
     const dbModels: ModelDTO[] = rows.map((m) => {
         const p = providerMap.get(m.providerId);
-        return { ...serializeModel(m, p?.name ?? null, p?.baseUrl ?? null), is_discovered: false };
+        return {
+            ...serializeModel(m, p?.name ?? null, p?.baseUrl ?? null, metaForDbModel(m, p)),
+            is_discovered: false,
+        };
     });
 
     const seen = new Set(dbModels.map((m) => m.name));
@@ -82,12 +94,12 @@ export async function listModelsForProvider(providerIdOrName: string): Promise<M
         .orderBy(models.name)
         .all();
     const dbModels: ModelDTO[] = rows.map((m) => ({
-        ...serializeModel(m, provider.name, provider.baseUrl),
+        ...serializeModel(m, provider.name, provider.baseUrl, metaForDbModel(m, provider)),
         is_discovered: false,
     }));
     const seen = new Set(dbModels.map((m) => m.name));
 
-    let discovered: Awaited<ReturnType<typeof discoverModels>> = [];
+    let discovered: DiscoveredModel[] = [];
     try {
         discovered = await discoverModels(provider);
     } catch (err) {
@@ -104,7 +116,7 @@ export async function getModel(idOrName: string): Promise<ModelDTO> {
     const model = findModelByIdOrName(idOrName);
     if (!model) throw notFound("Model not found");
     const provider = db.select().from(providers).where(eq(providers.id, model.providerId)).get();
-    return serializeModel(model, provider?.name ?? null, provider?.baseUrl ?? null);
+    return serializeModel(model, provider?.name ?? null, provider?.baseUrl ?? null, metaForDbModel(model, provider));
 }
 
 export async function createModel(input: ModelCreateInput): Promise<ModelDTO> {

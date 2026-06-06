@@ -14,14 +14,25 @@ import {
 // Side-effect import: registers every built-in capability with the registry.
 // Adding a new modality is a one-line change in capabilities/register.ts.
 import "../capabilities/register";
+import { resolveAdapter, type ProviderAdapter, type UpstreamCallArgs } from "../adapters";
+// Side-effect import: registers every built-in adapter with the registry.
+// Adding a new upstream protocol variant is a one-line change in
+// adapters/register.ts.
+import "../adapters/register";
 import { badRequest, HttpError, notFound } from "../response";
 import type { Model, Provider } from "../db/schema";
+import type { NormalizedModelMeta } from "@/lib/schemas/adapter";
 
 export { authenticateGateway };
 
 export interface ResolvedModel {
     model: Model;
     provider: Provider;
+    adapter: ProviderAdapter;
+    /** Adapter-projected metadata (drives field filtering, API selection, …).
+     *  Sourced from `models.discoveredMetadata` for DB rows or from the
+     *  discovery cache for transient hits. */
+    meta: NormalizedModelMeta | null;
     apiKey: string | null;
     /** True when the Model row was synthesized on-the-fly from discovery, not pulled from DB. */
     discovered: boolean;
@@ -47,20 +58,21 @@ function transientModel(name: string, provider: Provider, upstreamModelId: strin
         maxRetries: 2,
         httpProxy: null,
         enabled: true,
+        discoveredMetadata: null,
         createdAt: now,
         updatedAt: now,
     } as Model;
 }
 
 /**
- * Resolve a requested model name to (model, provider, apiKey).
+ * Resolve a requested model name to (model, provider, adapter, meta, apiKey).
  *
  * Order:
  *   1. DB `models` row by name — explicit overrides win. Sole path for Azure
- *      deployments and aliases.
- *   2. Discovery — scan each enabled provider's `/models` listing. The first
- *      provider that exposes this id wins; a transient Model is synthesized so
- *      the rest of the gateway code stays type-stable.
+ *      deployments and aliases. Adapter is picked from the provider.
+ *   2. Discovery — scan each enabled provider's `/models` listing via its
+ *      adapter. The first provider that exposes this id wins; a transient
+ *      Model is synthesized so the rest of the gateway code stays type-stable.
  */
 export async function resolveModel(name: string): Promise<ResolvedModel> {
     const model = findModelByIdOrName(name);
@@ -69,17 +81,34 @@ export async function resolveModel(name: string): Promise<ResolvedModel> {
         const provider = db.select().from(schema.providers).where(eq(schema.providers.id, model.providerId)).get();
         if (!provider) throw notFound(`Provider for model "${name}" not found`);
         if (!provider.enabled) throw badRequest(`Provider "${provider.name}" is disabled`);
-        return { model, provider, apiKey: decryptSecret(provider.apiKeyEncrypted), discovered: false };
+        const adapter = resolveAdapter(provider);
+        // Re-project the stored discovered metadata so the gateway gets a
+        // fresh NormalizedModelMeta with whatever the adapter knows today
+        // (handy when adapter logic improves without re-running discovery).
+        const meta = model.discoveredMetadata
+            ? adapter.extractModelMeta(model.discoveredMetadata, provider)
+            : null;
+        return {
+            model,
+            provider,
+            adapter,
+            meta,
+            apiKey: decryptSecret(provider.apiKeyEncrypted),
+            discovered: false,
+        };
     }
 
     const discovered = await resolveByDiscovery(name);
     if (!discovered) throw notFound(`Model "${name}" not found in any provider`);
 
-    const { provider, upstreamModelId } = discovered;
+    const { provider, upstreamModelId, meta } = discovered;
+    const adapter = resolveAdapter(provider);
     const capability = classifyModel(upstreamModelId);
     return {
         model: transientModel(name, provider, upstreamModelId, capability),
         provider,
+        adapter,
+        meta,
         apiKey: decryptSecret(provider.apiKeyEncrypted),
         discovered: true,
     };
@@ -96,26 +125,9 @@ export function mergeParams(
     return { ...providerDefaults, ...modelDefaults, ...body };
 }
 
-function upstreamUrl(provider: Provider, model: Model, capability: CapabilityHandler): string {
-    const base = provider.baseUrl.replace(/\/$/, "");
-    const path = capability.endpoint.path;
-    if (provider.type === "azure") {
-        // Azure routes per deployment: /openai/deployments/<deployment><path>?api-version=...
-        const deployment = encodeURIComponent(model.upstreamModelId);
-        const apiVersion = provider.apiVersion?.trim() || "2024-10-21";
-        return `${base}/openai/deployments/${deployment}${path}?api-version=${encodeURIComponent(apiVersion)}`;
-    }
-    return `${base}${path}`;
-}
-
-function buildUpstreamHeaders(provider: Provider, apiKey: string | null): Record<string, string> {
-    const h: Record<string, string> = { "Content-Type": "application/json" };
-    if (apiKey) {
-        if (provider.type === "azure") h["api-key"] = apiKey;
-        else h["Authorization"] = `Bearer ${apiKey}`;
-    }
-    return h;
-}
+// =============================================================================
+// Logging
+// =============================================================================
 
 export interface GatewayLogPayload {
     userId: string;
@@ -155,9 +167,7 @@ function completeLog(
         promptTokens?: number | null;
         completionTokens?: number | null;
         totalTokens?: number | null;
-        /** ms from upstream fetch start to first content delta (streaming only). */
         firstTokenLatencyMs?: number | null;
-        /** ms from upstream fetch start to response fully consumed (always). */
         totalLatencyMs?: number;
     },
 ) {
@@ -176,6 +186,10 @@ function completeLog(
     }).where(eq(schema.generationLogs.id, id)).run();
 }
 
+// =============================================================================
+// Forward
+// =============================================================================
+
 export interface ForwardResult {
     response: Response;
     logId: string;
@@ -191,12 +205,18 @@ export interface ForwardGenerationOpts {
 }
 
 /**
- * Generic capability-aware upstream forwarder. Use this for any new modality:
- *   1. Register a CapabilityHandler in lib/server/capabilities/
- *   2. Wire a thin Route Handler that does: forwardGeneration(user, "<id>", body)
+ * Generic capability-aware upstream forwarder. The protocol-specific bits
+ * (URL, headers, request shape, response shape, stream chunk shape) all
+ * live in the `ProviderAdapter` chosen by `resolveAdapter(provider)`. The
+ * gateway core only owns:
+ *   - Argument validation + model resolution
+ *   - Log start/complete + token accounting
+ *   - Streaming TransformStream tee + accumulation
+ *   - Error mapping
  *
- * Streaming requests are tee'd through a TransformStream so the bytes reach
- * the client unmodified while we accumulate content for the log row.
+ * Adding a new upstream protocol variant = one adapter file. Adding a new
+ * user-facing capability (image/audio/...) = one capability file + one
+ * 6-line Route Handler.
  */
 export async function forwardGeneration(
     user: SessionUser,
@@ -210,35 +230,24 @@ export async function forwardGeneration(
     const requestedModel = typeof body.model === "string" ? body.model : "";
     if (!requestedModel) throw badRequest("`model` is required");
 
-    const { model, provider, apiKey } = await resolveModel(requestedModel);
+    const { model, provider, adapter, meta, apiKey } = await resolveModel(requestedModel);
 
     const merged = mergeParams(body, model, provider);
-    if (provider.type === "azure") {
-        // Azure infers the model from the URL deployment; sending it is redundant.
-        delete merged.model;
-    } else {
-        merged.model = model.upstreamModelId;
-    }
     const stream = !!capability.supportsStreaming && !!merged.stream;
 
-    // For streaming OpenAI-compatible chat completions, OpenAI only emits
-    // the `usage` chunk when stream_options.include_usage=true. Inject it
-    // transparently so the gateway can record prompt/completion/total
-    // tokens on every streaming log row. We don't override an explicit
-    // user value (a few providers reject the field).
-    if (stream && capability.id === "chat") {
-        const so = (merged.stream_options as Record<string, unknown> | undefined) ?? {};
-        if (so.include_usage === undefined) {
-            merged.stream_options = { ...so, include_usage: true };
-        }
-    }
+    const apiId = adapter.selectUpstreamApi(capability, model, meta);
+    const callArgs: UpstreamCallArgs = { provider, model, meta, capability, apiId, stream };
 
-    const inputSummary = capability.summarizeInput?.(merged) ?? null;
+    // Adapter does ALL of: field filtering, model id sticking, stream_options
+    // injection (if model accepts it), Chat → Responses translation, etc.
+    const upstreamBody = adapter.transformRequest(merged, callArgs);
+
+    const inputSummary = capability.summarizeInput?.(upstreamBody) ?? null;
     const logId = startLog({
         userId: user.id,
         modelName: model.name,
         capability: capability.id,
-        requestBody: merged,
+        requestBody: upstreamBody,
         inputSummary: inputSummary?.slice(0, 1000) ?? null,
         conversationId: opts.conversationId,
         messageId: opts.messageId,
@@ -247,10 +256,10 @@ export async function forwardGeneration(
     const started = Date.now();
     let upstream: Response;
     try {
-        upstream = await fetch(upstreamUrl(provider, model, capability), {
+        upstream = await fetch(adapter.upstreamUrl(callArgs), {
             method: "POST",
-            headers: buildUpstreamHeaders(provider, apiKey),
-            body: JSON.stringify(merged),
+            headers: adapter.upstreamHeaders(callArgs, apiKey),
+            body: JSON.stringify(upstreamBody),
         });
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -276,17 +285,20 @@ export async function forwardGeneration(
     }
 
     if (!stream) {
-        // For known capabilities, parse JSON. For unknown / binary-content types
-        // (audio.speech for example returns audio/mpeg), pass through raw.
         const contentType = upstream.headers.get("Content-Type") ?? "";
         if (contentType.startsWith("application/json")) {
-            const json = await upstream.json().catch(() => ({}));
+            const upstreamJson = await upstream.json().catch(() => ({}));
+            // Let the adapter normalize (e.g. Responses-API JSON → Chat
+            // Completions shape) so capability.parseResponse keeps working.
+            const json = adapter.transformResponse
+                ? (adapter.transformResponse(upstreamJson, callArgs) as Record<string, unknown>)
+                : (upstreamJson as Record<string, unknown>);
             const parsed = capability.parseResponse?.(json) ?? {};
             completeLog(logId, {
                 status: "completed",
                 output: parsed.output ?? null,
                 content: json,
-                generation: typeof json === "object" && json !== null ? (json as Record<string, unknown>) : null,
+                generation: typeof json === "object" && json !== null ? json : null,
                 promptTokens: parsed.promptTokens ?? null,
                 completionTokens: parsed.completionTokens ?? null,
                 totalTokens: parsed.totalTokens ?? null,
@@ -324,11 +336,8 @@ export async function forwardGeneration(
     let accumContent = "";
     let accumReasoning = "";
     let usage: Record<string, unknown> | undefined;
-    /** Last `model` field seen in a stream chunk (echoes the upstream model). */
     let streamModel: string | undefined;
-    /** Captured from the first chunk that carries an id (OpenAI shape). */
     let streamId: string | undefined;
-    /** Captured from any chunk's `system_fingerprint`. */
     let systemFingerprint: string | undefined;
     let buf = "";
     let firstTokenMs: number | null = null;
@@ -348,7 +357,12 @@ export async function forwardGeneration(
                 if (!data || data === "[DONE]") continue;
                 try {
                     const json = JSON.parse(data) as Record<string, unknown>;
-                    const delta = capability.parseStreamChunk?.(json) ?? { content: "", reasoning: "" };
+                    // Adapter parses first (for non-OpenAI shapes); fall back
+                    // to the capability's default Chat-Completions parser.
+                    const delta =
+                        adapter.transformStreamChunk?.(json, callArgs) ??
+                        capability.parseStreamChunk?.(json) ??
+                        { content: "", reasoning: "" };
                     if (delta.content || delta.reasoning) {
                         if (firstTokenMs === null) firstTokenMs = Date.now() - started;
                         if (delta.content) accumContent += delta.content;
@@ -367,9 +381,6 @@ export async function forwardGeneration(
         },
         flush() {
             const u = usage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined;
-            // Reconstruct an OpenAI-style completion response from the
-            // accumulated stream so logs show a single coherent JSON shape
-            // — matches the non-streaming branch's `generation` payload.
             const message: Record<string, unknown> = { role: "assistant", content: accumContent };
             if (accumReasoning) message.reasoning_content = accumReasoning;
             const mergedResponse: Record<string, unknown> = {

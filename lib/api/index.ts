@@ -13,6 +13,7 @@ export { conversations, messages } from "./conversations";
 export { gateway } from "./gateway";
 export { capabilities } from "./capabilities";
 export { preferences } from "./preferences";
+export { adapters } from "./adapters";
 
 export { ApiError, fetcher, rawFetch, withQuery, API_BASE } from "./client";
 export { defineResource } from "./resource";

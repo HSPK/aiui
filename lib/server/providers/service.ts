@@ -5,7 +5,9 @@ import { db } from "../db";
 import { models, providers } from "../db/schema";
 import { decryptSecret, encryptSecret } from "../crypto";
 import { badRequest, notFound } from "../response";
-import { clearDiscoveryCache, discoveredCountByProvider } from "../discovery";
+import { clearDiscoveryCache, discoverModels, discoveredCountByProvider } from "../discovery";
+import { resolveAdapter } from "../adapters";
+import "../adapters/register";
 import { serializeProvider } from "./serializer";
 import type { ProviderDTO } from "@/lib/schemas/provider";
 import type { ProviderCreateInput, ProviderUpdateInput } from "@/lib/schemas/provider";
@@ -50,19 +52,48 @@ export async function getProvider(idOrName: string): Promise<ProviderDTO> {
     return serializeProvider(provider, total);
 }
 
+/**
+ * Resolve the adapter id for a (about-to-be-persisted) provider. Falls
+ * back to the registry's `matches()` pass when the caller didn't pick
+ * one explicitly. Built so we never persist an empty `adapter_id`.
+ */
+function resolveAdapterId(input: { adapter_id?: string; base_url: string; api_version?: string | null }): string {
+    if (input.adapter_id && input.adapter_id.trim()) return input.adapter_id.trim();
+    // Synthesize a placeholder Provider for the registry's matches() pass.
+    const probe: Provider = {
+        id: "",
+        name: "",
+        adapterId: "",
+        baseUrl: input.base_url,
+        apiVersion: input.api_version ?? null,
+        apiKeyEncrypted: null,
+        defaultParams: {},
+        httpProxy: null,
+        documentPage: null,
+        modelPage: null,
+        healthCheckUrl: null,
+        isLocal: false,
+        enabled: true,
+        createdAt: "",
+        updatedAt: "",
+    };
+    return resolveAdapter(probe).id;
+}
+
 export async function createProvider(input: ProviderCreateInput): Promise<ProviderDTO> {
     const name = input.name.trim();
     const baseUrl = input.base_url.trim();
-    const type = input.type === "azure" ? "azure" : "openai";
 
     const dup = db.select().from(providers).where(eq(providers.name, name)).get();
     if (dup) throw badRequest("Provider name already exists");
 
     const id = randomUUID();
+    const adapterId = resolveAdapterId({ adapter_id: input.adapter_id, base_url: baseUrl, api_version: input.api_version ?? null });
+
     db.insert(providers).values({
         id,
         name,
-        type,
+        adapterId,
         baseUrl,
         apiVersion: input.api_version?.trim() || null,
         apiKeyEncrypted: encryptSecret(input.api_key ?? null),
@@ -70,6 +101,7 @@ export async function createProvider(input: ProviderCreateInput): Promise<Provid
         httpProxy: input.http_proxy ?? null,
         documentPage: input.document_page ?? null,
         modelPage: input.model_page ?? null,
+        healthCheckUrl: input.health_check_url?.trim() || null,
         isLocal: !!input.is_local,
         enabled: input.enabled ?? true,
     }).run();
@@ -93,7 +125,11 @@ export async function updateProvider(idOrName: string, input: ProviderUpdateInpu
             updates.name = newName;
         }
     }
-    if (input.type !== undefined) updates.type = input.type === "azure" ? "azure" : "openai";
+    if (input.adapter_id !== undefined) {
+        const a = input.adapter_id?.trim();
+        if (!a) throw badRequest("adapter_id cannot be empty");
+        updates.adapterId = a;
+    }
     if (input.base_url !== undefined) {
         const newUrl = input.base_url.trim();
         if (!newUrl) throw badRequest("base_url cannot be empty");
@@ -107,6 +143,7 @@ export async function updateProvider(idOrName: string, input: ProviderUpdateInpu
     if (input.http_proxy !== undefined) updates.httpProxy = input.http_proxy ?? null;
     if (input.document_page !== undefined) updates.documentPage = input.document_page;
     if (input.model_page !== undefined) updates.modelPage = input.model_page;
+    if (input.health_check_url !== undefined) updates.healthCheckUrl = input.health_check_url?.trim() || null;
     if (input.is_local !== undefined) updates.isLocal = !!input.is_local;
     if (input.enabled !== undefined) updates.enabled = !!input.enabled;
 
@@ -124,36 +161,54 @@ export async function deleteProvider(idOrName: string): Promise<void> {
     clearDiscoveryCache();
 }
 
+/**
+ * Provider health probe. Two strategies, in priority order:
+ *   1. If `provider.healthCheckUrl` is set → GET it, parse JSON, require
+ *      `{ "status": "ok" }`. Any other body / shape / status is a failure.
+ *      Use this when the upstream exposes a dedicated `/healthz` style
+ *      endpoint that's cheaper than listing models.
+ *   2. Otherwise → fall back to discovery via the resolved adapter, which
+ *      returns a model count on success.
+ */
 export async function checkProvider(idOrName: string): Promise<{ ok: boolean; models?: number; error?: string; latency_ms?: number }> {
     const provider = findProviderByIdOrName(idOrName);
     if (!provider) throw notFound("Provider not found");
 
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    const key = decryptSecret(provider.apiKeyEncrypted);
-
-    let url: string;
-    if (provider.type === "azure") {
-        if (key) headers["api-key"] = key;
-        const apiVersion = provider.apiVersion?.trim() || "2024-10-21";
-        url = `${provider.baseUrl.replace(/\/$/, "")}/openai/models?api-version=${encodeURIComponent(apiVersion)}`;
-    } else {
-        if (key) headers["Authorization"] = `Bearer ${key}`;
-        url = `${provider.baseUrl.replace(/\/$/, "")}/models`;
+    if (provider.healthCheckUrl) {
+        const start = Date.now();
+        try {
+            const res = await fetch(provider.healthCheckUrl, {
+                method: "GET",
+                signal: AbortSignal.timeout(10_000),
+            });
+            const ms = Date.now() - start;
+            if (!res.ok) {
+                const text = await res.text().catch(() => res.statusText);
+                return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 200)}`, latency_ms: ms };
+            }
+            const json = (await res.json().catch(() => null)) as { status?: unknown } | null;
+            if (!json || json.status !== "ok") {
+                return {
+                    ok: false,
+                    error: `Expected {"status":"ok"}, got ${JSON.stringify(json).slice(0, 200)}`,
+                    latency_ms: ms,
+                };
+            }
+            return { ok: true, latency_ms: ms };
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return { ok: false, error: msg, latency_ms: Date.now() - start };
+        }
     }
 
+    // No dedicated health endpoint — fall back to a discovery probe via
+    // the adapter (which handles URL, auth, and shape per upstream).
     const start = Date.now();
     try {
-        const res = await fetch(url, { headers });
-        const ms = Date.now() - start;
-        if (!res.ok) {
-            const text = await res.text().catch(() => res.statusText);
-            return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 200)}`, latency_ms: ms };
-        }
-        const json = (await res.json().catch(() => null)) as { data?: unknown[] } | null;
-        const models = Array.isArray(json?.data) ? json!.data.length : undefined;
-        return { ok: true, models, latency_ms: ms };
+        const models = await discoverModels(provider);
+        return { ok: true, models: models.length, latency_ms: Date.now() - start };
     } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        return { ok: false, error: msg };
+        return { ok: false, error: msg, latency_ms: Date.now() - start };
     }
 }

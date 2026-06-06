@@ -1,6 +1,5 @@
 import { z } from "zod";
-
-export const providerTypeSchema = z.enum(["openai", "azure"]);
+import { adapterIdSchema } from "./adapter";
 
 // ---- DTO ----
 
@@ -9,7 +8,9 @@ export const providerDTOSchema = z.object({
     name: z.string(),
     /** Convenience alias of `name`, kept for FE compatibility. */
     provider_name: z.string(),
-    type: providerTypeSchema,
+    /** Adapter id (from `lib/server/adapters/`) that handles transport
+     *  + schema for this provider. Default `"openai"`. */
+    adapter_id: adapterIdSchema,
     base_url: z.string(),
     /** Alias of `base_url`. */
     proxy: z.string(),
@@ -20,6 +21,8 @@ export const providerDTOSchema = z.object({
     http_proxy: z.record(z.string(), z.string()).nullable(),
     document_page: z.string(),
     model_page: z.string(),
+    /** Optional full URL returning `{"status": "ok"}` when healthy. */
+    health_check_url: z.string().nullable(),
     is_local: z.boolean(),
     enabled: z.boolean(),
     n_models: z.number().int().optional(),
@@ -31,7 +34,9 @@ export const providerDTOSchema = z.object({
 
 export const providerCreateSchema = z.object({
     name: z.string().trim().min(1, "Provider name is required"),
-    type: providerTypeSchema.optional(),
+    /** If omitted, the server auto-detects via the adapter registry's
+     *  `matches()` pass over the configured base_url. */
+    adapter_id: adapterIdSchema.optional(),
     base_url: z.string().trim().min(1, "base_url is required").url("base_url must be a URL"),
     api_version: z.string().trim().nullable().optional(),
     api_key: z.string().nullable().optional(),
@@ -39,6 +44,12 @@ export const providerCreateSchema = z.object({
     http_proxy: z.record(z.string(), z.string()).nullable().optional(),
     document_page: z.string().optional(),
     model_page: z.string().optional(),
+    health_check_url: z
+        .string()
+        .trim()
+        .url("health_check_url must be a URL")
+        .nullable()
+        .optional(),
     is_local: z.boolean().optional(),
     enabled: z.boolean().optional(),
 });
@@ -47,7 +58,6 @@ export const providerUpdateSchema = providerCreateSchema.partial();
 
 // ---- Derived types ----
 
-export type ProviderType = z.infer<typeof providerTypeSchema>;
 export type ProviderDTO = z.infer<typeof providerDTOSchema>;
 export type ProviderCreateInput = z.infer<typeof providerCreateSchema>;
 export type ProviderUpdateInput = z.infer<typeof providerUpdateSchema>;

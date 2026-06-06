@@ -1,0 +1,179 @@
+import "server-only";
+import { registerAdapter, type ProviderAdapter, type UpstreamCallArgs } from ".";
+import type { NormalizedModelMeta, UpstreamApiId } from "@/lib/schemas/adapter";
+import type { Provider } from "../db/schema";
+
+/**
+ * Shared helpers for adapters that speak OpenAI's Chat Completions /
+ * Embeddings / etc. surface. Keeps the per-adapter files focused on
+ * what's actually different (URL shape, header style, schema strictness).
+ */
+
+/** Build the standard URL: `{base_url}{capability.endpoint.path}`. */
+export function defaultUpstreamUrl(args: UpstreamCallArgs): string {
+    const base = args.provider.baseUrl.replace(/\/$/, "");
+    const path = args.capability.endpoint.path;
+    return `${base}${path}`;
+}
+
+/** Standard OpenAI `Authorization: Bearer …` header. */
+export function bearerAuthHeaders(_args: UpstreamCallArgs, apiKey: string | null): Record<string, string> {
+    const h: Record<string, string> = { "Content-Type": "application/json" };
+    if (apiKey) h["Authorization"] = `Bearer ${apiKey}`;
+    return h;
+}
+
+/** Standard OpenAI `/v1/models` list endpoint. */
+export async function fetchOpenAIModels(provider: Provider, apiKey: string | null): Promise<unknown[]> {
+    const url = `${provider.baseUrl.replace(/\/$/, "")}/models`;
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) {
+        throw new Error(`models discovery HTTP ${res.status} from ${url}`);
+    }
+    const json = (await res.json()) as { data?: unknown[] } | unknown[];
+    if (Array.isArray(json)) return json;
+    return Array.isArray(json?.data) ? json.data : [];
+}
+
+/** Filter `body` to only fields in `accepted` (or remove fields in `rejected`).
+ *  Always-on keys (`model`, `messages`, `stream`, `input`, `prompt`) bypass
+ *  both lists since they're carry-through routing/payload keys. */
+const ALWAYS_ON = new Set(["model", "messages", "stream", "input", "prompt"]);
+
+export function applyFieldFilter(
+    body: Record<string, unknown>,
+    meta: NormalizedModelMeta | null,
+): Record<string, unknown> {
+    if (!meta) return body;
+    const accepted = meta.accepted_fields && meta.accepted_fields.length > 0
+        ? new Set(meta.accepted_fields)
+        : null;
+    const rejected = meta.rejected_fields && meta.rejected_fields.length > 0
+        ? new Set(meta.rejected_fields)
+        : null;
+    if (!accepted && !rejected) return body;
+
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(body)) {
+        if (ALWAYS_ON.has(k)) {
+            out[k] = v;
+            continue;
+        }
+        if (rejected?.has(k)) continue;
+        if (accepted && !accepted.has(k)) continue;
+        out[k] = v;
+    }
+    return out;
+}
+
+/**
+ * Inject `stream_options.include_usage = true` when:
+ *  - we're streaming a chat completion
+ *  - caller didn't set it
+ *  - upstream is known to accept `stream_options` (per `meta.accepted_fields`
+ *    or per `meta.rejected_fields`)
+ */
+export function maybeInjectStreamUsage(
+    body: Record<string, unknown>,
+    args: UpstreamCallArgs,
+): Record<string, unknown> {
+    if (!args.stream) return body;
+    if (args.capability.id !== "chat") return body;
+    if (args.apiId !== "chat.completions") return body; // responses API handles usage differently
+
+    const meta = args.meta;
+    if (meta?.rejected_fields?.includes("stream_options")) return body;
+    if (meta?.accepted_fields && meta.accepted_fields.length > 0 && !meta.accepted_fields.includes("stream_options")) {
+        return body;
+    }
+
+    const existing = body.stream_options;
+    if (existing === null) {
+        const { stream_options: _drop, ...rest } = body;
+        void _drop;
+        return rest;
+    }
+    const so = (existing as Record<string, unknown> | undefined) ?? {};
+    if (so.include_usage === undefined) {
+        return { ...body, stream_options: { ...so, include_usage: true } };
+    }
+    return body;
+}
+
+/**
+ * Default upstream API picker — favours `responses` when the model
+ * declares support for it (gateway-side opinion that the Responses API
+ * is more capable), otherwise falls back to `chat.completions`. Other
+ * capabilities pass through unchanged.
+ */
+export function defaultSelectUpstreamApi(
+    capabilityId: string,
+    meta: NormalizedModelMeta | null,
+): UpstreamApiId {
+    switch (capabilityId) {
+        case "chat":
+            if (meta?.supported_apis.includes("responses")) return "responses";
+            return "chat.completions";
+        case "embedding":
+            return "embeddings";
+        case "image":
+            return "images.generations";
+        case "audio.speech":
+            return "audio.speech";
+        case "audio.transcription":
+            return "audio.transcriptions";
+        case "rerank":
+            return "rerank";
+        default:
+            return "chat.completions";
+    }
+}
+
+// =============================================================================
+// The "openai" adapter — OpenAI direct + generic OpenAI-compat (DeepSeek,
+// Together, Groq, Fireworks, vLLM, Ollama, …). Catch-all fallback.
+// =============================================================================
+
+export const openaiAdapter: ProviderAdapter = {
+    id: "openai",
+    label: "OpenAI compatible",
+    description: "OpenAI direct, DeepSeek, Together, Groq, vLLM, Ollama — any /v1 OpenAI-compatible upstream.",
+
+    matches: () => true, // catch-all fallback; specific adapters register earlier
+
+    fetchModels: fetchOpenAIModels,
+
+    extractModelMeta(rawEntry): NormalizedModelMeta | null {
+        const r = rawEntry as Record<string, unknown>;
+        const id = typeof r?.id === "string" ? r.id : null;
+        if (!id) return null;
+
+        return {
+            upstream_id: id,
+            label: id,
+            supported_apis: ["chat.completions"], // safe default; admin can widen
+            capabilities: { chat: true },
+            owned_by: typeof r.owned_by === "string" ? r.owned_by : null,
+            // accepted_fields left undefined ⇒ trust everything
+            raw: rawEntry,
+        };
+    },
+
+    selectUpstreamApi(capability, _model, meta) {
+        return defaultSelectUpstreamApi(capability.id, meta);
+    },
+
+    upstreamUrl: defaultUpstreamUrl,
+    upstreamHeaders: bearerAuthHeaders,
+
+    transformRequest(body, args) {
+        // Sticky model id in case caller used a display name
+        const withModel = { ...body, model: args.model.upstreamModelId };
+        const filtered = applyFieldFilter(withModel, args.meta);
+        return maybeInjectStreamUsage(filtered, args);
+    },
+};
+
+registerAdapter(openaiAdapter);
