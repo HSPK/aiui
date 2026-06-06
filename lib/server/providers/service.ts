@@ -6,7 +6,7 @@ import { models, providers } from "../db/schema";
 import { decryptSecret, encryptSecret } from "../crypto";
 import { badRequest, notFound } from "../response";
 import { clearDiscoveryCache, discoverModels, discoveredCountByProvider } from "../discovery";
-import { resolveAdapter } from "../adapters";
+import { resolveAdapter, getAdapter } from "../adapters";
 import "../adapters/register";
 import { serializeProvider } from "./serializer";
 import type { ProviderDTO } from "@/lib/schemas/provider";
@@ -64,6 +64,7 @@ function resolveAdapterId(input: { adapter_id?: string; base_url: string; api_ve
         id: "",
         name: "",
         adapterId: "",
+        schemaAdapterId: null,
         baseUrl: input.base_url,
         apiVersion: input.api_version ?? null,
         apiKeyEncrypted: null,
@@ -83,6 +84,18 @@ function resolveAdapterId(input: { adapter_id?: string; base_url: string; api_ve
     return resolveAdapter(probe).id;
 }
 
+/** Validate that a non-empty schema_adapter_id refers to a registered adapter.
+ *  Empty / null / undefined collapse to null (inherit from transport). */
+function validateSchemaAdapterId(id: string | null | undefined): string | null {
+    if (id === null || id === undefined) return null;
+    const trimmed = id.trim();
+    if (!trimmed) return null;
+    if (!getAdapter(trimmed)) {
+        throw badRequest(`Unknown schema_adapter_id "${trimmed}"`);
+    }
+    return trimmed;
+}
+
 export async function createProvider(input: ProviderCreateInput): Promise<ProviderDTO> {
     const name = input.name.trim();
     const baseUrl = input.base_url.trim();
@@ -97,6 +110,7 @@ export async function createProvider(input: ProviderCreateInput): Promise<Provid
         id,
         name,
         adapterId,
+        schemaAdapterId: validateSchemaAdapterId(input.schema_adapter_id),
         baseUrl,
         apiVersion: input.api_version?.trim() || null,
         apiKeyEncrypted: encryptSecret(input.api_key ?? null),
@@ -132,6 +146,9 @@ export async function updateProvider(idOrName: string, input: ProviderUpdateInpu
         const a = input.adapter_id?.trim();
         if (!a) throw badRequest("adapter_id cannot be empty");
         updates.adapterId = a;
+    }
+    if (input.schema_adapter_id !== undefined) {
+        updates.schemaAdapterId = validateSchemaAdapterId(input.schema_adapter_id);
     }
     if (input.base_url !== undefined) {
         const newUrl = input.base_url.trim();

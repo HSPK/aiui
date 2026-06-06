@@ -1,14 +1,18 @@
 "use client"
 
 import { providers } from "@/lib/api";
+import { useAuth } from "@/context/auth-context";
+import type { ModelDTO } from "@/lib/schemas/model";
 
 import { useParams, useRouter } from "next/navigation"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, RefreshCcw, Globe, FileText, Activity } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { ProviderIcon } from "@/components/ProviderIcon"
 import { ModelCard } from "@/components/providers/model-card"
+import { ModelFormDialog } from "@/components/providers/model-form-dialog"
 import { ProviderHealthPill } from "@/components/providers/provider-health-pill"
 import { Skeleton } from "@/components/ui/skeleton"
 import { toast } from "sonner"
@@ -21,8 +25,17 @@ export default function ProviderDetailPage() {
     // legacy URLs with UUIDs still resolve.
     const slug = decodeURIComponent(params.name as string)
 
+    const { user } = useAuth()
+    const isAdmin = user?.role === "admin"
+
     const { data: provider, isLoading: isLoadingProvider } = providers.useGet(slug)
     const { data: models, isLoading: isLoadingModels } = providers.useModels(slug)
+
+    const [editing, setEditing] = useState<{ open: boolean; mode: "create" | "edit"; model?: ModelDTO | null }>({
+        open: false,
+        mode: "edit",
+        model: null,
+    })
 
     const refreshMutation = providers.useReload({
         onSuccess: () => toast.success("Refreshed model list"),
@@ -162,7 +175,21 @@ export default function ProviderDetailPage() {
                 ) : models && models.length > 0 ? (
                     <div className="flex flex-col gap-3">
                         {models.map((model) => (
-                            <ModelCard key={`${model.is_discovered ? "d" : "o"}:${model.name}`} model={model} />
+                            <ModelCard
+                                key={`${model.is_discovered ? "d" : "o"}:${model.name}`}
+                                model={model}
+                                onClick={
+                                    isAdmin
+                                        ? () => setEditing({
+                                            open: true,
+                                            // Discovered rows have no DB row yet, so opening
+                                            // in "create" pre-fills the fields as an override.
+                                            mode: model.is_discovered ? "create" : "edit",
+                                            model,
+                                        })
+                                        : undefined
+                                }
+                            />
                         ))}
                     </div>
                 ) : (
@@ -174,6 +201,16 @@ export default function ProviderDetailPage() {
                     </div>
                 )}
             </div>
+
+            {isAdmin && (
+                <ModelFormDialog
+                    open={editing.open}
+                    onOpenChange={(open) => setEditing((s) => ({ ...s, open }))}
+                    mode={editing.mode}
+                    model={editing.model}
+                    defaultProviderId={provider.id}
+                />
+            )}
         </div>
     )
 }

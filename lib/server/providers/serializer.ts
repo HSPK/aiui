@@ -9,6 +9,7 @@ export function serializeProvider(p: Provider, modelCount?: number): ProviderDTO
         name: p.name,
         provider_name: p.name,
         adapter_id: p.adapterId,
+        schema_adapter_id: p.schemaAdapterId ?? null,
         base_url: p.baseUrl,
         proxy: p.baseUrl,
         api_version: p.apiVersion ?? null,

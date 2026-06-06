@@ -7,7 +7,6 @@ import { useEffect, useMemo, useState } from "react"
 import {
     Dialog,
     DialogContent,
-    DialogDescription,
     DialogFooter,
     DialogHeader,
     DialogTitle,
@@ -163,11 +162,6 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
                         {isOverride && <Sparkles className="h-4 w-4 text-primary" />}
                         {title}
                     </DialogTitle>
-                    <DialogDescription>
-                        {isOverride
-                            ? "This discovered model has no DB row yet. Save to create an override that customizes its config and shadows the discovered entry by name."
-                            : "Map an upstream model id to a display name your apps can call."}
-                    </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleSubmit}>
                     <div className="grid gap-4 py-4">
@@ -201,12 +195,7 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
                                     <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                                     <SelectContent>
                                         {(capabilityList ?? []).map((c) => (
-                                            <SelectItem key={c.id} value={c.id}>
-                                                <div className="flex flex-col">
-                                                    <span>{c.label}</span>
-                                                    <span className="text-[10px] text-muted-foreground font-mono">{c.endpoint}</span>
-                                                </div>
-                                            </SelectItem>
+                                            <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>
                                         ))}
                                         {/* Allow saving an unregistered id so legacy rows still load */}
                                         {type && !(capabilityList ?? []).some((c) => c.id === type) && (
@@ -217,39 +206,16 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
                             </div>
                         </div>
                         <div className="grid gap-2">
-                            <Label className="text-xs">
-                                Schema adapter override
-                                <span className="ml-2 font-normal text-muted-foreground normal-case">
-                                    (rarely needed)
-                                </span>
-                            </Label>
+                            <Label className="text-xs">Schema adapter override</Label>
                             <Select value={schemaAdapterId} onValueChange={setSchemaAdapterId}>
-                                <SelectTrigger className="h-9 text-sm">
-                                    <SelectValue placeholder="Inherit from provider" />
-                                </SelectTrigger>
+                                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value={SCHEMA_ADAPTER_INHERIT}>
-                                        <div className="flex flex-col">
-                                            <span>Inherit from provider</span>
-                                            <span className="text-[10px] text-muted-foreground">Default — use the provider&apos;s own adapter</span>
-                                        </div>
-                                    </SelectItem>
+                                    <SelectItem value={SCHEMA_ADAPTER_INHERIT}>Inherit from provider</SelectItem>
                                     {(adapterList ?? []).map((a) => (
-                                        <SelectItem key={a.id} value={a.id}>
-                                            <div className="flex flex-col">
-                                                <span>{a.label}</span>
-                                                {a.description && (
-                                                    <span className="text-[10px] text-muted-foreground">{a.description}</span>
-                                                )}
-                                            </div>
-                                        </SelectItem>
+                                        <SelectItem key={a.id} value={a.id}>{a.label}</SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
-                            <p className="text-[11px] text-muted-foreground leading-snug">
-                                Forces this model&apos;s request body to follow another adapter&apos;s field rules. Use when you proxy an
-                                upstream (e.g. Azure Foundry) behind an OpenAI-shaped URL but it still rejects OpenAI-only fields.
-                            </p>
                         </div>
                         <div className="grid sm:grid-cols-3 gap-3">
                             <div className="grid gap-2 min-w-0">

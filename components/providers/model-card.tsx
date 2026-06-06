@@ -9,6 +9,9 @@ import { capabilityLabel } from "./capability-label"
 
 interface ModelCardProps {
     model: ModelDTO;
+    /** Click opens the model in edit mode. Pass `undefined` to render
+     *  the card as a passive (non-interactive) info row. */
+    onClick?: () => void;
 }
 
 // CapabilityDTO → (color, icon) — kept here in the UI layer so the registry stays
@@ -23,12 +26,20 @@ const CAPABILITY_PRESENTATION: Record<string, { color: string; icon: React.Compo
     rerank: { color: "text-orange-600 dark:text-orange-400", icon: ScanSearch },
 }
 
-export function ModelCard({ model }: ModelCardProps) {
+export function ModelCard({ model, onClick }: ModelCardProps) {
     const presentation = CAPABILITY_PRESENTATION[model.type] ?? { color: "text-foreground", icon: Box }
     const TypeIcon = presentation.icon
+    const interactive = !!onClick
 
     return (
-        <Card className="flex flex-col md:flex-row items-start md:items-center p-4 gap-4 bg-muted/10 border-transparent shadow-none hover:border-border hover:shadow-sm transition-all group/card">
+        <Card
+            className={cn(
+                "flex flex-col md:flex-row items-start md:items-center p-4 gap-4 bg-muted/10 border-transparent shadow-none hover:border-border hover:shadow-sm transition-all group/card",
+                interactive && "cursor-pointer",
+            )}
+            onClick={interactive ? onClick : undefined}
+            title={interactive ? (model.is_discovered ? "Click to register override" : "Click to edit") : undefined}
+        >
             <div className="flex-1 min-w-0 space-y-2">
                 <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="font-semibold text-base md:text-lg leading-snug truncate py-0.5" title={model.name}>
@@ -58,7 +69,8 @@ export function ModelCard({ model }: ModelCardProps) {
                         variant="ghost"
                         size="icon"
                         className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={() => {
+                        onClick={(e) => {
+                            e.stopPropagation()
                             navigator.clipboard.writeText(model.model_id || "")
                             toast.success("Model ID copied to clipboard")
                         }}

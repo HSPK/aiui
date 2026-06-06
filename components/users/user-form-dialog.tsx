@@ -7,7 +7,6 @@ import { useState, useEffect } from "react"
 import {
     Dialog,
     DialogContent,
-    DialogDescription,
     DialogFooter,
     DialogHeader,
     DialogTitle,
@@ -113,13 +112,8 @@ export function UserFormDialog({
             <DialogContent className="sm:max-w-[400px]">
                 <DialogHeader>
                     <DialogTitle>
-                        {mode === "create" ? "Add User" : "Edit User"}
+                        {mode === "create" ? "Add User" : `Edit user "${user?.username}"`}
                     </DialogTitle>
-                    <DialogDescription>
-                        {mode === "create"
-                            ? "Create a new user account"
-                            : `Update user "${user?.username}"`}
-                    </DialogDescription>
                 </DialogHeader>
 
                 <form onSubmit={handleSubmit}>

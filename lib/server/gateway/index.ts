@@ -52,19 +52,25 @@ export interface ResolvedModel {
     discovered: boolean;
 }
 
-/** Pick the schema adapter for a (model, provider). Falls back to the
- *  provider's transport adapter when no override is set or when the
- *  override id is unknown (fail-open with a log line). */
-function pickSchemaAdapter(model: Model, transport: ProviderAdapter): ProviderAdapter {
-    if (!model.schemaAdapterId) return transport;
-    const override = getAdapter(model.schemaAdapterId);
-    if (!override) {
+/** Pick the schema adapter for a (model, provider). Three-level fallback:
+ *    1. model.schemaAdapterId — finest grained per-model override
+ *    2. provider.schemaAdapterId — covers all models of a proxy/wrapper
+ *    3. transport (provider's adapter_id) — default, same as today
+ *  Unknown ids fail-open with a warning rather than 500ing the gateway. */
+function pickSchemaAdapter(model: Model, provider: Provider, transport: ProviderAdapter): ProviderAdapter {
+    const candidates: Array<{ id: string | null | undefined; label: string }> = [
+        { id: model.schemaAdapterId, label: `model "${model.name}"` },
+        { id: provider.schemaAdapterId, label: `provider "${provider.name}"` },
+    ];
+    for (const c of candidates) {
+        if (!c.id) continue;
+        const override = getAdapter(c.id);
+        if (override) return override;
         console.warn(
-            `[aiui] model "${model.name}" references unknown schema_adapter_id "${model.schemaAdapterId}"; falling back to provider's adapter`,
+            `[aiui] ${c.label} references unknown schema_adapter_id "${c.id}"; trying next fallback`,
         );
-        return transport;
     }
-    return override;
+    return transport;
 }
 
 /** Build a transient Model object for a discovered upstream model. */
@@ -112,7 +118,7 @@ export async function resolveModel(name: string): Promise<ResolvedModel> {
         if (!provider) throw notFound(`Provider for model "${name}" not found`);
         if (!provider.enabled) throw badRequest(`Provider "${provider.name}" is disabled`);
         const transport = resolveAdapter(provider);
-        const schemaAdapter = pickSchemaAdapter(model, transport);
+        const schemaAdapter = pickSchemaAdapter(model, provider, transport);
         // Project the stored discovery metadata via the SCHEMA adapter so
         // the resulting accepted_fields/etc reflect what'll be applied at
         // request time. If discovery never recorded anything (proxied URL
@@ -134,16 +140,29 @@ export async function resolveModel(name: string): Promise<ResolvedModel> {
     const discovered = await resolveByDiscovery(name);
     if (!discovered) throw notFound(`Model "${name}" not found in any provider`);
 
-    const { provider, upstreamModelId, meta } = discovered;
+    const { provider, upstreamModelId, meta: discoveredMeta } = discovered;
     const transport = resolveAdapter(provider);
     const capability = classifyModel(upstreamModelId);
     const transient = transientModel(name, provider, upstreamModelId, capability);
-    // Discovered (non-DB) models have no schema override → transport == schema.
+    const schemaAdapter = pickSchemaAdapter(transient, provider, transport);
+    // Re-project meta via the schema adapter so accepted/rejected_fields
+    // reflect the active rules. discovery-supplied meta is the projection
+    // through transport's extractModelMeta; we re-do it via schema when the
+    // override changes things.
+    const meta = schemaAdapter === transport
+        ? discoveredMeta
+        : schemaAdapter.extractModelMeta(
+            // Prefer the raw upstream entry (saved by transport's
+            // extractModelMeta as `meta.raw`); fall back to a minimal
+            // `{id}` so the schema adapter still produces its defaults.
+            discoveredMeta?.raw ?? { id: upstreamModelId },
+            provider,
+        );
     return {
         model: transient,
         provider,
         transport,
-        schema: transport,
+        schema: schemaAdapter,
         meta,
         apiKey: decryptSecret(provider.apiKeyEncrypted),
         discovered: true,

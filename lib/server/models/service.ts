@@ -22,25 +22,31 @@ export function findModelByIdOrName(idOrName: string) {
 
 /**
  * Pick the SCHEMA adapter for a model — the one that owns accepted_fields /
- * rejected_fields / API selection. Falls back to the provider's transport
- * adapter when no override is set, preserving today's behavior. When the
- * override points at an unknown adapter id we ignore it (fail-open) and log
- * a warning rather than booting the gateway into a broken state.
+ * rejected_fields / API selection. Three-level fallback:
+ *   1. model.schemaAdapterId (per-row override)
+ *   2. provider.schemaAdapterId (covers all models of a proxy)
+ *   3. provider's transport adapter (default)
+ * Unknown ids fail-open (warn + try next) so a typo doesn't break the gateway.
  */
 function resolveSchemaAdapter(
     model: typeof models.$inferSelect,
     provider: Provider | undefined,
 ) {
     const transport = provider ? resolveAdapter(provider) : null;
-    if (!model.schemaAdapterId) return transport;
-    const override = getAdapter(model.schemaAdapterId);
-    if (!override) {
+    if (!provider) return transport;
+    const candidates: Array<{ id: string | null | undefined; label: string }> = [
+        { id: model.schemaAdapterId, label: `model "${model.name}"` },
+        { id: provider.schemaAdapterId, label: `provider "${provider.name}"` },
+    ];
+    for (const c of candidates) {
+        if (!c.id) continue;
+        const override = getAdapter(c.id);
+        if (override) return override;
         console.warn(
-            `[aiui] model "${model.name}" references unknown schema_adapter_id "${model.schemaAdapterId}"; falling back to provider's adapter`,
+            `[aiui] ${c.label} references unknown schema_adapter_id "${c.id}"; trying next fallback`,
         );
-        return transport;
     }
-    return override;
+    return transport;
 }
 
 /** Re-project the stored discovered metadata for a DB-backed model row,

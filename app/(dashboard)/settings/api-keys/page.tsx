@@ -7,7 +7,7 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
     Table,
     TableBody,
@@ -77,9 +77,6 @@ export default function ApiKeysPage() {
             <Card>
                 <CardHeader>
                     <CardTitle className="text-base">Your keys</CardTitle>
-                    <CardDescription>
-                        Secrets are hashed at rest. You can only see a key value at the moment of creation.
-                    </CardDescription>
                 </CardHeader>
                 <CardContent className="px-2 pb-4">
                     <Table>
@@ -125,7 +122,7 @@ export default function ApiKeysPage() {
                 <DialogContent className="sm:max-w-[420px]">
                     <DialogHeader>
                         <DialogTitle>New API Key</DialogTitle>
-                        <DialogDescription>Give this key a memorable name. You will see the secret only once.</DialogDescription>
+                        <DialogDescription>You&apos;ll see the secret only once.</DialogDescription>
                     </DialogHeader>
                     <div className="grid gap-2 py-2">
                         <Label htmlFor="k-name" className="text-xs">Name</Label>

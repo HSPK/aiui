@@ -33,6 +33,8 @@ interface ProviderEntry {
     name?: string;
     /** Explicit adapter id; if omitted, the registry auto-detects via base_url. */
     adapter_id?: string;
+    /** Optional schema-only adapter override; null/omitted ⇒ follows transport. */
+    schema_adapter_id?: string | null;
     base_url?: string;
     api_version?: string | null;
     api_key?: string | null;
@@ -53,6 +55,7 @@ function adapterIdFor(entry: ProviderEntry): string {
         id: "",
         name: "",
         adapterId: "",
+        schemaAdapterId: null,
         baseUrl: entry.base_url ?? "",
         apiVersion: entry.api_version ?? null,
         apiKeyEncrypted: null,
@@ -84,12 +87,14 @@ function upsertProvider(entry: ProviderEntry): { id: string; name: string } | nu
         return null;
     }
     const adapterId = adapterIdFor({ ...entry, base_url: baseUrl });
+    const schemaAdapterId = entry.schema_adapter_id?.trim() || null;
 
     const existing = db.select().from(schema.providers).where(eq(schema.providers.name, name)).get();
 
     const apiKey = entry.api_key?.trim() ? entry.api_key.trim() : null;
     const updatesCommon = {
         adapterId,
+        schemaAdapterId,
         baseUrl,
         apiVersion: entry.api_version?.trim() || null,
         defaultParams: entry.default_params ?? {},

@@ -39,6 +39,13 @@ export const providers = sqliteTable("providers", {
      *  when empty; the value is free text so users can register custom
      *  adapters without a schema change. */
     adapterId: text("adapter_id").notNull().default("openai"),
+    /** Optional override for SCHEMA-axis decisions (accepted/rejected
+     *  fields, supported_apis, transformRequest) when they differ from
+     *  transport (URL/auth/response). Used when a provider proxies one
+     *  upstream behind another's URL shape — e.g. Foundry behind an
+     *  OpenAI-style URL. Models can further override this. `null` means
+     *  "use the same adapter as transport". */
+    schemaAdapterId: text("schema_adapter_id"),
     baseUrl: text("base_url").notNull(),
     apiVersion: text("api_version"),
     apiKeyEncrypted: text("api_key_encrypted"),

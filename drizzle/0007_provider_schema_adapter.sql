@@ -1,0 +1,1 @@
+ALTER TABLE `providers` ADD `schema_adapter_id` text;
