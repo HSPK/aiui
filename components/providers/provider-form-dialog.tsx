@@ -1,9 +1,9 @@
 "use client"
 
+import { providers } from "@/lib/api";
 import type { ProviderCreateInput, ProviderDTO, ProviderType, ProviderUpdateInput } from "@/lib/schemas/provider";
 import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { api } from "@/lib/api"
 
 import {
     Dialog,
@@ -77,7 +77,7 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
     }, [open, mode, provider])
 
     const createMutation = useMutation({
-        mutationFn: (data: ProviderCreateInput) => api.createProvider(data),
+        mutationFn: (data: ProviderCreateInput) => providers.create(data),
         onSuccess: () => {
             toast.success("Provider created")
             queryClient.invalidateQueries({ queryKey: ["providers"] })
@@ -89,7 +89,7 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
 
     const updateMutation = useMutation({
         mutationFn: ({ id, data }: { id: string; data: ProviderUpdateInput }) =>
-            api.updateProvider(id, data),
+            providers.update(id, data),
         onSuccess: () => {
             toast.success("Provider updated")
             queryClient.invalidateQueries({ queryKey: ["providers"] })

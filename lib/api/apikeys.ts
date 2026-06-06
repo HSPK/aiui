@@ -1,13 +1,21 @@
-import { fetcher } from "./client";
+import { defineResource } from "./resource";
 import type { ApiKeyCreatedDTO, ApiKeyDTO } from "@/lib/schemas/apikey";
 
-export const apiKeysApi = {
-    list: () => fetcher<ApiKeyDTO[]>("/apikeys"),
+/** API keys have a custom create response (returns the plain key once). */
+const base = defineResource<
+    ApiKeyDTO,
+    { name: string },
+    never,
+    Record<string, unknown>,
+    ApiKeyDTO[]
+>({
+    path: "/apikeys",
+    key: "apikeys",
+    listShape: "array",
+});
+
+export const apiKeys = {
+    ...base,
     create: (name: string) =>
-        fetcher<ApiKeyCreatedDTO>("/apikeys", {
-            method: "POST",
-            body: JSON.stringify({ name }),
-        }),
-    remove: (id: string) =>
-        fetcher<null>(`/apikeys/${encodeURIComponent(id)}`, { method: "DELETE" }),
+        base.create({ name }) as unknown as Promise<ApiKeyCreatedDTO>,
 };

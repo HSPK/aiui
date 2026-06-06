@@ -1,9 +1,10 @@
 "use client"
 
+import { apiKeys } from "@/lib/api";
 import type { ApiKeyDTO } from "@/lib/schemas/apikey";
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { api } from "@/lib/api"
+
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -50,11 +51,11 @@ export default function ApiKeysPage() {
 
     const { data: keys = [], isLoading } = useQuery({
         queryKey: ["apikeys"],
-        queryFn: api.listApiKeys,
+        queryFn: apiKeys.list,
     })
 
     const createMutation = useMutation({
-        mutationFn: (name: string) => api.createApiKey(name),
+        mutationFn: (name: string) => apiKeys.create(name),
         onSuccess: (key) => {
             queryClient.invalidateQueries({ queryKey: ["apikeys"] })
             setCreateOpen(false)
@@ -65,7 +66,7 @@ export default function ApiKeysPage() {
     })
 
     const deleteMutation = useMutation({
-        mutationFn: (id: string) => api.deleteApiKey(id),
+        mutationFn: (id: string) => apiKeys.remove(id),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["apikeys"] })
             setToDelete(null)

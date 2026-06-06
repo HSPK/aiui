@@ -1,10 +1,15 @@
-import { fetcher, withQuery } from "./client";
+import { defineResource } from "./resource";
 import type { Paginated } from "@/lib/schemas/common";
 import type { LogDetailDTO, LogFilterParams, LogListItemDTO } from "@/lib/schemas/log";
 
-export const logsApi = {
-    list: (params: LogFilterParams = {}) =>
-        fetcher<Paginated<LogListItemDTO>>(withQuery("/logs/generations", { ...params })),
-    get: (id: string) =>
-        fetcher<LogDetailDTO>(`/logs/generations/${encodeURIComponent(id)}`),
-};
+/** Read-only resource: only list + get are used. */
+export const logs = defineResource<
+    LogDetailDTO,
+    never,
+    never,
+    LogFilterParams,
+    Paginated<LogListItemDTO>
+>({
+    path: "/logs/generations",
+    key: "logs",
+});

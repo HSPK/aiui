@@ -1,8 +1,9 @@
 "use client"
 
+import { models } from "@/lib/api";
 import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
-import { api } from "@/lib/api"
+
 import { useSettingsStore } from "@/lib/stores/settings-store"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -173,10 +174,10 @@ export default function SettingsPage() {
 
     const { data: modelsData, isLoading: modelsLoading } = useQuery({
         queryKey: ["models"],
-        queryFn: () => api.getModels(),
+        queryFn: () => models.list(),
     })
 
-    const models = React.useMemo(() => {
+    const modelOptions = React.useMemo(() => {
         if (!Array.isArray(modelsData)) return []
         return modelsData.map(m => ({
             name: m.name,
@@ -270,7 +271,7 @@ export default function SettingsPage() {
                         <ModelSelect
                             value={settings.defaultModel}
                             onValueChange={(v) => settings.updateSettings({ defaultModel: v })}
-                            models={models}
+                            models={modelOptions}
                             isLoading={modelsLoading}
                             placeholder={modelsLoading ? "Loading..." : "Select model"}
                         />
@@ -280,7 +281,7 @@ export default function SettingsPage() {
                         <ModelSelect
                             value={settings.defaultSummaryModel}
                             onValueChange={(v) => settings.updateSettings({ defaultSummaryModel: v })}
-                            models={models}
+                            models={modelOptions}
                             isLoading={modelsLoading}
                             placeholder={modelsLoading ? "Loading..." : "Select model"}
                         />

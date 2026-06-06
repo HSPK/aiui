@@ -1,7 +1,8 @@
 import { fetcher } from "./client";
 import type { LoginInput, UserDTO } from "@/lib/schemas/user";
 
-export const authApi = {
+/** Auth has a 3-call shape that doesn't map to CRUD; kept handwritten. */
+export const auth = {
     login: (data: LoginInput) => fetcher<UserDTO>("/login", {
         method: "POST",
         body: JSON.stringify(data),

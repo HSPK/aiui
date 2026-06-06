@@ -1,10 +1,10 @@
 "use client"
 
+import { auth, ApiError } from "@/lib/api";
 import type { LoginInput, UserDTO } from "@/lib/schemas/user";
 import * as React from "react"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { api, ApiError } from "@/lib/api"
 
 import { toast } from "sonner"
 
@@ -25,7 +25,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const { data: user, status, isFetching } = useQuery({
         queryKey: ["user", "me"],
-        queryFn: api.getMe,
+        queryFn: auth.me,
         retry: false,
         // Treat 401 result as a value, not as undefined-due-to-loading.
         staleTime: 1000 * 60 * 5,
@@ -59,7 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // synchronously so any consumer (including the redirect effect) sees `user` defined
             // before we navigate. Using invalidateQueries here would cause a refetch race with the
             // pathname-change re-render and bounce the user back to /login.
-            const userData = await api.login(params)
+            const userData = await auth.login(params)
             queryClient.setQueryData(["user", "me"], userData)
 
             toast.success("Login successful")
@@ -80,7 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const logout = async () => {
         try {
-            await api.logout()
+            await auth.logout()
         } catch {
             // Ignore — we still clear local state
         }

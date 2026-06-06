@@ -1,9 +1,9 @@
 "use client"
 
+import { models, providers } from "@/lib/api";
 import type { ProviderDTO } from "@/lib/schemas/provider";
 import type { ModelDTO } from "@/lib/schemas/model";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { api } from "@/lib/api"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -50,18 +50,18 @@ export default function ProvidersPage() {
     const [deleteProvider, setDeleteProvider] = useState<ProviderDTO | null>(null)
     const [deleteModel, setDeleteModel] = useState<ModelDTO | null>(null)
 
-    const { data: providers, isLoading: isLoadingProviders } = useQuery({
+    const { data: providerList, isLoading: isLoadingProviders } = useQuery({
         queryKey: ["providers"],
-        queryFn: api.getProviders,
+        queryFn: providers.list,
     })
 
-    const { data: models, isLoading: isLoadingModels } = useQuery({
+    const { data: modelList, isLoading: isLoadingModels } = useQuery({
         queryKey: ["models"],
-        queryFn: api.getModels,
+        queryFn: models.list,
     })
 
-    const getSortedProviders = (providers: ProviderDTO[]) => {
-        const p = [...providers]
+    const getSortedProviders = (items: ProviderDTO[]) => {
+        const p = [...items]
         if (sortOrder === "name") {
             p.sort((a, b) => a.provider_name.localeCompare(b.provider_name))
         } else if (sortOrder === "models") {
@@ -70,8 +70,8 @@ export default function ProvidersPage() {
         return p
     }
 
-    const getSortedModels = (models: ModelDTO[]) => {
-        const m = [...models]
+    const getSortedModels = (items: ModelDTO[]) => {
+        const m = [...items]
         if (sortOrder === "name") {
             m.sort((a, b) => a.name.localeCompare(b.name))
         } else if (sortOrder === "type") {
@@ -84,19 +84,19 @@ export default function ProvidersPage() {
         return m
     }
 
-    const filteredProviders = providers ? getSortedProviders(providers).filter(p =>
+    const filteredProviders = providerList ? getSortedProviders(providerList).filter(p =>
         p.provider_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (p.proxy || "").toLowerCase().includes(searchQuery.toLowerCase())
     ) : []
 
-    const filteredModels = models ? getSortedModels(models).filter(m =>
+    const filteredModels = modelList ? getSortedModels(modelList).filter(m =>
         m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (m.model_id || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
         (m.provider || "").toLowerCase().includes(searchQuery.toLowerCase())
     ) : []
 
     const reloadMutation = useMutation({
-        mutationFn: api.reloadProviders,
+        mutationFn: providers.reload,
         onSuccess: () => {
             toast.success("Refreshed")
             queryClient.invalidateQueries({ queryKey: ["providers"] })
@@ -108,7 +108,7 @@ export default function ProvidersPage() {
     })
 
     const deleteProviderMutation = useMutation({
-        mutationFn: (id: string) => api.deleteProvider(id),
+        mutationFn: (id: string) => providers.remove(id),
         onSuccess: () => {
             toast.success("Provider deleted")
             queryClient.invalidateQueries({ queryKey: ["providers"] })
@@ -119,7 +119,7 @@ export default function ProvidersPage() {
     })
 
     const deleteModelMutation = useMutation({
-        mutationFn: (id: string) => api.deleteModel(id),
+        mutationFn: (id: string) => models.remove(id),
         onSuccess: () => {
             toast.success("Model deleted")
             queryClient.invalidateQueries({ queryKey: ["models"] })

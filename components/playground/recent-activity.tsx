@@ -1,8 +1,9 @@
 "use client"
 
+import { conversations } from "@/lib/api";
 import * as React from "react"
 import { useInfiniteQuery } from "@tanstack/react-query"
-import { api } from "@/lib/api"
+
 import { formatToLocal } from "@/lib/utils"
 import { MessageSquare, ArrowRight, Clock, Loader2 } from "lucide-react"
 
@@ -23,7 +24,7 @@ export function RecentActivity({ onOpenConversation }: RecentActivityProps) {
     } = useInfiniteQuery({
         queryKey: ["conversations", "recent-home"],
         initialPageParam: 1,
-        queryFn: ({ pageParam = 1 }) => api.getConversations(pageParam, 15),
+        queryFn: ({ pageParam = 1 }) => conversations.list({ page: pageParam, page_size: 15 }),
         getNextPageParam: (lastPage) => {
             if (!lastPage) return undefined
             const hasMore = lastPage.page * lastPage.page_size < lastPage.total
@@ -50,7 +51,7 @@ export function RecentActivity({ onOpenConversation }: RecentActivityProps) {
     }, [hasNextPage, fetchNextPage, isFetchingNextPage])
 
     // Deduplicate conversations by id (can happen with pagination + new data)
-    const conversations = React.useMemo(() => {
+    const convList = React.useMemo(() => {
         const items = data?.pages.flatMap((page) => page?.items || []) || []
         const seen = new Set<string>()
         return items.filter((conv: any) => {
@@ -76,7 +77,7 @@ export function RecentActivity({ onOpenConversation }: RecentActivityProps) {
                         <div className="flex justify-center py-8">
                             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                         </div>
-                    ) : conversations.length === 0 ? (
+                    ) : convList.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-8 text-center text-muted-foreground">
                             <Clock className="h-8 w-8 mb-2 opacity-20" />
                             <p className="text-sm">No recent conversations</p>
@@ -84,7 +85,7 @@ export function RecentActivity({ onOpenConversation }: RecentActivityProps) {
                         </div>
                     ) : (
                         <>
-                            {conversations.map((conv: any) => (
+                            {convList.map((conv: any) => (
                                 <div
                                     key={conv.id}
                                     onClick={() => onOpenConversation(conv)}

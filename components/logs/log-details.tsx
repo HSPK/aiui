@@ -1,8 +1,9 @@
 "use client"
 
+import { logs } from "@/lib/api";
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { api } from "@/lib/api"
+
 import {
     Sheet,
     SheetContent,
@@ -288,7 +289,7 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
     const { resolvedTheme } = useTheme()
     const { data: log, isLoading } = useQuery({
         queryKey: ["log", logId],
-        queryFn: () => api.getLogDetail(logId!),
+        queryFn: () => logs.get(logId!),
         enabled: !!logId && open,
     })
 

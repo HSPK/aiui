@@ -1,7 +1,8 @@
 "use client"
 
+import { providers } from "@/lib/api";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { api } from "@/lib/api"
+
 import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, RefreshCcw, ShieldCheck, Globe, FileText } from "lucide-react"
@@ -23,20 +24,20 @@ export default function ProviderDetailPage() {
 
     const { data: provider, isLoading: isLoadingProvider } = useQuery({
         queryKey: ["providers", slug],
-        queryFn: () => api.getProvider(slug),
+        queryFn: () => providers.get(slug),
         enabled: !!slug,
     })
 
     const { data: models, isLoading: isLoadingModels } = useQuery({
         queryKey: ["providers", slug, "models"],
-        queryFn: () => api.getProviderModels(slug),
+        queryFn: () => providers.listModels(slug),
         enabled: !!slug,
     })
 
     const refreshMutation = useMutation({
         // The "reload" endpoint now just clears the in-memory discovery cache,
         // so what the user gets is a freshly fetched /models from the upstream.
-        mutationFn: () => api.reloadProviders(),
+        mutationFn: () => providers.reload(),
         onSuccess: () => {
             toast.success("Refreshed model list")
             // The hierarchical key invalidates this provider's models AND the

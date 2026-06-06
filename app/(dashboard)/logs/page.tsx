@@ -1,9 +1,9 @@
 "use client"
 
+import { logs } from "@/lib/api";
 import type { LogFilterParams } from "@/lib/schemas/log";
 import { useState, useCallback } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { api } from "@/lib/api"
 
 import { LogsTable } from "@/components/logs/logs-table"
 import { LogDetails } from "@/components/logs/log-details"
@@ -52,7 +52,7 @@ export default function LogsPage() {
 
     const { data, isLoading, isFetching, refetch } = useQuery({
         queryKey: ["logs", queryParams],
-        queryFn: () => api.getLogs(queryParams),
+        queryFn: () => logs.list(queryParams),
         placeholderData: (prev) => prev,
     })
 
@@ -89,7 +89,7 @@ export default function LogsPage() {
                 <div className="flex items-center gap-2 py-1 px-1">
                     <div className="flex flex-1 items-center gap-2 overflow-x-auto no-scrollbar">
                         <Input
-                            placeholder="UserDTO ID"
+                            placeholder="User ID"
                             value={userId}
                             onChange={(e) => setUserId(e.target.value)}
                             onKeyDown={(e) => e.key === "Enter" && handleSearch()}

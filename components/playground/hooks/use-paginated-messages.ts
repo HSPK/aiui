@@ -1,5 +1,5 @@
+import { conversations } from "@/lib/api";
 import * as React from "react"
-import { api } from "@/lib/api"
 
 interface UsePaginatedMessagesOptions {
     conversationId?: string
@@ -52,7 +52,7 @@ export function usePaginatedMessages({
 
             const fetchInitial = async () => {
                 try {
-                    const res = await api.getConversationMessages(conversationId, {
+                    const res = await conversations.listMessages(conversationId, {
                         page: 1,
                         page_size: pageSize,
                         sort: "-created_at"
@@ -81,7 +81,7 @@ export function usePaginatedMessages({
         setIsLoadingMore(true)
 
         try {
-            const res = await api.getConversationMessages(conversationId, {
+            const res = await conversations.listMessages(conversationId, {
                 page: pageRef.current,
                 page_size: pageSize,
                 sort: '-created_at'

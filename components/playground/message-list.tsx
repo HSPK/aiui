@@ -1,9 +1,10 @@
 "use client"
 
+import { models } from "@/lib/api";
 import * as React from "react"
 import { Bot } from "lucide-react"
 import { cn, formatRelativeDate, normalizeDate } from "@/lib/utils"
-import { api } from "@/lib/api"
+
 import { useQuery } from "@tanstack/react-query"
 import { ChatMessage } from "./chat-message"
 
@@ -41,7 +42,7 @@ export const MessageList = React.memo(({
 }: MessageListProps) => {
     const { data: modelsData } = useQuery({
         queryKey: ["models"],
-        queryFn: () => api.getModels(),
+        queryFn: () => models.list(),
         staleTime: 1000 * 60 * 5, // Cache for 5 mins
     })
 

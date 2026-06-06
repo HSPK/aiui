@@ -1,5 +1,6 @@
 "use client"
 
+import { models } from "@/lib/api";
 import * as React from "react"
 import { Plus, Settings2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -8,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { usePlaygroundStore, ModelConfig } from "@/lib/stores/playground-store"
 import { useShallow } from "zustand/react/shallow"
 import { useQuery } from "@tanstack/react-query"
-import { api } from "@/lib/api"
+
 import { ModelConfigPopover, DEFAULT_MODEL_CONFIG } from "./model-config-popover"
 import {
     Popover,
@@ -39,7 +40,7 @@ export const ModelChipsWithConfig = React.memo(function ModelChipsWithConfig({
     // Get models data for provider info
     const { data: modelsData } = useQuery({
         queryKey: ["models"],
-        queryFn: () => api.getModels(),
+        queryFn: () => models.list(),
         staleTime: 5 * 60 * 1000,
     })
 

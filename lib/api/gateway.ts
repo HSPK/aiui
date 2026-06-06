@@ -29,7 +29,7 @@ interface TitleArgs {
  * `res.body` and pulls `X-Conversation-ID` / `X-Message-ID` /
  * `X-Generation-ID` headers off the response.
  */
-export const gatewayApi = {
+export const gateway = {
     playgroundChat: (body: PlaygroundChatBody) =>
         rawFetch("/playground/chat", { method: "POST", body: JSON.stringify(body) }),
 

@@ -1,9 +1,9 @@
 "use client"
 
+import { capabilities, models, providers } from "@/lib/api";
 import type { ModelCreateInput, ModelDTO, ModelUpdateInput } from "@/lib/schemas/model";
 import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { api } from "@/lib/api"
 
 import {
     Dialog,
@@ -38,14 +38,14 @@ interface Props {
 
 export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProviderId }: Props) {
     const queryClient = useQueryClient()
-    const { data: providers } = useQuery({
+    const { data: providerList } = useQuery({
         queryKey: ["providers"],
-        queryFn: api.getProviders,
+        queryFn: providers.list,
         enabled: open,
     })
-    const { data: capabilities } = useQuery({
+    const { data: capabilityList } = useQuery({
         queryKey: ["capabilities"],
-        queryFn: api.listCapabilities,
+        queryFn: capabilities.list,
         enabled: open,
         staleTime: 60_000,
     })
@@ -100,7 +100,7 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
     }, [open, mode, model, defaultProviderId])
 
     const createMutation = useMutation({
-        mutationFn: (data: ModelCreateInput) => api.createModel(data),
+        mutationFn: (data: ModelCreateInput) => models.create(data),
         onSuccess: () => {
             toast.success(isOverride ? "Override saved" : "Model created")
             queryClient.invalidateQueries({ queryKey: ["models"] })
@@ -112,7 +112,7 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
 
     const updateMutation = useMutation({
         mutationFn: ({ id, data }: { id: string; data: ModelUpdateInput }) =>
-            api.updateModel(id, data),
+            models.update(id, data),
         onSuccess: () => {
             toast.success("Model updated")
             queryClient.invalidateQueries({ queryKey: ["models"] })
@@ -195,7 +195,7 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
                                         <SelectValue placeholder="Select provider" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {(providers ?? []).map((p) => (
+                                        {(providerList ?? []).map((p) => (
                                             <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                                         ))}
                                     </SelectContent>
@@ -206,7 +206,7 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
                                 <Select value={type} onValueChange={setType}>
                                     <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                                     <SelectContent>
-                                        {(capabilities ?? []).map((c) => (
+                                        {(capabilityList ?? []).map((c) => (
                                             <SelectItem key={c.id} value={c.id}>
                                                 <div className="flex flex-col">
                                                     <span>{c.label}</span>
@@ -215,7 +215,7 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
                                             </SelectItem>
                                         ))}
                                         {/* Allow saving an unregistered id so legacy rows still load */}
-                                        {type && !(capabilities ?? []).some((c) => c.id === type) && (
+                                        {type && !(capabilityList ?? []).some((c) => c.id === type) && (
                                             <SelectItem value={type}>{type}</SelectItem>
                                         )}
                                     </SelectContent>

@@ -1,5 +1,6 @@
 "use client"
 
+import { messages } from "@/lib/api";
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -12,7 +13,7 @@ import rehypeKatex from 'rehype-katex'
 import { ProviderIcon } from "@/components/ProviderIcon"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { useSettingsStore } from "@/lib/stores/settings-store"
-import { api } from "@/lib/api"
+
 import { toast } from "sonner"
 import { CodeBlock, InlineCode } from "./code-block"
 
@@ -198,7 +199,7 @@ export const ChatMessage = React.memo(({
         setIsRating(true)
 
         try {
-            await api.rateMessage(message.id, targetRating)
+            await messages.rate(message.id, targetRating)
             setRating(targetRating)
         } catch (err) {
             toast.error("Failed to rate message")

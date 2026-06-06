@@ -1,9 +1,9 @@
 "use client"
 
+import { users } from "@/lib/api";
 import type { UserCreateInput, UserDTO, UserUpdateInput } from "@/lib/schemas/user";
 import { useState, useEffect } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { api } from "@/lib/api"
 
 import {
     Dialog,
@@ -64,9 +64,9 @@ export function UserFormDialog({
     }, [open, mode, user])
 
     const createMutation = useMutation({
-        mutationFn: (data: UserCreateInput) => api.createUser(data),
+        mutationFn: (data: UserCreateInput) => users.create(data),
         onSuccess: () => {
-            toast.success("UserDTO created successfully")
+            toast.success("User created successfully")
             queryClient.invalidateQueries({ queryKey: ["users"] })
             onOpenChange(false)
         },
@@ -77,9 +77,9 @@ export function UserFormDialog({
 
     const updateMutation = useMutation({
         mutationFn: ({ username, data }: { username: string; data: UserUpdateInput }) =>
-            api.updateUser(username, data),
+            users.update(username, data),
         onSuccess: () => {
-            toast.success("UserDTO updated successfully")
+            toast.success("User updated successfully")
             queryClient.invalidateQueries({ queryKey: ["users"] })
             onOpenChange(false)
         },

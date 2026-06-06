@@ -85,7 +85,7 @@ export function LogsTable({ data, sorting, onSortingChange, onViewDetail }: Logs
         },
         {
             accessorKey: "user_id",
-            header: "UserDTO",
+            header: "User",
             cell: ({ row }) => <div className="text-xs truncate max-w-[100px]" title={row.getValue("user_id")}>{row.getValue("user_id")}</div>
         },
         {

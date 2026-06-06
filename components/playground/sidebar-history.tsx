@@ -1,9 +1,10 @@
 "use client"
 
+import { conversations } from "@/lib/api";
 import type { ConversationDTO } from "@/lib/schemas/conversation";
 import * as React from "react"
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { api } from "@/lib/api"
+
 import { cn } from "@/lib/utils"
 import { Loader2, MessageSquare, MoreHorizontal, Pencil, Trash2, Check, X } from "lucide-react"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
@@ -186,7 +187,7 @@ export function SidebarHistory() {
     } = useInfiniteQuery({
         queryKey: ["conversations", "sidebar"],
         initialPageParam: 1,
-        queryFn: ({ pageParam = 1 }) => api.getConversations(pageParam, 10),
+        queryFn: ({ pageParam = 1 }) => conversations.list({ page: pageParam, page_size: 10 }),
         getNextPageParam: (lastPage) => {
             if (!lastPage) return undefined
             const hasMore = lastPage.page * lastPage.page_size < lastPage.total
@@ -196,7 +197,7 @@ export function SidebarHistory() {
 
     // Delete mutation
     const deleteMutation = useMutation({
-        mutationFn: (convId: string) => api.deleteConversation(convId),
+        mutationFn: (convId: string) => conversations.remove(convId),
         onSuccess: (_, convId) => {
             // Close any tab with this conversation
             const tabToRemove = tabs.find(t => t.conversationId === convId)
@@ -205,7 +206,7 @@ export function SidebarHistory() {
             }
             // Invalidate queries
             queryClient.invalidateQueries({ queryKey: ["conversations"] })
-            toast.success("ConversationDTO deleted")
+            toast.success("Conversation deleted")
         },
         onError: () => {
             toast.error("Failed to delete conversation")
@@ -215,7 +216,7 @@ export function SidebarHistory() {
     // Rename mutation
     const renameMutation = useMutation({
         mutationFn: ({ convId, title }: { convId: string; title: string }) =>
-            api.updateConversationTitle(convId, title),
+            conversations.updateTitle(convId, title),
         onSuccess: (_, { convId, title }) => {
             // Update tab title if open
             const tabToUpdate = tabs.find(t => t.conversationId === convId)
@@ -224,7 +225,7 @@ export function SidebarHistory() {
             }
             // Invalidate queries
             queryClient.invalidateQueries({ queryKey: ["conversations"] })
-            toast.success("ConversationDTO renamed")
+            toast.success("Conversation renamed")
         },
         onError: () => {
             toast.error("Failed to rename conversation")
@@ -276,7 +277,7 @@ export function SidebarHistory() {
 
     // Deduplicate conversations by id (can happen with pagination + new data)
     // IMPORTANT: Must be called before any conditional returns to follow Rules of Hooks
-    const conversations = React.useMemo(() => {
+    const convList = React.useMemo(() => {
         const items = data?.pages.flatMap((page) => page?.items || []) || []
         const seen = new Set<string>()
         return items.filter(conv => {
@@ -294,7 +295,7 @@ export function SidebarHistory() {
         )
     }
 
-    if (conversations.length === 0) {
+    if (convList.length === 0) {
         return (
             <div className="px-4 py-2 text-xs text-muted-foreground/60 italic">
                 No conversations yet
@@ -308,7 +309,7 @@ export function SidebarHistory() {
             className="max-h-[280px] overflow-y-auto scrollbar-none ml-2 mr-1 my-1"
         >
             <div className="space-y-0.5 pr-1">
-                {conversations.map((conv) => (
+                {convList.map((conv) => (
                     <ConversationItem
                         key={conv.id}
                         conv={conv}

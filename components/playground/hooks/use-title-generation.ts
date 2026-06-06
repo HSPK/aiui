@@ -1,10 +1,11 @@
 "use client"
 
+import { conversations, gateway } from "@/lib/api";
 import * as React from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
 import { useSettingsStore } from "@/lib/stores/settings-store"
-import { api } from "@/lib/api"
+
 import type { Message } from "@/components/playground/chat/types"
 
 interface UseTitleGenerationOptions {
@@ -69,11 +70,11 @@ export function useTitleGeneration({
         if (!summaryModel) return
 
         // Generate title in background
-        api.generateTitle(summaryModel, userMsg.content, assistantMsg.content)
+        gateway.generateTitle({ model: summaryModel, user: userMsg.content, assistant: assistantMsg.content })
             .then(title => {
                 updateTabTitle(tabId, title)
                 // Also update on backend
-                api.updateConversationTitle(conversationId, title).catch(() => {
+                conversations.updateTitle(conversationId, title).catch(() => {
                     // Ignore backend errors, local title is sufficient
                 })
                 // Refresh sidebar history

@@ -1,9 +1,9 @@
 "use client"
 
+import { users } from "@/lib/api";
 import type { UserDTO, UserFilterParams } from "@/lib/schemas/user";
 import { useState, useCallback } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { api } from "@/lib/api"
 
 import { useAuth } from "@/context/auth-context"
 import { UsersTable } from "@/components/users/users-table"
@@ -45,15 +45,15 @@ export default function UsersPage() {
 
     const { data, isLoading, isFetching, refetch } = useQuery({
         queryKey: ["users", queryParams],
-        queryFn: () => api.getUsers(queryParams),
+        queryFn: () => users.list(queryParams),
         enabled: currentUser?.role === "admin",
         placeholderData: (prev) => prev,
     })
 
     const deleteMutation = useMutation({
-        mutationFn: api.deleteUser,
+        mutationFn: users.remove,
         onSuccess: () => {
-            toast.success("UserDTO deleted successfully")
+            toast.success("User deleted successfully")
             queryClient.invalidateQueries({ queryKey: ["users"] })
             setDeletingUser(null)
         },

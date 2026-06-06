@@ -1,12 +1,13 @@
 "use client"
 
+import { models } from "@/lib/api";
 import * as React from "react"
 import * as ReactDOM from "react-dom"
 import { ChevronsUpDown, Search, X, Bot } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useQuery } from "@tanstack/react-query"
-import { api } from "@/lib/api"
+
 import { cn } from "@/lib/utils"
 import { useSettingsStore } from "@/lib/stores/settings-store"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
@@ -73,30 +74,30 @@ export function ModelSelector({ selectedModelIds, onModelSelect, side = "top", a
 
     const { data: modelsData, isLoading } = useQuery({
         queryKey: ["models"],
-        queryFn: () => api.getModels(),
+        queryFn: () => models.list(),
         staleTime: 5 * 60 * 1000,
         gcTime: 10 * 60 * 1000,
     })
 
-    const models = React.useMemo(() => {
+    const chatModels = React.useMemo(() => {
         const allModels = Array.isArray(modelsData) ? modelsData : []
         return allModels.filter(m => m.type === "chat")
     }, [modelsData])
 
     // Auto-select default model
     React.useEffect(() => {
-        if (!isLoading && models.length > 0 && selectedModelIds.length === 0) {
+        if (!isLoading && chatModels.length > 0 && selectedModelIds.length === 0) {
             const userDefault = defaultModel || "gpt-3.5-turbo"
-            const hasDefault = models.some(m => m.name === userDefault)
-            onModelSelect([hasDefault ? userDefault : models[0].name])
+            const hasDefault = chatModels.some(m => m.name === userDefault)
+            onModelSelect([hasDefault ? userDefault : chatModels[0].name])
         }
-    }, [isLoading, models, selectedModelIds.length, onModelSelect, defaultModel])
+    }, [isLoading, chatModels, selectedModelIds.length, onModelSelect, defaultModel])
 
     const filteredModels = React.useMemo(() => {
-        if (!searchQuery) return models
+        if (!searchQuery) return chatModels
         const q = searchQuery.toLowerCase()
-        return models.filter(m => m.name.toLowerCase().includes(q))
-    }, [models, searchQuery])
+        return chatModels.filter(m => m.name.toLowerCase().includes(q))
+    }, [chatModels, searchQuery])
 
     // Close on click outside
     React.useEffect(() => {
@@ -232,33 +233,33 @@ export function ConnectedModelSelector({ tabId }: { tabId: string }) {
 
     const { data: modelsData, isLoading } = useQuery({
         queryKey: ["models"],
-        queryFn: () => api.getModels(),
+        queryFn: () => models.list(),
         staleTime: 5 * 60 * 1000,
         gcTime: 10 * 60 * 1000,
     })
 
-    const models = React.useMemo(() => {
+    const chatModels = React.useMemo(() => {
         const allModels = Array.isArray(modelsData) ? modelsData : []
         return allModels.filter(m => m.type === "chat")
     }, [modelsData])
 
     // Auto-select default model
     React.useEffect(() => {
-        if (!isLoading && models.length > 0) {
+        if (!isLoading && chatModels.length > 0) {
             const currentIds = storeRef.current.getState().tabs.find(t => t.id === tabId)?.modelIds || []
             if (currentIds.length === 0) {
                 const userDefault = defaultModel || "gpt-3.5-turbo"
-                const hasDefault = models.some(m => m.name === userDefault)
-                updateTab(tabId, { modelIds: [hasDefault ? userDefault : models[0].name] })
+                const hasDefault = chatModels.some(m => m.name === userDefault)
+                updateTab(tabId, { modelIds: [hasDefault ? userDefault : chatModels[0].name] })
             }
         }
-    }, [isLoading, models, defaultModel, tabId, updateTab])
+    }, [isLoading, chatModels, defaultModel, tabId, updateTab])
 
     const filteredModels = React.useMemo(() => {
-        if (!searchQuery) return models
+        if (!searchQuery) return chatModels
         const q = searchQuery.toLowerCase()
-        return models.filter(m => m.name.toLowerCase().includes(q))
-    }, [models, searchQuery])
+        return chatModels.filter(m => m.name.toLowerCase().includes(q))
+    }, [chatModels, searchQuery])
 
     // Calculate dropdown position - returns style object
     const calculatePosition = React.useCallback((): React.CSSProperties => {

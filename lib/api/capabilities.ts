@@ -1,6 +1,16 @@
-import { fetcher } from "./client";
+import { defineResource } from "./resource";
 import type { CapabilityDTO } from "@/lib/schemas/capability";
 
-export const capabilitiesApi = {
-    list: () => fetcher<CapabilityDTO[]>("/capabilities"),
-};
+/** Read-only catalog. */
+export const capabilities = defineResource<
+    CapabilityDTO,
+    never,
+    never,
+    Record<string, unknown>,
+    CapabilityDTO[]
+>({
+    path: "/capabilities",
+    key: "capabilities",
+    listShape: "array",
+    staleTime: 60_000,
+});
