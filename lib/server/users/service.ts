@@ -5,26 +5,14 @@ import { db } from "../db";
 import { users } from "../db/schema";
 import { hashPassword } from "../auth";
 import { badRequest, notFound } from "../response";
-import type { UserCreateInput, UserListQuery, UserUpdateInput } from "./schemas";
-
-export interface UserDTO {
-    username: string;
-    role: "admin" | "user";
-    created_at: string;
-}
+import type { Paginated } from "@/lib/schemas/common";
+import type { UserCreateInput, UserDTO, UserListQuery, UserUpdateInput } from "@/lib/schemas/user";
 
 export function serializeUser(u: typeof users.$inferSelect): UserDTO {
     return { username: u.username, role: u.role, created_at: u.createdAt };
 }
 
-export interface UserListResult {
-    items: UserDTO[];
-    total: number;
-    page: number;
-    page_size: number;
-}
-
-export function listUsers(query: UserListQuery): UserListResult {
+export function listUsers(query: UserListQuery): Paginated<UserDTO> {
     const filters: SQL[] = [];
     if (query.keyword) {
         filters.push(like(users.username, `%${query.keyword}%`));

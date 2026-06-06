@@ -1,30 +1,6 @@
 import "server-only";
 import type { Model } from "../db/schema";
-
-export interface ModelDTO {
-    id: string;
-    name: string;
-    model_id: string;
-    proxy: string | null;
-    timeout: number;
-    max_retries: number;
-    http_proxy: Record<string, string> | null;
-    default_params: Record<string, unknown>;
-    type: string;
-    pricing: Record<string, unknown> | null;
-    output_dimension: number | null;
-    context_window: number | null;
-    max_tokens: number | null;
-    description: string | null;
-    knowledge_date: string | null;
-    provider: string | null;
-    provider_id: string;
-    is_local: boolean;
-    enabled: boolean;
-    is_discovered?: boolean;
-    created_at?: string;
-    updated_at?: string;
-}
+import type { ModelDTO } from "@/lib/schemas/model";
 
 export function serializeModel(m: Model, providerName?: string | null, providerProxy?: string | null): ModelDTO {
     return {
@@ -51,3 +27,5 @@ export function serializeModel(m: Model, providerName?: string | null, providerP
         updated_at: m.updatedAt,
     };
 }
+
+export type { ModelDTO } from "@/lib/schemas/model";

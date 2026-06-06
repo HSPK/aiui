@@ -1,27 +1,7 @@
 import "server-only";
 import { maskSecret } from "../crypto";
 import type { Provider } from "../db/schema";
-
-export interface ProviderDTO {
-    id: string;
-    name: string;
-    provider_name: string;
-    type: "openai" | "azure";
-    base_url: string;
-    proxy: string;
-    api_version: string | null;
-    has_api_key: boolean;
-    api_key_mask: string;
-    default_params: Record<string, unknown>;
-    http_proxy: Record<string, string> | null;
-    document_page: string;
-    model_page: string;
-    is_local: boolean;
-    enabled: boolean;
-    n_models?: number;
-    created_at: string;
-    updated_at: string;
-}
+import type { ProviderDTO } from "@/lib/schemas/provider";
 
 export function serializeProvider(p: Provider, modelCount?: number): ProviderDTO {
     return {
@@ -45,3 +25,6 @@ export function serializeProvider(p: Provider, modelCount?: number): ProviderDTO
         updated_at: p.updatedAt,
     };
 }
+
+// Re-export the DTO type so callers can `from "@/lib/server/providers"`.
+export type { ProviderDTO } from "@/lib/schemas/provider";

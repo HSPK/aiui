@@ -1,7 +1,2 @@
-import { z } from "zod";
-
-export const apiKeyCreateSchema = z.object({
-    name: z.string().trim().min(1, "API key name is required"),
-});
-
-export type ApiKeyCreateInput = z.infer<typeof apiKeyCreateSchema>;
+// Re-export shared schemas. Single source of truth lives in lib/schemas/.
+export * from "@/lib/schemas/apikey";

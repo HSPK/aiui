@@ -4,34 +4,8 @@ import { db } from "../db";
 import { generationLogs } from "../db/schema";
 import { forbidden, notFound } from "../response";
 import type { SessionUser } from "../auth";
-import type { LogListQuery } from "./schemas";
-
-export interface LogListItemDTO {
-    id: string;
-    user_id: string;
-    model_name: string;
-    capability: string | null;
-    input_summary: string | null;
-    status: "pending" | "completed" | "failed";
-    input: unknown;
-    output: string;
-    reason: string | null;
-    prompt_tokens?: number | null;
-    completion_tokens?: number | null;
-    total_tokens?: number | null;
-    latency_ms?: number | null;
-    created_at: string;
-    updated_at: string;
-    is_deleted: boolean;
-}
-
-export interface LogDetailDTO extends LogListItemDTO {
-    content: unknown;
-    generation_kwargs: Record<string, unknown>;
-    generation: Record<string, unknown> | null;
-    conversation_id?: string;
-    message_id?: string;
-}
+import type { Paginated } from "@/lib/schemas/common";
+import type { LogDetailDTO, LogListItemDTO, LogListQuery } from "@/lib/schemas/log";
 
 function parseSortColumn(sort: string) {
     const dir = sort.startsWith("-") ? "desc" : "asc";
@@ -39,14 +13,13 @@ function parseSortColumn(sort: string) {
     const col =
         field === "model_name" ? generationLogs.modelName :
         field === "status" ? generationLogs.status :
-        field === "latency_ms" ? generationLogs.latencyMs :
+        field === "first_token_latency_ms" ? generationLogs.firstTokenLatencyMs :
+        field === "total_latency_ms" ? generationLogs.totalLatencyMs :
         generationLogs.createdAt;
     return dir === "desc" ? desc(col) : asc(col);
 }
 
-export function listLogs(user: SessionUser, query: LogListQuery): {
-    items: LogListItemDTO[]; total: number; page: number; page_size: number;
-} {
+export function listLogs(user: SessionUser, query: LogListQuery): Paginated<LogListItemDTO> {
     const filters: SQL[] = [eq(generationLogs.isDeleted, false)];
     if (user.role !== "admin") {
         filters.push(eq(generationLogs.userId, user.id));
@@ -77,10 +50,11 @@ export function listLogs(user: SessionUser, query: LogListQuery): {
         input: r.inputSummary ?? "",
         output: r.output ?? "",
         reason: r.reason,
-        prompt_tokens: r.promptTokens ?? undefined,
-        completion_tokens: r.completionTokens ?? undefined,
-        total_tokens: r.totalTokens ?? undefined,
-        latency_ms: r.latencyMs ?? undefined,
+        prompt_tokens: r.promptTokens ?? null,
+        completion_tokens: r.completionTokens ?? null,
+        total_tokens: r.totalTokens ?? null,
+        first_token_latency_ms: r.firstTokenLatencyMs ?? null,
+        total_latency_ms: r.totalLatencyMs ?? null,
         created_at: r.createdAt,
         updated_at: r.updatedAt,
         is_deleted: !!r.isDeleted,
@@ -107,10 +81,11 @@ export function getLog(user: SessionUser, id: string): LogDetailDTO {
         generation: log.generation ?? null,
         conversation_id: log.conversationId ?? undefined,
         message_id: log.messageId ?? undefined,
-        prompt_tokens: log.promptTokens ?? undefined,
-        completion_tokens: log.completionTokens ?? undefined,
-        total_tokens: log.totalTokens ?? undefined,
-        latency_ms: log.latencyMs ?? undefined,
+        prompt_tokens: log.promptTokens ?? null,
+        completion_tokens: log.completionTokens ?? null,
+        total_tokens: log.totalTokens ?? null,
+        first_token_latency_ms: log.firstTokenLatencyMs ?? null,
+        total_latency_ms: log.totalLatencyMs ?? null,
         created_at: log.createdAt,
         updated_at: log.updatedAt,
         is_deleted: !!log.isDeleted,

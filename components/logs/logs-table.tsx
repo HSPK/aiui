@@ -134,7 +134,7 @@ export function LogsTable({ data, sorting, onSortingChange, onViewDetail }: Logs
             }
         },
         {
-            accessorKey: "latency_ms",
+            accessorKey: "total_latency_ms",
             header: ({ column }) => (
                 <Button
                     variant="ghost"
@@ -147,13 +147,24 @@ export function LogsTable({ data, sorting, onSortingChange, onViewDetail }: Logs
                 </Button>
             ),
             cell: ({ row }) => {
-                const ms = row.original.latency_ms
+                const total = row.original.total_latency_ms
+                const ttft = row.original.first_token_latency_ms
+                const title = ttft != null
+                    ? `TTFT: ${formatLatency(ttft)} · Total: ${formatLatency(total)}`
+                    : undefined
                 return (
-                    <div className="text-right text-xs font-mono whitespace-nowrap">
-                        {ms != null ? (
-                            <span className={ms > 5000 ? "text-amber-600 dark:text-amber-400" : "text-foreground"}>
-                                {formatLatency(ms)}
-                            </span>
+                    <div className="text-right text-xs font-mono whitespace-nowrap" title={title}>
+                        {total != null ? (
+                            <>
+                                <span className={total > 5000 ? "text-amber-600 dark:text-amber-400" : "text-foreground"}>
+                                    {formatLatency(total)}
+                                </span>
+                                {ttft != null && (
+                                    <span className="text-muted-foreground/70 ml-1">
+                                        (TTFT {formatLatency(ttft)})
+                                    </span>
+                                )}
+                            </>
                         ) : (
                             <span className="text-muted-foreground">—</span>
                         )}

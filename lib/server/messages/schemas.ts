@@ -1,8 +1,2 @@
-import { z } from "zod";
-
-export const messageRatingSchema = z.object({
-    rating: z.enum(["up", "down", "none"]),
-    feedback: z.string().nullable().optional(),
-});
-
-export type MessageRatingInput = z.infer<typeof messageRatingSchema>;
+// Re-export shared schemas. Single source of truth lives in lib/schemas/.
+export * from "@/lib/schemas/conversation";

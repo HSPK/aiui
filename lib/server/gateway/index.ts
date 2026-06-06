@@ -155,7 +155,10 @@ function completeLog(
         promptTokens?: number | null;
         completionTokens?: number | null;
         totalTokens?: number | null;
-        latencyMs?: number;
+        /** ms from upstream fetch start to first content delta (streaming only). */
+        firstTokenLatencyMs?: number | null;
+        /** ms from upstream fetch start to response fully consumed (always). */
+        totalLatencyMs?: number;
     },
 ) {
     db.update(schema.generationLogs).set({
@@ -167,7 +170,8 @@ function completeLog(
         promptTokens: fields.promptTokens ?? null,
         completionTokens: fields.completionTokens ?? null,
         totalTokens: fields.totalTokens ?? null,
-        latencyMs: fields.latencyMs ?? null,
+        firstTokenLatencyMs: fields.firstTokenLatencyMs ?? null,
+        totalLatencyMs: fields.totalLatencyMs ?? null,
         updatedAt: new Date().toISOString(),
     }).where(eq(schema.generationLogs.id, id)).run();
 }
@@ -238,7 +242,7 @@ export async function forwardGeneration(
         });
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        completeLog(logId, { status: "failed", reason: message, latencyMs: Date.now() - started });
+        completeLog(logId, { status: "failed", reason: message, totalLatencyMs: Date.now() - started });
         throw new HttpError(`Upstream request failed: ${message}`, 502);
     }
 
@@ -248,7 +252,7 @@ export async function forwardGeneration(
             status: "failed",
             reason: `Upstream HTTP ${upstream.status}`,
             output: text.slice(0, 4000),
-            latencyMs: Date.now() - started,
+            totalLatencyMs: Date.now() - started,
         });
         return {
             response: new Response(text, {
@@ -274,7 +278,7 @@ export async function forwardGeneration(
                 promptTokens: parsed.promptTokens ?? null,
                 completionTokens: parsed.completionTokens ?? null,
                 totalTokens: parsed.totalTokens ?? null,
-                latencyMs: Date.now() - started,
+                totalLatencyMs: Date.now() - started,
             });
             opts.onComplete?.({
                 content: typeof parsed.output === "string" ? parsed.output : "",
@@ -291,7 +295,7 @@ export async function forwardGeneration(
         completeLog(logId, {
             status: "completed",
             output: `binary response (${contentType || "unknown"}, ${buf.byteLength} bytes)`,
-            latencyMs: Date.now() - started,
+            totalLatencyMs: Date.now() - started,
         });
         return {
             response: new Response(buf, { headers: { "Content-Type": contentType || "application/octet-stream" } }),
@@ -301,7 +305,7 @@ export async function forwardGeneration(
 
     // ---- streaming branch ----
     if (!upstream.body) {
-        completeLog(logId, { status: "failed", reason: "Upstream returned empty stream", latencyMs: Date.now() - started });
+        completeLog(logId, { status: "failed", reason: "Upstream returned empty stream", totalLatencyMs: Date.now() - started });
         throw new HttpError("Upstream returned empty stream", 502);
     }
 
@@ -309,6 +313,7 @@ export async function forwardGeneration(
     let accumReasoning = "";
     let usage: Record<string, unknown> | undefined;
     let buf = "";
+    let firstTokenMs: number | null = null;
 
     const decoder = new TextDecoder();
     const transformer = new TransformStream<Uint8Array, Uint8Array>({
@@ -326,9 +331,12 @@ export async function forwardGeneration(
                 try {
                     const json = JSON.parse(data);
                     const delta = capability.parseStreamChunk?.(json) ?? { content: "", reasoning: "" };
-                    if (delta.content) accumContent += delta.content;
-                    if (delta.reasoning) accumReasoning += delta.reasoning;
-                    if (delta.content || delta.reasoning) opts.onStreamDelta?.(delta);
+                    if (delta.content || delta.reasoning) {
+                        if (firstTokenMs === null) firstTokenMs = Date.now() - started;
+                        if (delta.content) accumContent += delta.content;
+                        if (delta.reasoning) accumReasoning += delta.reasoning;
+                        opts.onStreamDelta?.(delta);
+                    }
                     const maybeUsage = (json as { usage?: Record<string, unknown> })?.usage;
                     if (maybeUsage) usage = maybeUsage;
                 } catch {
@@ -346,7 +354,8 @@ export async function forwardGeneration(
                 promptTokens: u?.prompt_tokens ?? null,
                 completionTokens: u?.completion_tokens ?? null,
                 totalTokens: u?.total_tokens ?? null,
-                latencyMs: Date.now() - started,
+                firstTokenLatencyMs: firstTokenMs,
+                totalLatencyMs: Date.now() - started,
             });
             opts.onComplete?.({ content: accumContent, reasoning: accumReasoning, usage });
         },

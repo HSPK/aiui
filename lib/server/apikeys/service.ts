@@ -5,15 +5,7 @@ import { db } from "../db";
 import { apiKeys } from "../db/schema";
 import { generateApiKey } from "../auth";
 import { notFound } from "../response";
-import type { ApiKeyCreateInput } from "./schemas";
-
-export interface ApiKeyDTO {
-    id: string;
-    name: string;
-    prefix: string;
-    last_used_at: string | null;
-    created_at: string;
-}
+import type { ApiKeyCreateInput, ApiKeyCreatedDTO, ApiKeyDTO } from "@/lib/schemas/apikey";
 
 export function listApiKeys(userId: string): ApiKeyDTO[] {
     return db
@@ -30,7 +22,7 @@ export function listApiKeys(userId: string): ApiKeyDTO[] {
         .all();
 }
 
-export function createUserApiKey(userId: string, input: ApiKeyCreateInput): ApiKeyDTO & { key: string } {
+export function createUserApiKey(userId: string, input: ApiKeyCreateInput): ApiKeyCreatedDTO {
     const { plain, prefix, hash } = generateApiKey();
     const id = randomUUID();
     const createdAt = new Date().toISOString();

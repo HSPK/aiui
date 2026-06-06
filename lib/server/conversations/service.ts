@@ -3,23 +3,16 @@ import { and, asc, count, desc, eq, like, or, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { conversations, messages } from "../db/schema";
 import { forbidden, notFound } from "../response";
-import type { ConversationListQuery, ConversationTitleInput } from "./schemas";
+import type { Paginated } from "@/lib/schemas/common";
+import type {
+    ConversationDTO,
+    ConversationListQuery,
+    ConversationTitleInput,
+    MessageDTO,
+    MessageListQuery,
+} from "@/lib/schemas/conversation";
 
-export interface ConversationDTO {
-    id: string;
-    user_id: string;
-    title: string;
-    config: Record<string, unknown>;
-    group_id?: string;
-    search_text?: string;
-    created_at: string;
-    updated_at: string;
-    is_deleted: boolean;
-}
-
-export function listConversations(userId: string, query: ConversationListQuery): {
-    items: ConversationDTO[]; total: number; page: number; page_size: number;
-} {
+export function listConversations(userId: string, query: ConversationListQuery): Paginated<ConversationDTO> {
     const filters: SQL[] = [
         eq(conversations.userId, userId),
         eq(conversations.isDeleted, false),
@@ -79,31 +72,7 @@ export function updateConversationTitle(userId: string, id: string, input: Conve
 
 // ---- messages under a conversation ----
 
-export interface MessageDTO {
-    id: string;
-    conversation_id: string;
-    role: "user" | "assistant" | "system" | "tool";
-    content: unknown;
-    reasoning_content?: string;
-    model_id?: string;
-    generation_id?: string;
-    parent_id?: string;
-    meta?: Record<string, unknown>;
-    is_active: boolean;
-    rating?: "up" | "down";
-    feedback?: string;
-    created_at: string;
-}
-
-export interface MessageListQuery {
-    page: number;
-    page_size: number;
-    sort: string;
-}
-
-export function listMessages(userId: string, conversationId: string, query: MessageListQuery): {
-    items: MessageDTO[]; total: number; page: number; page_size: number;
-} {
+export function listMessages(userId: string, conversationId: string, query: MessageListQuery): Paginated<MessageDTO> {
     loadOwned(userId, conversationId);
 
     const orderExpr = query.sort.startsWith("-") ? desc(messages.createdAt) : asc(messages.createdAt);

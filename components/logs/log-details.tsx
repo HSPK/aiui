@@ -359,12 +359,28 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                                 </div>
                             </div>
                             <div className="space-y-1">
-                                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Latency</span>
-                                <div className="text-sm font-mono">
-                                    {log.latency_ms != null
-                                        ? log.latency_ms < 1000
-                                            ? `${log.latency_ms}ms`
-                                            : `${(log.latency_ms / 1000).toFixed(2)}s`
+                                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">TTFT</span>
+                                <div
+                                    className="text-sm font-mono"
+                                    title="Time to first token (streaming only)"
+                                >
+                                    {log.first_token_latency_ms != null
+                                        ? log.first_token_latency_ms < 1000
+                                            ? `${log.first_token_latency_ms}ms`
+                                            : `${(log.first_token_latency_ms / 1000).toFixed(2)}s`
+                                        : "—"}
+                                </div>
+                            </div>
+                            <div className="space-y-1">
+                                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Total Latency</span>
+                                <div
+                                    className="text-sm font-mono"
+                                    title="End-to-end latency from request start to response fully consumed"
+                                >
+                                    {log.total_latency_ms != null
+                                        ? log.total_latency_ms < 1000
+                                            ? `${log.total_latency_ms}ms`
+                                            : `${(log.total_latency_ms / 1000).toFixed(2)}s`
                                         : "—"}
                                 </div>
                             </div>
