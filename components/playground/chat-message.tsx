@@ -4,7 +4,7 @@ import { messages } from "@/lib/api";
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Check, Copy, ChevronDown, ChevronRight, ChevronLeft, ThumbsUp, ThumbsDown, Info, RotateCcw } from "lucide-react"
+import { Check, Copy, ChevronDown, ChevronRight, ChevronLeft, ThumbsUp, ThumbsDown, Info, RotateCcw, AlertCircle } from "lucide-react"
 import { cn, formatMessageTime } from "@/lib/utils"
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -134,6 +134,9 @@ interface ChatMessageProps {
     // Retry/regenerate support
     isLastAssistant?: boolean
     onRetry?: () => void
+    /** Per-message retry for failed assistant slots — wired to the
+     *  retry button on the inline error card. */
+    onRetryFailed?: (failedAssistantId: string) => void
     isLoading?: boolean
     // Sibling display
     isSibling?: boolean
@@ -149,13 +152,14 @@ export const ChatMessage = React.memo(({
     onViewGeneration,
     isLastAssistant,
     onRetry,
+    onRetryFailed,
     isLoading,
     isSibling,
     siblingCount,
     isSelected,
     onSelect
 }: ChatMessageProps) => {
-    const { role, content, reasoning_content, model_id, created_at, createdAt, generation_id, rating: initialRating } = message
+    const { role, content, reasoning_content, model_id, created_at, createdAt, generation_id, rating: initialRating, error: messageError } = message
     const messageDate = created_at || createdAt
     const [copied, setCopied] = React.useState(false)
     const [isReasoningOpen, setIsReasoningOpen] = React.useState(true)
@@ -313,22 +317,50 @@ export const ChatMessage = React.memo(({
                 )}
 
                 <div className="w-full min-w-0">
-                    <div className={cn(
-                        "prose prose-sm dark:prose-invert max-w-none break-words relative leading-relaxed",
-                        "[&_pre]:m-0 [&_pre]:p-0 [&_pre]:bg-transparent",
-                        isTyping && displayContent && "typing-active"
-                    )}>
-                        <ReactMarkdown
-                            remarkPlugins={[remarkMath, remarkGfm]}
-                            rehypePlugins={[rehypeKatex]}
-                            components={markdownComponents}
-                        >
-                            {displayContent}
-                        </ReactMarkdown>
-                        {isTyping && !displayContent && (
-                            <span className="typing-cursor text-primary">▋</span>
-                        )}
-                    </div>
+                    {messageError ? (
+                        <div className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
+                            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-destructive" />
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-destructive">
+                                    Generation failed
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-1 break-words">
+                                    {messageError}
+                                </p>
+                            </div>
+                            {onRetryFailed && !isLoading && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 shrink-0 text-xs"
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        onRetryFailed(message.id)
+                                    }}
+                                >
+                                    <RotateCcw className="h-3 w-3 mr-1" />
+                                    Retry
+                                </Button>
+                            )}
+                        </div>
+                    ) : (
+                        <div className={cn(
+                            "prose prose-sm dark:prose-invert max-w-none break-words relative leading-relaxed",
+                            "[&_pre]:m-0 [&_pre]:p-0 [&_pre]:bg-transparent",
+                            isTyping && displayContent && "typing-active"
+                        )}>
+                            <ReactMarkdown
+                                remarkPlugins={[remarkMath, remarkGfm]}
+                                rehypePlugins={[rehypeKatex]}
+                                components={markdownComponents}
+                            >
+                                {displayContent}
+                            </ReactMarkdown>
+                            {isTyping && !displayContent && (
+                                <span className="typing-cursor text-primary">▋</span>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
 

@@ -26,6 +26,7 @@ interface MessageListProps {
     isLoading: boolean
     onViewGeneration?: (generationId: string) => void
     onRetry?: () => void
+    onRetryFailed?: (failedAssistantId: string) => void
     // For sibling navigation - map of parent_id to selected sibling index
     selectedSiblings?: Map<string, number>
     onSelectSibling?: (parentId: string, index: number) => void
@@ -36,6 +37,7 @@ export const MessageList = React.memo(({
     isLoading,
     onViewGeneration,
     onRetry,
+    onRetryFailed,
     selectedSiblings,
     onSelectSibling
 }: MessageListProps) => {
@@ -192,10 +194,11 @@ export const MessageList = React.memo(({
                                         key={sibling.id}
                                         message={sibling}
                                         provider={sibling.model_id ? modelProviderMap.get(sibling.model_id) : undefined}
-                                        isTyping={isLoading && !sibling.generation_id}
+                                        isTyping={isLoading && !sibling.generation_id && !sibling.error}
                                         onViewGeneration={onViewGeneration}
                                         isLastAssistant={sibling.id === lastAssistantIndex}
                                         onRetry={onRetry}
+                                        onRetryFailed={onRetryFailed}
                                         isLoading={isLoading}
                                         isSibling={true}
                                         siblingCount={siblings.length}
@@ -224,16 +227,17 @@ export const MessageList = React.memo(({
                     key={m.id}
                     message={m}
                     provider={m.model_id ? modelProviderMap.get(m.model_id) : undefined}
-                    isTyping={isLoading && m.role === 'assistant' && !m.generation_id}
+                    isTyping={isLoading && m.role === 'assistant' && !m.generation_id && !m.error}
                     onViewGeneration={onViewGeneration}
                     isLastAssistant={m.id === lastAssistantIndex && m.role === 'assistant'}
                     onRetry={m.role === 'assistant' ? onRetry : undefined}
+                    onRetryFailed={m.role === 'assistant' ? onRetryFailed : undefined}
                     isLoading={isLoading}
                 />
             )
         })
         return items
-    }, [messages, isLoading, modelProviderMap, onViewGeneration, siblingGroups, getSelectedIndex, onSelectSibling, lastAssistantIndex, onRetry])
+    }, [messages, isLoading, modelProviderMap, onViewGeneration, siblingGroups, getSelectedIndex, onSelectSibling, lastAssistantIndex, onRetry, onRetryFailed])
 
     return (
         <div className={cn("pb-36 pt-4 max-w-full overflow-hidden", messages.length === 0 && "min-h-[calc(100vh-200px)] flex flex-col")}>

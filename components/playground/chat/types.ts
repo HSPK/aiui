@@ -12,6 +12,10 @@ export type Message = {
     generation_id?: string
     rating?: string
     feedback?: string
+    /** When set, this assistant slot represents a failed generation.
+     *  The chat UI renders it as an inline error card under the user
+     *  message and shows a retry button instead of normal content. */
+    error?: string
 }
 
 export type StreamConfig = {

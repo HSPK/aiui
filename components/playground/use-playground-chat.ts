@@ -40,7 +40,7 @@ export function usePlaygroundChat({
     isLoadingRef.current = isLoading
 
     // ============ Stream Hook ============
-    const { streamMultiple, stopAll } = useChatStream(
+    const { streamMultiple, retryFailedMessage, stopAll } = useChatStream(
         conversationId,
         setMessages,
         updateInterval
@@ -153,6 +153,36 @@ export function usePlaygroundChat({
         }
     }, [streamMultiple]) // Remove messages/isLoading dependency!
 
+    const handleRetryFailed = useCallback(async (
+        failedAssistantId: string,
+        options?: ChatOptions
+    ) => {
+        if (isLoadingRef.current) return
+
+        const currentMessages = messagesRef.current
+        const failed = currentMessages.find(m => m.id === failedAssistantId)
+        if (!failed || !failed.error) return
+
+        const userMessage = currentMessages.find(m => m.id === failed.parent_id)
+        if (!userMessage) return
+
+        setError(null)
+        setIsLoading(true)
+
+        try {
+            await retryFailedMessage(
+                failed,
+                userMessage.content,
+                options?.getModelConfig
+            )
+        } catch (err: any) {
+            console.error("Chat Retry Failed Error:", err)
+            setError(err)
+        } finally {
+            setIsLoading(false)
+        }
+    }, [retryFailedMessage])
+
     const handleRegenerate = useCallback(async (options?: ChatOptions) => {
         if (isLoadingRef.current) return
 
@@ -205,6 +235,7 @@ export function usePlaygroundChat({
         messages,
         handleSubmit,
         handleRetry,
+        handleRetryFailed,
         handleRegenerate,
         isLoading,
         setMessages,

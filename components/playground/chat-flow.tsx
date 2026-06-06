@@ -69,6 +69,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         messages,
         handleSubmit,
         handleRetry,
+        handleRetryFailed,
         handleRegenerate,
         isLoading,
         setMessages,
@@ -159,6 +160,15 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         })
     }, [buildPerModelConfig, handleRegenerate, getModelIds])
 
+    // Per-message retry — triggered by the retry button on an inline
+    // error card. Re-streams just that one failed assistant slot.
+    const onRetryFailed = React.useCallback((failedAssistantId: string) => {
+        handleRetryFailed(failedAssistantId, {
+            models: getModelIds(),
+            getModelConfig: buildPerModelConfig
+        })
+    }, [buildPerModelConfig, handleRetryFailed, getModelIds])
+
     // --- Render ---
 
     return (
@@ -174,6 +184,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                         isLoading={isLoading}
                         onViewGeneration={handleViewGeneration}
                         onRetry={onRegenerate}
+                        onRetryFailed={onRetryFailed}
                         selectedSiblings={selectedSiblings}
                         onSelectSibling={onSelectSibling}
                     />
