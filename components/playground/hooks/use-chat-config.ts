@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
-import { useSettingsStore } from "@/lib/stores/settings-store"
+import { preferences } from "@/lib/api"
 
 export interface ChatConfig {
     historyLimit: number
@@ -25,7 +25,8 @@ export interface UseChatConfigReturn {
  */
 export function useChatConfig(tabId: string): UseChatConfigReturn {
     const updateTab = usePlaygroundStore((state) => state.updateTab)
-    const settings = useSettingsStore()
+    const { data: userPrefs } = preferences.useGet()
+    const defaultHistoryLimit = userPrefs?.default_history_limit ?? 10
 
     // Get initial values from tab or settings
     const getInitialTab = React.useCallback(() => {
@@ -35,7 +36,7 @@ export function useChatConfig(tabId: string): UseChatConfigReturn {
     const initialTab = getInitialTab()
 
     const [historyLimit, setHistoryLimit] = React.useState(
-        initialTab?.historyLimit ?? settings.defaultHistoryLimit
+        initialTab?.historyLimit ?? defaultHistoryLimit
     )
 
     // Config ref for ChatInput - prevents re-renders

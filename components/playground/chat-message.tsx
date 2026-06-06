@@ -12,7 +12,7 @@ import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { ProviderIcon } from "@/components/ProviderIcon"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { useSettingsStore } from "@/lib/stores/settings-store"
+import { preferences } from "@/lib/api"
 
 import { toast } from "sonner"
 import { CodeBlock, InlineCode } from "./code-block"
@@ -161,7 +161,9 @@ export const ChatMessage = React.memo(({
     const [isReasoningOpen, setIsReasoningOpen] = React.useState(true)
     const [rating, setRating] = React.useState<"up" | "down" | "none">(initialRating || "none")
     const [isRating, setIsRating] = React.useState(false)
-    const { userName, userAvatar } = useSettingsStore()
+    const { data: userPrefs } = preferences.useGet()
+    const userName = userPrefs?.user_name ?? "User"
+    const userAvatar = userPrefs?.user_avatar ?? "👤"
 
     // Sync rating state when initialRating changes (e.g., from server)
     React.useEffect(() => {

@@ -1,6 +1,6 @@
 "use client"
 
-import { models } from "@/lib/api";
+import { models, preferences } from "@/lib/api";
 import * as React from "react"
 import * as ReactDOM from "react-dom"
 import { ChevronsUpDown, Search, X, Bot } from "lucide-react"
@@ -9,7 +9,6 @@ import { Input } from "@/components/ui/input"
 import { useQuery } from "@tanstack/react-query"
 
 import { cn } from "@/lib/utils"
-import { useSettingsStore } from "@/lib/stores/settings-store"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
 import { ProviderIcon } from "@/components/ProviderIcon"
 import { useShallow } from "zustand/react/shallow"
@@ -64,7 +63,8 @@ export function ModelSelector({ selectedModelIds, onModelSelect, side = "top", a
     const [open, setOpen] = React.useState(false)
     const [searchQuery, setSearchQuery] = React.useState("")
     const containerRef = React.useRef<HTMLDivElement>(null)
-    const { defaultModel } = useSettingsStore()
+    const { data: userPrefs } = preferences.useGet()
+    const defaultModel = userPrefs?.default_model ?? ""
 
     // Use refs to keep stable callback references
     const selectedIdsRef = React.useRef(selectedModelIds)
@@ -220,7 +220,8 @@ export function ConnectedModelSelector({ tabId }: { tabId: string }) {
     const triggerRef = React.useRef<HTMLButtonElement>(null)
     const dropdownRef = React.useRef<HTMLDivElement>(null)
     const [dropdownStyle, setDropdownStyle] = React.useState<React.CSSProperties>({})
-    const { defaultModel } = useSettingsStore()
+    const { data: userPrefs } = preferences.useGet()
+    const defaultModel = userPrefs?.default_model ?? ""
 
     // Direct store access - stable refs
     const storeRef = React.useRef(usePlaygroundStore)

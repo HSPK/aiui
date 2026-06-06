@@ -7,3 +7,4 @@ export * from "./capability";
 export * from "./log";
 export * from "./conversation";
 export * from "./playground";
+export * from "./preferences";

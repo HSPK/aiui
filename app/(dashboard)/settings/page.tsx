@@ -1,10 +1,11 @@
 "use client"
 
-import { models } from "@/lib/api";
+import { models, preferences } from "@/lib/api";
 import * as React from "react"
 import { useQuery } from "@tanstack/react-query"
 
-import { useSettingsStore } from "@/lib/stores/settings-store"
+import { useDeviceSettingsStore } from "@/lib/stores/device-settings-store"
+import { defaultUserPreferences } from "@/lib/schemas/preferences"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -20,6 +21,7 @@ import {
 import { RotateCcw, Check, Bot, User, MessageSquare, Palette, Settings, ChevronDown, Search } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ProviderIcon } from "@/components/ProviderIcon"
+import { toast } from "sonner"
 
 const AVATAR_OPTIONS = ['👤', '😀', '😎', '🤖', '🦊', '🐱', '🐶', '🦁', '🐼', '🐨', '🐸', '🦄', '🌟', '💫', '🎯', '🚀']
 
@@ -169,7 +171,10 @@ function SettingsField({ label, description, children }: {
 }
 
 export default function SettingsPage() {
-    const settings = useSettingsStore()
+    const { data: userPrefsServer } = preferences.useGet()
+    const updateUserPrefs = preferences.useUpdate()
+    const userPrefs = userPrefsServer ?? defaultUserPreferences
+    const deviceSettings = useDeviceSettingsStore()
     const [saved, setSaved] = React.useState(false)
 
     const { data: modelsData, isLoading: modelsLoading } = useQuery({
@@ -185,9 +190,24 @@ export default function SettingsPage() {
         }))
     }, [modelsData])
 
-    const handleSave = () => {
-        setSaved(true)
-        setTimeout(() => setSaved(false), 2000)
+    const patchUserPrefs = (patch: Parameters<typeof updateUserPrefs.mutate>[0]) => {
+        updateUserPrefs.mutate(patch, {
+            onSuccess: () => {
+                setSaved(true)
+                setTimeout(() => setSaved(false), 1500)
+            },
+            onError: (err) => toast.error(err.message || "Failed to save"),
+        })
+    }
+
+    const resetAll = () => {
+        updateUserPrefs.mutate(defaultUserPreferences, {
+            onSuccess: () => {
+                deviceSettings.resetDeviceSettings()
+                toast.success("Settings reset")
+            },
+            onError: (err) => toast.error(err.message || "Failed to reset"),
+        })
     }
 
     return (
@@ -204,24 +224,20 @@ export default function SettingsPage() {
                             Manage your preferences and default configurations
                         </p>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-2">
+                        {saved && (
+                            <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                                <Check className="h-3 w-3" /> Saved
+                            </span>
+                        )}
                         <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => settings.resetSettings()}
+                            onClick={resetAll}
+                            disabled={updateUserPrefs.isPending}
                         >
                             <RotateCcw className="h-4 w-4 mr-2" />
                             Reset
-                        </Button>
-                        <Button size="sm" onClick={handleSave}>
-                            {saved ? (
-                                <>
-                                    <Check className="h-4 w-4 mr-2" />
-                                    Saved
-                                </>
-                            ) : (
-                                'Save Changes'
-                            )}
                         </Button>
                     </div>
                 </div>
@@ -234,8 +250,8 @@ export default function SettingsPage() {
                 >
                     <SettingsField label="Display Name" description="Your name in conversations">
                         <Input
-                            value={settings.userName}
-                            onChange={(e) => settings.updateSettings({ userName: e.target.value })}
+                            value={userPrefs.user_name}
+                            onChange={(e) => patchUserPrefs({ user_name: e.target.value })}
                             placeholder="Enter your name"
                         />
                     </SettingsField>
@@ -245,11 +261,11 @@ export default function SettingsPage() {
                             {AVATAR_OPTIONS.map((emoji) => (
                                 <button
                                     key={emoji}
-                                    onClick={() => settings.updateSettings({ userAvatar: emoji })}
+                                    onClick={() => patchUserPrefs({ user_avatar: emoji })}
                                     className={cn(
                                         "w-9 h-9 rounded-lg text-lg flex items-center justify-center transition-all",
                                         "hover:bg-muted border",
-                                        settings.userAvatar === emoji
+                                        userPrefs.user_avatar === emoji
                                             ? "border-primary bg-primary/10 ring-2 ring-primary/20"
                                             : "border-transparent"
                                     )}
@@ -269,8 +285,8 @@ export default function SettingsPage() {
                 >
                     <SettingsField label="Chat Model" description="Default model for conversations">
                         <ModelSelect
-                            value={settings.defaultModel}
-                            onValueChange={(v) => settings.updateSettings({ defaultModel: v })}
+                            value={userPrefs.default_model}
+                            onValueChange={(v) => patchUserPrefs({ default_model: v })}
                             models={modelOptions}
                             isLoading={modelsLoading}
                             placeholder={modelsLoading ? "Loading..." : "Select model"}
@@ -279,8 +295,8 @@ export default function SettingsPage() {
 
                     <SettingsField label="Summary Model" description="Model for generating titles & summaries">
                         <ModelSelect
-                            value={settings.defaultSummaryModel}
-                            onValueChange={(v) => settings.updateSettings({ defaultSummaryModel: v })}
+                            value={userPrefs.default_summary_model}
+                            onValueChange={(v) => patchUserPrefs({ default_summary_model: v })}
                             models={modelOptions}
                             isLoading={modelsLoading}
                             placeholder={modelsLoading ? "Loading..." : "Select model"}
@@ -296,8 +312,8 @@ export default function SettingsPage() {
                 >
                     <SettingsField label="System Prompt" description="Default instructions for the AI">
                         <Textarea
-                            value={settings.defaultSystemPrompt}
-                            onChange={(e) => settings.updateSettings({ defaultSystemPrompt: e.target.value })}
+                            value={userPrefs.default_system_prompt}
+                            onChange={(e) => patchUserPrefs({ default_system_prompt: e.target.value })}
                             placeholder="You are a helpful assistant..."
                             rows={3}
                             className="resize-none"
@@ -306,7 +322,7 @@ export default function SettingsPage() {
 
                     <SettingsField
                         label="Temperature"
-                        description={settings.defaultTemperature !== undefined ? `Controls randomness (${settings.defaultTemperature.toFixed(1)})` : 'Use model default'}
+                        description={userPrefs.default_temperature != null ? `Controls randomness (${userPrefs.default_temperature.toFixed(1)})` : 'Use model default'}
                     >
                         <div className="flex items-center gap-3">
                             <Input
@@ -314,10 +330,10 @@ export default function SettingsPage() {
                                 min={0}
                                 max={2}
                                 step={0.1}
-                                value={settings.defaultTemperature ?? ''}
+                                value={userPrefs.default_temperature ?? ''}
                                 onChange={(e) => {
-                                    const val = e.target.value === '' ? undefined : parseFloat(e.target.value)
-                                    settings.updateSettings({ defaultTemperature: val })
+                                    const val = e.target.value === '' ? null : parseFloat(e.target.value)
+                                    patchUserPrefs({ default_temperature: val })
                                 }}
                                 placeholder="Default (empty)"
                                 className="flex-1"
@@ -331,8 +347,8 @@ export default function SettingsPage() {
                     >
                         <Input
                             type="number"
-                            value={settings.defaultMaxTokens}
-                            onChange={(e) => settings.updateSettings({ defaultMaxTokens: Number(e.target.value) })}
+                            value={userPrefs.default_max_tokens}
+                            onChange={(e) => patchUserPrefs({ default_max_tokens: Number(e.target.value) })}
                             min={256}
                             max={128000}
                         />
@@ -344,27 +360,27 @@ export default function SettingsPage() {
                     >
                         <Input
                             type="number"
-                            value={settings.defaultHistoryLimit}
-                            onChange={(e) => settings.updateSettings({ defaultHistoryLimit: Number(e.target.value) })}
+                            value={userPrefs.default_history_limit}
+                            onChange={(e) => patchUserPrefs({ default_history_limit: Number(e.target.value) })}
                             min={1}
                             max={50}
                         />
                     </SettingsField>
                 </SettingsSection>
 
-                {/* UI Settings */}
+                {/* UI Settings — device-local, NOT synced across devices */}
                 <SettingsSection
                     icon={Palette}
                     title="Interface"
-                    description="Customize the chat interface"
+                    description="Customize the chat interface (this device only)"
                 >
                     <SettingsField
                         label="Send on Enter"
                         description="Press Enter to send messages"
                     >
                         <Switch
-                            checked={settings.sendOnEnter}
-                            onCheckedChange={(v) => settings.updateSettings({ sendOnEnter: v })}
+                            checked={deviceSettings.sendOnEnter}
+                            onCheckedChange={(v) => deviceSettings.updateDeviceSettings({ sendOnEnter: v })}
                         />
                     </SettingsField>
 
@@ -373,8 +389,8 @@ export default function SettingsPage() {
                         description="Display message timestamps"
                     >
                         <Switch
-                            checked={settings.showTimestamps}
-                            onCheckedChange={(v) => settings.updateSettings({ showTimestamps: v })}
+                            checked={deviceSettings.showTimestamps}
+                            onCheckedChange={(v) => deviceSettings.updateDeviceSettings({ showTimestamps: v })}
                         />
                     </SettingsField>
 
@@ -383,8 +399,8 @@ export default function SettingsPage() {
                         description="Reduce spacing in chat view"
                     >
                         <Switch
-                            checked={settings.compactMode}
-                            onCheckedChange={(v) => settings.updateSettings({ compactMode: v })}
+                            checked={deviceSettings.compactMode}
+                            onCheckedChange={(v) => deviceSettings.updateDeviceSettings({ compactMode: v })}
                         />
                     </SettingsField>
                 </SettingsSection>

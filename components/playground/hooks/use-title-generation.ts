@@ -1,10 +1,9 @@
 "use client"
 
-import { conversations, gateway } from "@/lib/api";
+import { conversations, gateway, preferences } from "@/lib/api";
 import * as React from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
-import { useSettingsStore } from "@/lib/stores/settings-store"
 
 import type { Message } from "@/components/playground/chat/types"
 
@@ -28,7 +27,9 @@ export function useTitleGeneration({
     getModelIds
 }: UseTitleGenerationOptions): void {
     const queryClient = useQueryClient()
-    const settings = useSettingsStore()
+    const { data: userPrefs } = preferences.useGet()
+    const defaultSummaryModel = userPrefs?.default_summary_model ?? ""
+    const defaultModel = userPrefs?.default_model ?? ""
     const updateTabTitle = usePlaygroundStore((state) => state.updateTabTitle)
     const tabTitle = usePlaygroundStore(
         (state) => state.tabs.find(t => t.id === tabId)?.title
@@ -64,9 +65,9 @@ export function useTitleGeneration({
         // Mark as generated to prevent duplicate calls
         titleGeneratedRef.current.add(conversationId)
 
-        // Get summary model from settings
+        // Pick summary model: explicit preference > general default > first selected
         const currentModelIds = getModelIds()
-        const summaryModel = settings.defaultSummaryModel || settings.defaultModel || currentModelIds[0]
+        const summaryModel = defaultSummaryModel || defaultModel || currentModelIds[0]
         if (!summaryModel) return
 
         // Generate title in background
@@ -83,5 +84,5 @@ export function useTitleGeneration({
             .catch(err => {
                 console.error('Failed to generate title:', err)
             })
-    }, [messages, isLoading, conversationId, tabTitle, getModelIds, settings.defaultSummaryModel, settings.defaultModel, tabId, updateTabTitle, queryClient])
+    }, [messages, isLoading, conversationId, tabTitle, getModelIds, defaultSummaryModel, defaultModel, tabId, updateTabTitle, queryClient])
 }

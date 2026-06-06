@@ -140,6 +140,12 @@ export const generationLogs = sqliteTable("generation_logs", {
     index("gen_logs_created_idx").on(t.createdAt),
 ]);
 
+export const userPreferences = sqliteTable("user_preferences", {
+    userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+    preferences: text("preferences", { mode: "json" }).$type<Record<string, unknown>>().notNull().default({}),
+    updatedAt: text("updated_at").notNull().default(now),
+});
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Provider = typeof providers.$inferSelect;
@@ -154,3 +160,5 @@ export type GenerationLog = typeof generationLogs.$inferSelect;
 export type NewGenerationLog = typeof generationLogs.$inferInsert;
 export type Session = typeof sessions.$inferSelect;
 export type ApiKey = typeof apiKeys.$inferSelect;
+export type UserPreferences = typeof userPreferences.$inferSelect;
+export type NewUserPreferences = typeof userPreferences.$inferInsert;

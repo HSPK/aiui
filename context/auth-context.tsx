@@ -61,6 +61,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // pathname-change re-render and bounce the user back to /login.
             const userData = await auth.login(params)
             queryClient.setQueryData(["user", "me"], userData)
+            // Drop any stale per-user caches from a previous session so the
+            // next render fetches fresh data for the newly-logged-in account.
+            queryClient.removeQueries({ queryKey: ["preferences"] })
+            queryClient.removeQueries({ queryKey: ["apikeys"] })
 
             toast.success("Login successful")
 
@@ -86,6 +90,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         queryClient.setQueryData(["user", "me"], null)
         queryClient.removeQueries({ queryKey: ["user"] })
+        queryClient.removeQueries({ queryKey: ["preferences"] })
+        queryClient.removeQueries({ queryKey: ["apikeys"] })
         router.push("/login")
         toast.info("Logged out")
     }
