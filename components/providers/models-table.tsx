@@ -14,11 +14,18 @@ import {
     TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Button } from "@/components/ui/button"
-import { Copy } from "lucide-react"
+import { Copy, Pencil, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 
-export function ModelsTable({ models }: { models: ModelConfig[] }) {
+interface Props {
+    models: ModelConfig[]
+    onEdit?: (model: ModelConfig) => void
+    onDelete?: (model: ModelConfig) => void
+}
+
+export function ModelsTable({ models, onEdit, onDelete }: Props) {
+    const showActions = !!(onEdit || onDelete)
     return (
         <Table>
             <TableHeader>
@@ -28,11 +35,12 @@ export function ModelsTable({ models }: { models: ModelConfig[] }) {
                     <TableHead>Provider</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Context</TableHead>
+                    {showActions && <TableHead className="w-[100px] text-right">Actions</TableHead>}
                 </TableRow>
             </TableHeader>
             <TableBody>
                 {models.map((model) => (
-                    <TableRow key={model.name}>
+                    <TableRow key={model.id || model.name}>
                         <TableCell className="font-mono max-w-[300px]">
                             <div className="flex items-center justify-between gap-2 group w-full">
                                 <TooltipProvider>
@@ -74,6 +82,22 @@ export function ModelsTable({ models }: { models: ModelConfig[] }) {
                                     : '-'}
                             </Badge>
                         </TableCell>
+                        {showActions && (
+                            <TableCell className="text-right">
+                                <div className="flex justify-end gap-1">
+                                    {onEdit && (
+                                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(model)} title="Edit">
+                                            <Pencil className="h-3.5 w-3.5" />
+                                        </Button>
+                                    )}
+                                    {onDelete && (
+                                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => onDelete(model)} title="Delete">
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                        </Button>
+                                    )}
+                                </div>
+                            </TableCell>
+                        )}
                     </TableRow>
                 ))}
             </TableBody>

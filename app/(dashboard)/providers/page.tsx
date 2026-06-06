@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "sonner"
-import { RefreshCcw, Search, ArrowUpDown } from "lucide-react"
+import { RefreshCcw, Search, ArrowUpDown, Plus, Pencil, Trash2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
@@ -18,17 +18,37 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { ProviderCard } from "@/components/providers/provider-card"
 import { ModelsTable } from "@/components/providers/models-table"
+import { ProviderFormDialog } from "@/components/providers/provider-form-dialog"
+import { ModelFormDialog } from "@/components/providers/model-form-dialog"
+import { useAuth } from "@/context/auth-context"
 
 export default function ProvidersPage() {
     const router = useRouter()
     const queryClient = useQueryClient()
+    const { user } = useAuth()
+    const isAdmin = user?.role === "admin"
     const [searchQuery, setSearchQuery] = useState("")
     const [activeTab, setActiveTab] = useState("providers")
     const [sortOrder, setSortOrder] = useState("default")
 
-    const { data: providers, isLoading: isLoadingProviders, refetch: refetchProviders } = useQuery({
+    const [providerDialog, setProviderDialog] = useState<{ open: boolean; mode: "create" | "edit"; provider?: ProviderConfig | null }>({ open: false, mode: "create" })
+    const [modelDialog, setModelDialog] = useState<{ open: boolean; mode: "create" | "edit"; model?: ModelConfig | null }>({ open: false, mode: "create" })
+    const [deleteProvider, setDeleteProvider] = useState<ProviderConfig | null>(null)
+    const [deleteModel, setDeleteModel] = useState<ModelConfig | null>(null)
+
+    const { data: providers, isLoading: isLoadingProviders } = useQuery({
         queryKey: ["providers"],
         queryFn: api.getProviders,
     })
@@ -76,13 +96,35 @@ export default function ProvidersPage() {
     const reloadMutation = useMutation({
         mutationFn: api.reloadProviders,
         onSuccess: () => {
-            toast.success("Providers reloaded successfully")
+            toast.success("Refreshed")
             queryClient.invalidateQueries({ queryKey: ["providers"] })
             queryClient.invalidateQueries({ queryKey: ["models"] })
         },
         onError: (error) => {
-            toast.error(`Failed to reload providers: ${error.message}`)
+            toast.error(`Refresh failed: ${error.message}`)
         },
+    })
+
+    const deleteProviderMutation = useMutation({
+        mutationFn: (id: string) => api.deleteProvider(id),
+        onSuccess: () => {
+            toast.success("Provider deleted")
+            queryClient.invalidateQueries({ queryKey: ["providers"] })
+            queryClient.invalidateQueries({ queryKey: ["models"] })
+            setDeleteProvider(null)
+        },
+        onError: (e: Error) => toast.error(e.message || "Delete failed"),
+    })
+
+    const deleteModelMutation = useMutation({
+        mutationFn: (id: string) => api.deleteModel(id),
+        onSuccess: () => {
+            toast.success("Model deleted")
+            queryClient.invalidateQueries({ queryKey: ["models"] })
+            queryClient.invalidateQueries({ queryKey: ["providers"] })
+            setDeleteModel(null)
+        },
+        onError: (e: Error) => toast.error(e.message || "Delete failed"),
     })
 
     return (
@@ -104,6 +146,16 @@ export default function ProvidersPage() {
                         >
                             <RefreshCcw className={`h-2 w-2 ${reloadMutation.isPending ? "animate-spin" : ""}`} />
                         </Button>
+                        {isAdmin && activeTab === "providers" && (
+                            <Button size="sm" onClick={() => setProviderDialog({ open: true, mode: "create" })}>
+                                <Plus className="h-4 w-4 mr-1" /> Add Provider
+                            </Button>
+                        )}
+                        {isAdmin && activeTab === "models" && (
+                            <Button size="sm" onClick={() => setModelDialog({ open: true, mode: "create" })}>
+                                <Plus className="h-4 w-4 mr-1" /> Add Model
+                            </Button>
+                        )}
                     </div>
                     <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto md:items-center">
                         <div className="relative w-full md:w-64 md:order-2">
@@ -153,16 +205,32 @@ export default function ProvidersPage() {
                         {isLoadingProviders ? (
                             <p className="text-muted-foreground">Loading providers...</p>
                         ) : filteredProviders.map((provider) => (
-                            <ProviderCard
-                                key={provider.provider_name}
-                                provider={provider}
-                                onClick={() => router.push(`/providers/${provider.provider_name}`)}
-                            />
+                            <div key={provider.id || provider.name} className="relative group">
+                                <ProviderCard
+                                    provider={provider}
+                                    onClick={() => router.push(`/providers/${provider.id || provider.name}`)}
+                                />
+                                {isAdmin && (
+                                    <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <Button variant="secondary" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); setProviderDialog({ open: true, mode: "edit", provider }) }}>
+                                            <Pencil className="h-3.5 w-3.5" />
+                                        </Button>
+                                        <Button variant="secondary" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={(e) => { e.stopPropagation(); setDeleteProvider(provider) }}>
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                        </Button>
+                                    </div>
+                                )}
+                            </div>
                         ))}
                         {!isLoadingProviders && filteredProviders.length === 0 && (
                             <div className="col-span-full flex flex-col items-center justify-center border-2 border-dashed rounded-lg h-[calc(100vh-220px)] text-muted-foreground">
                                 <Search className="h-8 w-8 mb-4 opacity-50" />
-                                <p className="text-lg font-medium">No providers found matching your search.</p>
+                                <p className="text-lg font-medium">No providers found.</p>
+                                {isAdmin && (
+                                    <Button size="sm" className="mt-4" onClick={() => setProviderDialog({ open: true, mode: "create" })}>
+                                        <Plus className="h-4 w-4 mr-1" /> Add your first provider
+                                    </Button>
+                                )}
                             </div>
                         )}
                     </div>
@@ -174,15 +242,69 @@ export default function ProvidersPage() {
                             {isLoadingModels ? (
                                 <p className="text-muted-foreground p-6">Loading models...</p>
                             ) : (
-                                <ModelsTable models={filteredModels} />
+                                <ModelsTable
+                                    models={filteredModels}
+                                    onEdit={isAdmin ? (m) => setModelDialog({ open: true, mode: "edit", model: m }) : undefined}
+                                    onDelete={isAdmin ? (m) => setDeleteModel(m) : undefined}
+                                />
                             )}
                         </CardContent>
                     </Card>
                 </TabsContent>
             </Tabs>
+
+            <ProviderFormDialog
+                open={providerDialog.open}
+                onOpenChange={(open) => setProviderDialog((s) => ({ ...s, open }))}
+                mode={providerDialog.mode}
+                provider={providerDialog.provider}
+            />
+            <ModelFormDialog
+                open={modelDialog.open}
+                onOpenChange={(open) => setModelDialog((s) => ({ ...s, open }))}
+                mode={modelDialog.mode}
+                model={modelDialog.model}
+            />
+
+            <AlertDialog open={!!deleteProvider} onOpenChange={(o) => !o && setDeleteProvider(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete provider?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This will permanently delete <b>{deleteProvider?.name}</b> and all of its models. This cannot be undone.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={() => deleteProvider && deleteProviderMutation.mutate(deleteProvider.id)}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                            Delete
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            <AlertDialog open={!!deleteModel} onOpenChange={(o) => !o && setDeleteModel(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete model?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This will permanently delete model <b>{deleteModel?.name}</b>. This cannot be undone.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={() => deleteModel && deleteModelMutation.mutate(deleteModel.id)}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                            Delete
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     )
 }
-
-
-

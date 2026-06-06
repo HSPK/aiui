@@ -16,6 +16,7 @@ import {
     Zap,
     Plus,
     Users,
+    KeyRound,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -57,6 +58,11 @@ const toolNavItems = [
 ]
 
 const bottomNavItems = [
+    {
+        title: "API Keys",
+        href: "/settings/api-keys",
+        icon: KeyRound,
+    },
     {
         title: "Users",
         href: "/settings/users",
