@@ -23,6 +23,11 @@ export const providerDTOSchema = z.object({
     model_page: z.string(),
     /** Optional full URL returning `{"status": "ok"}` when healthy. */
     health_check_url: z.string().nullable(),
+    /** Result of the most recent health-check probe (only meaningful when
+     *  `health_check_url` is set). */
+    last_health_status: z.enum(["ok", "down"]).nullable(),
+    last_health_checked_at: z.string().nullable(),
+    last_health_error: z.string().nullable(),
     is_local: z.boolean(),
     enabled: z.boolean(),
     n_models: z.number().int().optional(),

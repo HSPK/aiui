@@ -39,6 +39,15 @@ export function ModelCard({ model }: ModelCardProps) {
                     ) : (
                         <Badge variant="outline" className="text-[9px] uppercase font-semibold tracking-wider">override</Badge>
                     )}
+                    {model.schema_adapter_id && (
+                        <Badge
+                            variant="outline"
+                            className="text-[9px] uppercase font-semibold tracking-wider border-amber-500/40 text-amber-700 dark:text-amber-300"
+                            title={`Schema adapter override: ${model.schema_adapter_id}`}
+                        >
+                            schema: {model.schema_adapter_id}
+                        </Badge>
+                    )}
                 </div>
 
                 <div className="group flex items-center gap-1.5 text-xs text-muted-foreground font-mono">

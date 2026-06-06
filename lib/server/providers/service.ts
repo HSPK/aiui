@@ -72,6 +72,9 @@ function resolveAdapterId(input: { adapter_id?: string; base_url: string; api_ve
         documentPage: null,
         modelPage: null,
         healthCheckUrl: null,
+        lastHealthStatus: null,
+        lastHealthCheckedAt: null,
+        lastHealthError: null,
         isLocal: false,
         enabled: true,
         createdAt: "",
@@ -143,7 +146,17 @@ export async function updateProvider(idOrName: string, input: ProviderUpdateInpu
     if (input.http_proxy !== undefined) updates.httpProxy = input.http_proxy ?? null;
     if (input.document_page !== undefined) updates.documentPage = input.document_page;
     if (input.model_page !== undefined) updates.modelPage = input.model_page;
-    if (input.health_check_url !== undefined) updates.healthCheckUrl = input.health_check_url?.trim() || null;
+    if (input.health_check_url !== undefined) {
+        const newUrl = input.health_check_url?.trim() || null;
+        // Whenever the health URL itself changes (or is cleared), wipe the
+        // cached status — the previous result was for a different endpoint.
+        if (newUrl !== provider.healthCheckUrl) {
+            updates.healthCheckUrl = newUrl;
+            updates.lastHealthStatus = null;
+            updates.lastHealthCheckedAt = null;
+            updates.lastHealthError = null;
+        }
+    }
     if (input.is_local !== undefined) updates.isLocal = !!input.is_local;
     if (input.enabled !== undefined) updates.enabled = !!input.enabled;
 
@@ -166,9 +179,13 @@ export async function deleteProvider(idOrName: string): Promise<void> {
  *   1. If `provider.healthCheckUrl` is set → GET it, parse JSON, require
  *      `{ "status": "ok" }`. Any other body / shape / status is a failure.
  *      Use this when the upstream exposes a dedicated `/healthz` style
- *      endpoint that's cheaper than listing models.
+ *      endpoint that's cheaper than listing models. The result is persisted
+ *      to `last_health_*` columns so the UI can render a real status pill
+ *      without re-probing on every render.
  *   2. Otherwise → fall back to discovery via the resolved adapter, which
- *      returns a model count on success.
+ *      returns a model count on success. Discovery probes do NOT update
+ *      `last_health_*` (those columns are tied to the explicit health URL
+ *      contract).
  */
 export async function checkProvider(idOrName: string): Promise<{ ok: boolean; models?: number; error?: string; latency_ms?: number }> {
     const provider = findProviderByIdOrName(idOrName);
@@ -176,6 +193,14 @@ export async function checkProvider(idOrName: string): Promise<{ ok: boolean; mo
 
     if (provider.healthCheckUrl) {
         const start = Date.now();
+        const persist = (status: "ok" | "down", error: string | null) => {
+            db.update(providers).set({
+                lastHealthStatus: status,
+                lastHealthCheckedAt: new Date().toISOString(),
+                lastHealthError: error,
+                updatedAt: new Date().toISOString(),
+            }).where(eq(providers.id, provider.id)).run();
+        };
         try {
             const res = await fetch(provider.healthCheckUrl, {
                 method: "GET",
@@ -184,19 +209,21 @@ export async function checkProvider(idOrName: string): Promise<{ ok: boolean; mo
             const ms = Date.now() - start;
             if (!res.ok) {
                 const text = await res.text().catch(() => res.statusText);
-                return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 200)}`, latency_ms: ms };
+                const error = `HTTP ${res.status}: ${text.slice(0, 200)}`;
+                persist("down", error);
+                return { ok: false, error, latency_ms: ms };
             }
             const json = (await res.json().catch(() => null)) as { status?: unknown } | null;
             if (!json || json.status !== "ok") {
-                return {
-                    ok: false,
-                    error: `Expected {"status":"ok"}, got ${JSON.stringify(json).slice(0, 200)}`,
-                    latency_ms: ms,
-                };
+                const error = `Expected {"status":"ok"}, got ${JSON.stringify(json).slice(0, 200)}`;
+                persist("down", error);
+                return { ok: false, error, latency_ms: ms };
             }
+            persist("ok", null);
             return { ok: true, latency_ms: ms };
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
+            persist("down", msg);
             return { ok: false, error: msg, latency_ms: Date.now() - start };
         }
     }

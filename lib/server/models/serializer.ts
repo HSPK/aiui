@@ -29,6 +29,7 @@ export function serializeModel(
         provider_id: m.providerId,
         is_local: false,
         enabled: !!m.enabled,
+        schema_adapter_id: m.schemaAdapterId ?? null,
         meta: meta ?? null,
         created_at: m.createdAt,
         updated_at: m.updatedAt,

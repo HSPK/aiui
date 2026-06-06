@@ -43,6 +43,13 @@
       "when": 1780738501987,
       "tag": "0005_adapter_refactor",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1780740141577,
+      "tag": "0006_provider_health_and_schema_adapter",
+      "breakpoints": true
     }
   ]
 }

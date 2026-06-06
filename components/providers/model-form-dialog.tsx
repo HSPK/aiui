@@ -1,6 +1,6 @@
 "use client"
 
-import { capabilities, models, providers } from "@/lib/api";
+import { capabilities, models, providers, adapters } from "@/lib/api";
 import type { ModelCreateInput, ModelDTO } from "@/lib/schemas/model";
 import { useEffect, useMemo, useState } from "react"
 
@@ -35,9 +35,14 @@ interface Props {
     defaultProviderId?: string
 }
 
+/** "Inherit from provider" sentinel for the schema-adapter dropdown.
+ *  Radix Select forbids empty-string item values. */
+const SCHEMA_ADAPTER_INHERIT = "__inherit__"
+
 export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProviderId }: Props) {
     const { data: providerList } = providers.useList(undefined, { enabled: open })
     const { data: capabilityList } = capabilities.useList(undefined, { enabled: open })
+    const { data: adapterList } = adapters.useList(undefined, { enabled: open })
 
     const [name, setName] = useState("")
     const [providerId, setProviderId] = useState<string>("")
@@ -49,6 +54,7 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
     const [description, setDescription] = useState("")
     const [defaultParams, setDefaultParams] = useState("{}")
     const [enabled, setEnabled] = useState(true)
+    const [schemaAdapterId, setSchemaAdapterId] = useState<string>(SCHEMA_ADAPTER_INHERIT)
     const [parseError, setParseError] = useState<string | null>(null)
 
     // True when the dialog is open in "create" mode but a model object was
@@ -73,6 +79,7 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
             setDescription(model.description ?? "")
             setDefaultParams(JSON.stringify(model.default_params ?? {}, null, 2))
             setEnabled(model.enabled !== false)
+            setSchemaAdapterId(model.schema_adapter_id ?? SCHEMA_ADAPTER_INHERIT)
         } else {
             setName("")
             setProviderId(defaultProviderId ?? "")
@@ -84,6 +91,7 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
             setDescription("")
             setDefaultParams("{}")
             setEnabled(true)
+            setSchemaAdapterId(SCHEMA_ADAPTER_INHERIT)
         }
         setParseError(null)
     }, [open, mode, model, defaultProviderId])
@@ -133,6 +141,7 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
             output_dimension: outputDim ? Number(outputDim) : null,
             description: description || null,
             enabled,
+            schema_adapter_id: schemaAdapterId === SCHEMA_ADAPTER_INHERIT ? null : schemaAdapterId,
         }
 
         if (mode === "create") {
@@ -206,6 +215,41 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
                                     </SelectContent>
                                 </Select>
                             </div>
+                        </div>
+                        <div className="grid gap-2">
+                            <Label className="text-xs">
+                                Schema adapter override
+                                <span className="ml-2 font-normal text-muted-foreground normal-case">
+                                    (rarely needed)
+                                </span>
+                            </Label>
+                            <Select value={schemaAdapterId} onValueChange={setSchemaAdapterId}>
+                                <SelectTrigger className="h-9 text-sm">
+                                    <SelectValue placeholder="Inherit from provider" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value={SCHEMA_ADAPTER_INHERIT}>
+                                        <div className="flex flex-col">
+                                            <span>Inherit from provider</span>
+                                            <span className="text-[10px] text-muted-foreground">Default — use the provider&apos;s own adapter</span>
+                                        </div>
+                                    </SelectItem>
+                                    {(adapterList ?? []).map((a) => (
+                                        <SelectItem key={a.id} value={a.id}>
+                                            <div className="flex flex-col">
+                                                <span>{a.label}</span>
+                                                {a.description && (
+                                                    <span className="text-[10px] text-muted-foreground">{a.description}</span>
+                                                )}
+                                            </div>
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <p className="text-[11px] text-muted-foreground leading-snug">
+                                Forces this model&apos;s request body to follow another adapter&apos;s field rules. Use when you proxy an
+                                upstream (e.g. Azure Foundry) behind an OpenAI-shaped URL but it still rejects OpenAI-only fields.
+                            </p>
                         </div>
                         <div className="grid sm:grid-cols-3 gap-3">
                             <div className="grid gap-2 min-w-0">

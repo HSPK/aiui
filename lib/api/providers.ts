@@ -60,4 +60,22 @@ export const providers = {
             },
         });
     },
+
+    /** POST /providers/:id/check — runs the health probe. On success the
+     *  server has updated `last_health_*`, so we invalidate the providers
+     *  cache to surface the new status pill. */
+    useCheck: (
+        id: string | undefined | null,
+        opts?: Omit<UseMutationOptions<ProviderCheckResult, Error, void>, "mutationFn">,
+    ) => {
+        const invalidate = base.useInvalidate();
+        return useMutation<ProviderCheckResult, Error, void>({
+            mutationFn: () => providers.check(id!),
+            ...opts,
+            onSuccess: (data, vars, onMutateResult, context) => {
+                invalidate();
+                opts?.onSuccess?.(data, vars, onMutateResult, context);
+            },
+        });
+    },
 };

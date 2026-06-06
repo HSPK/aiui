@@ -50,6 +50,13 @@ export const providers = sqliteTable("providers", {
      *  is healthy. When set, the provider "Check" action GETs this URL
      *  instead of probing /models. */
     healthCheckUrl: text("health_check_url"),
+    /** Result of the most recent health-check probe. "ok" | "down" | null
+     *  when the provider has never been checked or has no health_check_url. */
+    lastHealthStatus: text("last_health_status", { enum: ["ok", "down"] }),
+    /** ISO timestamp of the last health-check probe (regardless of result). */
+    lastHealthCheckedAt: text("last_health_checked_at"),
+    /** First-line of the upstream error on the last failed probe. Cleared on success. */
+    lastHealthError: text("last_health_error"),
     isLocal: integer("is_local", { mode: "boolean" }).notNull().default(false),
     enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
     createdAt: text("created_at").notNull().default(now),
@@ -79,6 +86,12 @@ export const models = sqliteTable("models", {
      *  Adapter-specific shape, persisted for the admin UI's raw-metadata
      *  panel and for re-running extractModelMeta when adapter logic changes. */
     discoveredMetadata: text("discovered_metadata", { mode: "json" }).$type<unknown>(),
+    /** Optional per-model adapter override for SCHEMA decisions
+     *  (accepted/rejected fields, supported API selection). The provider's
+     *  own adapter still drives transport (URL/auth/response shape).
+     *  Use case: proxy that re-shapes Foundry/Azure to OpenAI URL surface
+     *  but where the upstream model still rejects OpenAI-only fields. */
+    schemaAdapterId: text("schema_adapter_id"),
     createdAt: text("created_at").notNull().default(now),
     updatedAt: text("updated_at").notNull().default(now),
 }, (t) => [

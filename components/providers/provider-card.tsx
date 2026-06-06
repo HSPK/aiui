@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { ProviderIcon } from "@/components/ProviderIcon"
 import { FileText, BookOpen, ChevronRight } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { ProviderHealthPill } from "./provider-health-pill"
 
 interface ProviderCardProps {
     provider: ProviderDTO;
@@ -41,12 +42,7 @@ export function ProviderCard({
                         <div className="space-y-1 min-w-0">
                             <h3 className="font-bold text-base leading-none tracking-tight truncate" title={provider.provider_name}>{provider.provider_name}</h3>
                             <div className="flex items-center gap-2">
-                                <div className="flex items-center gap-1.5">
-                                    <span className="h-1 w-1 rounded-full ring-1 ring-offset-1 transition-colors duration-300 bg-green-500 ring-green-200" />
-                                    <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
-                                        Operational
-                                    </span>
-                                </div>
+                                <ProviderHealthPill provider={provider} size="sm" />
                                 {provider.adapter_id && provider.adapter_id !== "openai" && (
                                     <Badge variant="secondary" className="text-[9px] uppercase font-semibold h-4 px-1.5 tracking-wider">
                                         {provider.adapter_id.replace(/^azure-/, "Azure ")}

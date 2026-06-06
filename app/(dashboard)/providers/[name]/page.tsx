@@ -4,11 +4,12 @@ import { providers } from "@/lib/api";
 
 import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft, RefreshCcw, ShieldCheck, Globe, FileText } from "lucide-react"
+import { ArrowLeft, RefreshCcw, Globe, FileText, Activity } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Card } from "@/components/ui/card"
 import { ProviderIcon } from "@/components/ProviderIcon"
 import { ModelCard } from "@/components/providers/model-card"
+import { ProviderHealthPill } from "@/components/providers/provider-health-pill"
 import { Skeleton } from "@/components/ui/skeleton"
 import { toast } from "sonner"
 
@@ -26,6 +27,14 @@ export default function ProviderDetailPage() {
     const refreshMutation = providers.useReload({
         onSuccess: () => toast.success("Refreshed model list"),
         onError: (error) => toast.error(`Refresh failed: ${error.message}`),
+    })
+
+    const checkMutation = providers.useCheck(slug, {
+        onSuccess: (res) => {
+            if (res.ok) toast.success(`Healthy${res.latency_ms != null ? ` (${res.latency_ms}ms)` : ""}`)
+            else toast.error(`Down: ${res.error ?? "unknown"}`)
+        },
+        onError: (e) => toast.error(`Health check failed: ${e.message}`),
     })
 
     if (isLoadingProvider) {
@@ -69,15 +78,29 @@ export default function ProviderDetailPage() {
                 <Button variant="ghost" className="pl-0 hover:bg-transparent" onClick={() => router.push("/providers")}>
                     <ArrowLeft className="mr-2 h-4 w-4" /> Back
                 </Button>
-                <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => refreshMutation.mutate()}
-                    disabled={refreshMutation.isPending}
-                >
-                    <RefreshCcw className={`mr-2 h-3.5 w-3.5 ${refreshMutation.isPending ? "animate-spin" : ""}`} />
-                    Refresh Models
-                </Button>
+                <div className="flex items-center gap-2">
+                    {provider.health_check_url && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => checkMutation.mutate()}
+                            disabled={checkMutation.isPending}
+                            title="Run the configured health check now"
+                        >
+                            <Activity className={`mr-2 h-3.5 w-3.5 ${checkMutation.isPending ? "animate-pulse" : ""}`} />
+                            Check Health
+                        </Button>
+                    )}
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => refreshMutation.mutate()}
+                        disabled={refreshMutation.isPending}
+                    >
+                        <RefreshCcw className={`mr-2 h-3.5 w-3.5 ${refreshMutation.isPending ? "animate-spin" : ""}`} />
+                        Refresh Models
+                    </Button>
+                </div>
             </div>
 
             {/* Provider header */}
@@ -89,10 +112,7 @@ export default function ProviderDetailPage() {
                     <div className="min-w-0">
                         <h1 className="text-3xl font-bold tracking-tight truncate" title={provider.provider_name}>{provider.provider_name}</h1>
                         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                            <Badge variant="secondary" className="gap-1 rounded-sm px-2 font-normal">
-                                <ShieldCheck className="h-3 w-3 text-green-500" />
-                                Operational
-                            </Badge>
+                            <ProviderHealthPill provider={provider} size="md" />
                             {provider.adapter_id && provider.adapter_id !== "openai" && (
                                 <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-semibold">{provider.adapter_id.replace(/^azure-/, "Azure ")}</Badge>
                             )}
