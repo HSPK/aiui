@@ -318,7 +318,7 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                 ) : log ? (
                     <div className="px-6 py-6 space-y-8 flex-1 overflow-y-auto">
                         {/* KPI Grid */}
-                        <div className="grid grid-cols-2 md:grid-cols-[2fr_1.5fr_1fr_0.7fr_0.7fr] gap-4 p-4 bg-card rounded-lg border shadow-sm">
+                        <div className="grid grid-cols-2 md:grid-cols-[1.5fr_1fr_1fr_1fr_0.7fr_0.7fr] gap-4 p-4 bg-card rounded-lg border shadow-sm">
                             <div className="space-y-1">
                                 <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider flex items-center gap-1">
                                     <Terminal className="h-3 w-3" /> Model
@@ -327,6 +327,12 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                                     <Badge variant="outline" className="font-mono text-xs font-normal h-auto whitespace-normal text-left break-all">
                                         {log.model_name}
                                     </Badge>
+                                </div>
+                            </div>
+                            <div className="space-y-1">
+                                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Capability</span>
+                                <div>
+                                    <Badge variant="secondary" className="font-mono text-xs font-normal">{log.capability ?? "—"}</Badge>
                                 </div>
                             </div>
                             <div className="space-y-1 overflow-hidden">
@@ -368,7 +374,7 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                         <div className="flex flex-col lg:flex-row gap-6">
                             <ContentViewer
                                 title="Prompt"
-                                content={log.input}
+                                content={log.input_summary ?? (typeof log.input === "string" ? log.input : null)}
                                 colorClass="bg-blue-500"
                             />
                             <ContentViewer

@@ -6,7 +6,11 @@ export interface GenerationLog {
     status: "pending" | "completed" | "failed";
     user_id: string;
     model_name: string;
-    input: string;
+    capability: string | null;
+    /** Plain-text summary of the request (last user message / image prompt / etc.) */
+    input_summary: string | null;
+    /** Full request body as it was sent upstream. */
+    input: unknown;
     output: string;
     reason: string | null;
     prompt_tokens?: number | null;
@@ -29,6 +33,7 @@ export interface LogFilterParams {
     sort?: string;
     user_id?: string | null;
     model_name?: string | null;
+    capability?: string | null;
     status?: "pending" | "completed" | "failed" | null;
 }
 

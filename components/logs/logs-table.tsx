@@ -93,6 +93,16 @@ export function LogsTable({ data, sorting, onSortingChange, onViewDetail }: Logs
             cell: ({ row }) => <Badge variant="outline" className="font-mono font-normal text-[10px]">{row.getValue("model_name")}</Badge>
         },
         {
+            accessorKey: "capability",
+            header: "Capability",
+            cell: ({ row }) => {
+                const cap = row.original.capability
+                return cap
+                    ? <Badge variant="secondary" className="font-mono font-normal text-[10px]">{cap}</Badge>
+                    : <span className="text-muted-foreground text-xs">—</span>
+            }
+        },
+        {
             id: "tokens",
             header: () => (
                 <div className="flex items-center gap-1 justify-end">

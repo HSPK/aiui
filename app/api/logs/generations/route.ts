@@ -41,6 +41,8 @@ export async function GET(req: NextRequest) {
         }
         const modelName = searchParams.get("model_name");
         if (modelName) filters.push(like(schema.generationLogs.modelName, `%${modelName}%`));
+        const capability = searchParams.get("capability");
+        if (capability) filters.push(eq(schema.generationLogs.capability, capability));
         const status = searchParams.get("status");
         if (status === "pending" || status === "completed" || status === "failed") {
             filters.push(eq(schema.generationLogs.status, status));
@@ -54,6 +56,8 @@ export async function GET(req: NextRequest) {
             id: schema.generationLogs.id,
             user_id: schema.generationLogs.userId,
             model_name: schema.generationLogs.modelName,
+            capability: schema.generationLogs.capability,
+            input_summary: schema.generationLogs.inputSummary,
             status: schema.generationLogs.status,
             output: schema.generationLogs.output,
             reason: schema.generationLogs.reason,
@@ -76,8 +80,10 @@ export async function GET(req: NextRequest) {
             id: r.id,
             user_id: r.user_id,
             model_name: r.model_name,
+            capability: r.capability,
+            input_summary: r.input_summary,
             status: r.status,
-            input: "",
+            input: r.input_summary ?? "",
             output: r.output ?? "",
             reason: r.reason,
             created_at: r.created_at,
