@@ -52,7 +52,7 @@ export async function GET() {
                     max_retries: 2,
                     http_proxy: null,
                     default_params: {},
-                    type: "chat" as const,
+                    type: d.capability,
                     pricing: null,
                     output_dimension: null,
                     context_window: null,

@@ -6,7 +6,7 @@ import { db, schema } from "@/lib/server/db";
 import { ensureInit } from "@/lib/server/init";
 import { requireAdmin, requireUser } from "@/lib/server/auth";
 import { encryptSecret } from "@/lib/server/crypto";
-import { clearDiscoveryCache } from "@/lib/server/discovery";
+import { clearDiscoveryCache, discoveredCountByProvider } from "@/lib/server/discovery";
 import { badRequest, handle, ok } from "@/lib/server/response";
 import { modelCountsByProvider, serializeProvider } from "@/lib/server/serializers";
 
@@ -18,8 +18,15 @@ export async function GET() {
         await ensureInit();
         await requireUser();
         const rows = db.select().from(schema.providers).orderBy(schema.providers.name).all();
-        const counts = modelCountsByProvider();
-        return ok(rows.map((p) => serializeProvider(p, counts[p.id] ?? 0)));
+        const dbCounts = modelCountsByProvider();
+        const discoveredCounts = await discoveredCountByProvider();
+        return ok(rows.map((p) => {
+            // Provider's total visible models = DB-overridden + discovered live (the same
+            // union the /v1/models endpoint reports, deduped server-side here is close enough
+            // since overrides shadow discoveries by name).
+            const total = (dbCounts[p.id] ?? 0) + (discoveredCounts[p.id] ?? 0);
+            return serializeProvider(p, total);
+        }));
     } catch (err) {
         return handle(err);
     }

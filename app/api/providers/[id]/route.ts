@@ -5,7 +5,7 @@ import { db, schema } from "@/lib/server/db";
 import { ensureInit } from "@/lib/server/init";
 import { requireAdmin, requireUser } from "@/lib/server/auth";
 import { encryptSecret } from "@/lib/server/crypto";
-import { clearDiscoveryCache } from "@/lib/server/discovery";
+import { clearDiscoveryCache, discoveredCountByProvider } from "@/lib/server/discovery";
 import { badRequest, handle, notFound, ok } from "@/lib/server/response";
 import { findProviderByIdOrName, modelCountsByProvider, serializeProvider } from "@/lib/server/serializers";
 
@@ -19,8 +19,10 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
         const { id } = await ctx.params;
         const provider = findProviderByIdOrName(decodeURIComponent(id));
         if (!provider) throw notFound("Provider not found");
-        const counts = modelCountsByProvider();
-        return ok(serializeProvider(provider, counts[provider.id] ?? 0));
+        const dbCounts = modelCountsByProvider();
+        const discoveredCounts = await discoveredCountByProvider();
+        const total = (dbCounts[provider.id] ?? 0) + (discoveredCounts[provider.id] ?? 0);
+        return ok(serializeProvider(provider, total));
     } catch (err) {
         return handle(err);
     }
