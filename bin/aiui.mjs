@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { preflightFromConfig } from "../lib/preflight.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(HERE, "..");
@@ -52,12 +53,12 @@ Environment variables (override config-file fields):
 function buildConfigTemplate({ masterKey }) {
     return `# AIUI gateway configuration
 # -----------------------------------------------------------------------------
-# Loaded once at server boot. Entries are upserted into the SQLite DB by
-# \`name\` — extras already in the DB are left alone, so UI-managed and
-# file-managed configuration coexist.
+# This file is the single source of truth for everything you can configure on
+# the gateway. Anything you set here is hoisted into the corresponding env var
+# at startup, but env vars that are ALREADY set take precedence — so production
+# deployments can still override individual fields via secret injection.
 #
 # Strings support \${ENV_VAR} interpolation, e.g. \`api_key: \${OPENAI_API_KEY}\`.
-# Any field can be edited through the admin UI later.
 #
 # Search order (first match wins):
 #   1. \$AIUI_CONFIG_PATH
@@ -69,56 +70,65 @@ function buildConfigTemplate({ masterKey }) {
 # * The master_key below decrypts every stored Provider API key. KEEP IT SECRET
 #   — do not commit this file. Rotating the key makes existing encrypted keys
 #   unreadable.
-# * If you prefer secret injection, leave master_key out and set the
-#   AIUI_MASTER_KEY environment variable instead. The env var wins if both
-#   are set.
 
+# ---- Secrets -------------------------------------------------------------
 master_key: ${JSON.stringify(masterKey)}
 
-# Admin bootstrap: created on first boot if the users table is empty.
-# (You can also set AIUI_ADMIN_USERNAME / AIUI_ADMIN_PASSWORD env vars.)
-# admin:
-#   username: admin
-#   password: change-me
+# ---- Storage -------------------------------------------------------------
+# SQLite database location. Relative paths resolve against your current
+# working directory (the dir you invoked \`aiui\` from). Default:
+#   <cwd>/data/aiui.db
+# NOTE: this field only takes effect via the \`aiui\` CLI. If you bypass the
+# CLI (e.g. \`bun run start\`), set AIUI_DB_PATH explicitly.
+# database:
+#   path: ./data/aiui.db
 
+# ---- Server --------------------------------------------------------------
+# Override the listen address. CLI flags (-p / -H) still win.
+# server:
+#   port: 3000
+#   hostname: 0.0.0.0
+
+# ---- Admin bootstrap -----------------------------------------------------
+# Created on first boot if the users table is empty. Without these the
+# gateway starts but you'll have no way to log in.
+admin:
+  username: admin
+  password: \${AIUI_ADMIN_PASSWORD}
+
+# ---- Session ------------------------------------------------------------
+# How long an authenticated browser session lasts. Default: 30 days.
+# session:
+#   ttl_days: 30
+
+# ---- Caching -----------------------------------------------------------
+# Per-provider /models discovery cache TTL. Set to 0 to disable caching.
+# cache:
+#   models_ttl_seconds: 300
+
+# ---- Providers ----------------------------------------------------------
+# Models are NOT configured here — they are discovered live from each
+# provider's /models endpoint. Use the admin UI to register per-model
+# overrides (Azure deployment names, display-name aliases, context-window
+# pinning).
 providers:
-  # OpenAI-compatible upstream — works for OpenAI, DeepSeek, Together, Groq,
-  # vLLM, Ollama, any service that speaks /chat/completions.
+  # OpenAI-compatible — works for OpenAI, DeepSeek, Together, Groq, vLLM,
+  # Ollama, any service that speaks /chat/completions.
   - name: openai
     type: openai
     base_url: https://api.openai.com/v1
     api_key: \${OPENAI_API_KEY}
     document_page: https://platform.openai.com/docs
 
-  # Azure OpenAI — note the URL shape and that models below must point at
-  # deployment names, not raw model names.
+  # Azure OpenAI — note that the /models catalog endpoint returns base
+  # model names, NOT deployment names. To call your deployments through the
+  # gateway, register each deployment as a row in the admin UI's Models
+  # tab, mapping a display name (e.g. \`my-gpt-4o\`) to its deployment id.
   # - name: azure-eastus
   #   type: azure
   #   base_url: https://my-resource.openai.azure.com
   #   api_version: "2024-10-21"
   #   api_key: \${AZURE_OPENAI_API_KEY}
-
-models:
-  - name: gpt-4o-mini
-    provider: openai
-    upstream_model_id: gpt-4o-mini
-    type: chat
-    context_window: 128000
-    max_tokens: 16384
-
-  - name: text-embedding-3-small
-    provider: openai
-    upstream_model_id: text-embedding-3-small
-    type: embedding
-    output_dimension: 1536
-
-  # Azure example — \`upstream_model_id\` is the deployment name in your
-  # Azure resource, NOT the underlying model name.
-  # - name: azure-gpt-4o
-  #   provider: azure-eastus
-  #   upstream_model_id: my-gpt-4o-deployment
-  #   type: chat
-  #   context_window: 128000
 `;
 }
 
@@ -163,17 +173,28 @@ function runNext(mode, flags) {
         console.error("If you're running from source, make sure \`bun install\` succeeded.");
         process.exit(1);
     }
+
+    // Preflight: load config file (if any) and hoist its infrastructure
+    // fields into env vars BEFORE Next loads any module. This is the only
+    // path that makes config-file `database.path` / `session.ttl_days` /
+    // `server.port` etc. take effect.
+    // Must happen first so AIUI_USER_CWD below has been considered already.
+    process.env.AIUI_USER_CWD = USER_CWD;
+    const { path: cfgPath, applied } = preflightFromConfig();
+    if (cfgPath) {
+        const note = applied.length > 0 ? ` (env: ${applied.join(", ")})` : "";
+        console.log(`[aiui] loaded config from ${cfgPath}${note}`);
+    }
+
     const args = [mode];
-    if (flags.port || flags.p) args.push("-p", String(flags.port || flags.p));
-    if (flags.hostname || flags.H) args.push("-H", String(flags.hostname || flags.H));
+    const port = flags.port || flags.p || process.env.AIUI_SERVER_PORT || process.env.PORT;
+    const host = flags.hostname || flags.H || process.env.AIUI_SERVER_HOSTNAME;
+    if (port) args.push("-p", String(port));
+    if (host) args.push("-H", String(host));
+
     const child = spawn(NEXT_BIN, args, {
         cwd: PACKAGE_ROOT,
-        env: {
-            ...process.env,
-            // Make sure server-side code resolves config + DB against the
-            // directory the user invoked us from, not the package dir.
-            AIUI_USER_CWD: USER_CWD,
-        },
+        env: process.env,
         stdio: "inherit",
     });
     child.on("exit", (code) => process.exit(code ?? 0));

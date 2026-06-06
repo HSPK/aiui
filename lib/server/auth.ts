@@ -8,7 +8,12 @@ import { forbidden, unauthorized } from "./response";
 import type { User } from "./db/schema";
 
 export const SESSION_COOKIE = "aiui_session";
-const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
+
+function sessionTtlMs(): number {
+    const days = Number(process.env.AIUI_SESSION_TTL_DAYS);
+    if (Number.isFinite(days) && days > 0) return days * 86400 * 1000;
+    return 30 * 86400 * 1000; // 30-day default
+}
 
 export interface SessionUser {
     id: string;
@@ -29,7 +34,7 @@ function userToSession(u: User): SessionUser {
 export async function createSession(userId: string): Promise<string> {
     const token = generateRandomToken(32);
     const id = sha256(token);
-    const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+    const expiresAt = new Date(Date.now() + sessionTtlMs());
     db.insert(sessions).values({ id, userId, expiresAt }).run();
     return token;
 }
@@ -41,7 +46,7 @@ export async function setSessionCookie(token: string): Promise<void> {
         sameSite: "lax",
         secure: process.env.NODE_ENV === "production",
         path: "/",
-        maxAge: Math.floor(SESSION_TTL_MS / 1000),
+        maxAge: Math.floor(sessionTtlMs() / 1000),
     });
 }
 

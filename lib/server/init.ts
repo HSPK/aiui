@@ -7,14 +7,15 @@ let initPromise: Promise<void> | null = null;
 export function ensureInit(): Promise<void> {
     if (!initPromise) {
         initPromise = (async () => {
-            await bootstrapAdmin();
-            // Config file is upserted after admin bootstrap so failures here don't
-            // block first-login. Errors are logged inside loadConfigFile().
+            // Config file FIRST: hoists master_key / admin / session / cache env vars
+            // so the rest of init (and the route handler) sees them.
             try {
                 loadConfigFile();
             } catch (err) {
                 console.error("[aiui:init] config file load failed:", err);
             }
+            // Then bootstrap admin from the resulting env vars.
+            await bootstrapAdmin();
         })();
     }
     return initPromise;

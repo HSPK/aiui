@@ -1,51 +1,32 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { resolve } from "node:path";
-import { parse as parseYaml } from "yaml";
 import { eq } from "drizzle-orm";
 import { db, schema } from "./db";
 import { encryptSecret } from "./crypto";
+import { preflightFromConfig } from "@/lib/preflight.mjs";
 
 /**
- * Local config file shape (YAML or JSON). Loaded once at server boot.
+ * Local config file loader (server side).
  *
- * Search order (first match wins):
- *   1. `AIUI_CONFIG_PATH` env var (explicit override)
- *   2. `{userCwd}/aiui.config.{yaml,yml,json}`
- *   3. `{userCwd}/.config/aiui.{yaml,yml,json}`
- *   4. `{XDG_CONFIG_HOME or ~/.config}/aiui.{yaml,yml,json}`
+ * The search order and the YAML schema are defined in lib/preflight.mjs so
+ * the CLI (bin/aiui.mjs) and the server can share one source of truth.
  *
- * `userCwd` is `process.env.AIUI_USER_CWD` if set (so the `aiui` CLI can pass
- * the user's working directory through when Next runs from the package dir),
- * else `process.cwd()`.
+ * Top-level fields applied as env vars (master_key, database.path, admin.*,
+ * session.*, cache.*, server.*) are hoisted by `preflightFromConfig()` so they
+ * are visible to every other server module via process.env. Env vars that
+ * are already set take precedence.
  *
- * Top-level fields:
- *   master_key    string  Optional. Hoisted into process.env.AIUI_MASTER_KEY
- *                         BEFORE any provider/model upserts so the AES-GCM
- *                         encryption can succeed without an env var. If the
- *                         env var is already set it takes precedence — that
- *                         keeps deployments that prefer secret-injection
- *                         working without surprise overrides.
- *   providers[]   Provider entries. Upserted by `name`.
- *   models[]      Model entries. Upserted by `name`.
+ * This file additionally upserts `providers[]` into the SQLite DB by `name`.
+ * Entries already in the DB but absent from the file are left untouched
+ * (declarative-but-additive, so UI-managed and file-managed configuration
+ * coexist).
  *
- * Behaviour: declarative-but-additive. Entries not in the file are left
- * untouched in the DB, so UI-managed and file-managed config coexist.
- * Strings support `${ENV_VAR}` interpolation.
+ * `models[]` is intentionally NOT a config-file concept anymore — models are
+ * discovered live from each provider's `/models` endpoint (see
+ * lib/server/discovery.ts). The `models` DB table remains for per-model
+ * overrides (Azure deployments, custom display names, context_window pinning).
+ * If `models[]` is found in the config file we warn but don't act on it.
  */
-
-const DEFAULT_FILENAMES = ["aiui.config.yaml", "aiui.config.yml", "aiui.config.json"];
-const DOT_CONFIG_FILENAMES = ["aiui.yaml", "aiui.yml", "aiui.json"];
-
-function userCwd(): string {
-    return process.env.AIUI_USER_CWD || process.cwd();
-}
-
-function xdgConfigHome(): string {
-    return process.env.XDG_CONFIG_HOME || resolve(homedir(), ".config");
-}
 
 interface ProviderEntry {
     name?: string;
@@ -59,71 +40,6 @@ interface ProviderEntry {
     model_page?: string;
     is_local?: boolean;
     enabled?: boolean;
-}
-
-interface ModelEntry {
-    name?: string;
-    provider?: string;  // provider name (preferred) or id
-    upstream_model_id?: string;
-    type?: "chat" | "embedding" | "audio" | "reranker";
-    default_params?: Record<string, unknown>;
-    context_window?: number | null;
-    max_tokens?: number | null;
-    output_dimension?: number | null;
-    description?: string | null;
-    knowledge_date?: string | null;
-    timeout?: number;
-    max_retries?: number;
-    http_proxy?: Record<string, string> | null;
-    enabled?: boolean;
-}
-
-interface ConfigFile {
-    master_key?: string;
-    providers?: ProviderEntry[];
-    models?: ModelEntry[];
-}
-
-function locateConfigFile(): string | null {
-    const explicit = process.env.AIUI_CONFIG_PATH;
-    if (explicit) {
-        const p = resolve(userCwd(), explicit);
-        return existsSync(p) ? p : null;
-    }
-    const cwd = userCwd();
-    const candidates = [
-        ...DEFAULT_FILENAMES.map((f) => resolve(cwd, f)),
-        ...DOT_CONFIG_FILENAMES.map((f) => resolve(cwd, ".config", f)),
-        ...DOT_CONFIG_FILENAMES.map((f) => resolve(xdgConfigHome(), f)),
-    ];
-    for (const p of candidates) {
-        if (existsSync(p)) return p;
-    }
-    return null;
-}
-
-/** Recursively replace `${VAR}` placeholders with the corresponding env var. */
-function interpolateEnv<T>(value: T): T {
-    if (typeof value === "string") {
-        return value.replace(/\$\{([A-Z0-9_]+)\}/g, (_match, name) => process.env[name] ?? "") as unknown as T;
-    }
-    if (Array.isArray(value)) {
-        return value.map((v) => interpolateEnv(v)) as unknown as T;
-    }
-    if (value && typeof value === "object") {
-        const out: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-            out[k] = interpolateEnv(v);
-        }
-        return out as unknown as T;
-    }
-    return value;
-}
-
-function parseConfig(path: string): ConfigFile {
-    const text = readFileSync(path, "utf8");
-    const raw = path.endsWith(".json") ? JSON.parse(text) : parseYaml(text);
-    return interpolateEnv(raw ?? {}) as ConfigFile;
 }
 
 function upsertProvider(entry: ProviderEntry): { id: string; name: string } | null {
@@ -157,8 +73,8 @@ function upsertProvider(entry: ProviderEntry): { id: string; name: string } | nu
 
     if (existing) {
         const patch: Partial<typeof schema.providers.$inferInsert> = { ...updatesCommon };
-        // Only overwrite the stored key if the file actually specified one. This avoids
-        // wiping a UI-managed secret just because the file omits `api_key`.
+        // Only overwrite the stored key if the file specified one — protects
+        // a UI-managed secret from being wiped just because the file omits api_key.
         if (entry.api_key !== undefined) {
             patch.apiKeyEncrypted = apiKey ? encryptSecret(apiKey) : null;
         }
@@ -176,106 +92,42 @@ function upsertProvider(entry: ProviderEntry): { id: string; name: string } | nu
     return { id, name };
 }
 
-function upsertModel(entry: ModelEntry, providerNameToId: Map<string, string>): void {
-    const name = entry.name?.trim();
-    const providerKey = entry.provider?.trim();
-    const upstream = entry.upstream_model_id?.trim();
-    if (!name || !providerKey || !upstream) {
-        console.warn(`[aiui:config] model entry missing name/provider/upstream_model_id; skipping (name=${name ?? "?"})`);
-        return;
-    }
-    let providerId = providerNameToId.get(providerKey);
-    if (!providerId) {
-        // try DB lookup by name OR id
-        const found =
-            db.select().from(schema.providers).where(eq(schema.providers.name, providerKey)).get() ||
-            db.select().from(schema.providers).where(eq(schema.providers.id, providerKey)).get();
-        if (!found) {
-            console.warn(`[aiui:config] model "${name}" references unknown provider "${providerKey}"; skipping`);
-            return;
-        }
-        providerId = found.id;
-    }
-
-    const existing = db.select().from(schema.models).where(eq(schema.models.name, name)).get();
-    const updates = {
-        providerId,
-        upstreamModelId: upstream,
-        type: entry.type ?? "chat",
-        defaultParams: entry.default_params ?? {},
-        contextWindow: entry.context_window ?? null,
-        maxTokens: entry.max_tokens ?? null,
-        outputDimension: entry.output_dimension ?? null,
-        description: entry.description ?? null,
-        knowledgeDate: entry.knowledge_date ?? null,
-        timeout: entry.timeout ?? 60,
-        maxRetries: entry.max_retries ?? 2,
-        httpProxy: entry.http_proxy ?? null,
-        enabled: entry.enabled ?? true,
-        updatedAt: new Date().toISOString(),
-    };
-
-    if (existing) {
-        db.update(schema.models).set(updates).where(eq(schema.models.id, existing.id)).run();
-    } else {
-        db.insert(schema.models).values({ id: randomUUID(), name, ...updates }).run();
-    }
-}
-
 let loaded = false;
 
 export function loadConfigFile(): void {
     if (loaded) return;
     loaded = true;
 
-    const path = locateConfigFile();
-    if (!path) return;
+    const { path, cfg, applied } = preflightFromConfig();
+    if (!path || !cfg) return;
 
-    let cfg: ConfigFile;
-    try {
-        cfg = parseConfig(path);
-    } catch (err) {
-        console.error(`[aiui:config] failed to parse ${path}:`, err);
-        return;
+    if (applied.length > 0) {
+        console.log(`[aiui:config] ${path}: applied env from config (${applied.join(", ")}).`);
+    } else {
+        console.log(`[aiui:config] ${path} loaded.`);
     }
 
-    // Hoist master_key BEFORE anything that may call encryptSecret/decryptSecret.
-    // Env var wins so deployments that inject secrets via env are unaffected.
-    if (typeof cfg.master_key === "string" && cfg.master_key.trim() && !process.env.AIUI_MASTER_KEY) {
-        process.env.AIUI_MASTER_KEY = cfg.master_key.trim();
-        console.log(`[aiui:config] master_key sourced from ${path}.`);
+    if (Array.isArray((cfg as { models?: unknown[] }).models)) {
+        console.warn(
+            `[aiui:config] ${path}: \`models:\` section is deprecated — models are now ` +
+            `discovered live from each provider's /models endpoint. Use the admin UI ` +
+            `to add per-model overrides (Azure deployments, display-name aliases, etc.).`
+        );
     }
 
-    const providers = Array.isArray(cfg.providers) ? cfg.providers : [];
-    const models = Array.isArray(cfg.models) ? cfg.models : [];
-    if (providers.length === 0 && models.length === 0) {
-        console.log(`[aiui:config] ${path} loaded but contained no providers/models.`);
-        return;
-    }
+    const providers = Array.isArray((cfg as { providers?: ProviderEntry[] }).providers)
+        ? (cfg as { providers: ProviderEntry[] }).providers
+        : [];
+    if (providers.length === 0) return;
 
-    const providerNameToId = new Map<string, string>();
-    let providerCount = 0;
+    let count = 0;
     for (const entry of providers) {
         try {
-            const result = upsertProvider(entry);
-            if (result) {
-                providerNameToId.set(result.name, result.id);
-                providerCount++;
-            }
+            if (upsertProvider(entry)) count++;
         } catch (err) {
             console.error(`[aiui:config] upsert provider "${entry.name}" failed:`, err);
         }
     }
 
-    let modelCount = 0;
-    for (const entry of models) {
-        try {
-            upsertModel(entry, providerNameToId);
-            modelCount++;
-        } catch (err) {
-            console.error(`[aiui:config] upsert model "${entry.name}" failed:`, err);
-        }
-    }
-
-    console.log(`[aiui:config] ${path}: upserted ${providerCount} provider(s), ${modelCount} model(s).`);
+    if (count > 0) console.log(`[aiui:config] upserted ${count} provider(s).`);
 }
