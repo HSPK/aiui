@@ -9,10 +9,19 @@
    - CRUD 端点 = 3 处（zod + `defineRoute` + service）
    - 新模态 = 2 文件（`capabilities/<id>.ts` + 1 行 `register.ts` import + 6 行 Route Handler 调 `forwardGeneration`）
    - 新 FE domain = 1 个 `defineResource(...)` 调用（5 行；api + hooks + keys 自动派生）
+   - 新 CLI 子命令 = 1 个 `defineCommand({ meta, args, run })` 挂到 `bin/aiui.ts` 的 `subCommands`
 2. **功能原子性**：一个 domain 一个文件夹/文件，不起 thin re-export 中间层
 3. **单一真相**：`lib/schemas/<domain>.ts`（zod）是 wire 类型唯一来源，`lib/server/db/schema.ts`（Drizzle）是 DB 唯一来源。**所有** TS 类型通过 `z.infer` 派生，绝不手写并行 interface
 4. **开发期不保后向兼容**：thin wrapper / 过渡 alias / dead code 发现就删
-5. 优先用工厂（`defineRoute` / `defineResource` / `registerCapability`）；只有形态特殊（auth、SSE gateway、singleton prefs）才手写
+5. 优先用工厂（`defineRoute` / `defineResource` / `registerCapability` / `defineCommand`）；只有形态特殊（auth、SSE gateway、singleton prefs）才手写
+
+### SOLID — 映射到本仓库的具体执行规则
+
+- **S** Single Responsibility — 一个 domain 一个文件夹（`lib/server/<domain>/` + `lib/api/<domain>.ts` + `lib/schemas/<domain>.ts`）；一个 capability 一个文件；service 函数只做业务（鉴权交给 `defineRoute`，序列化交给 `serializer.ts`，envelope 交给 `response.ts`）。**不要**把跨域逻辑塞进 gateway 或 route handler
+- **O** Open / Closed — 扩展走 **registry / 工厂 / spread**：新模态调 `registerCapability(...)`、新端点用 `defineRoute(...)`、新 FE 资源用 `defineResource(...)`、新 CLI 子命令用 `defineCommand(...)`；**永远不要**为单一场景修改 `gateway/index.ts` / `route.ts` / `resource.ts` / `capabilities/index.ts` 的核心逻辑
+- **L** Liskov Substitution — 同 contract 的实现必须可互换：所有 `CapabilityHandler` 都遵守 `parseStreamChunk → { content, reasoning }`、`matches` 不抛异常、`endpoint.path` 是相对路径；所有 `defineResource` 返回对象都暴露同一 `{list,get,create,update,remove,useList,...,keys}` 形状；所有 service 函数失败时一律 `throw HttpError`（不返回 `null` 又一会儿 `throw`）
+- **I** Interface Segregation — FE 用 per-domain `import { users } from "@/lib/api"`，**不要**再起 god-object aggregate（旧的 `api.*` 已删）；`defineRoute` 只声明用到的 `{params?,body?,query?}` 段，handler 拿到的 `args` 只含自己声明的字段；component 不要 import 整个 store，用 selector `useStore(s => s.field)`
+- **D** Dependency Inversion — 上层模块（route handler / service / component）都依赖**抽象**（`lib/schemas/<domain>` 的 zod / 类型），不依赖具体的 DB row、Next 内部类型、上游 provider 形态；server ↔ client **不**互相 import，**都**从 `@/lib/schemas/*` 取类型；服务端 `lib/server/<domain>/service.ts` 永远不要 import 客户端代码，反之亦然
 
 ## Commands
 
