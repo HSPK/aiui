@@ -46,6 +46,7 @@ export async function GET(req: NextRequest) {
                 object: "model",
                 created: m.created ?? 0,
                 owned_by: m.provider_id,
+                type: m.capability,
             });
         }
 

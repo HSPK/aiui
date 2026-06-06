@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
         await ensureInit();
         const user = await authenticateGateway(req);
         const body = (await req.json()) as Record<string, unknown>;
-        const { response } = await forwardGeneration(user, "chat", body);
+        const { response } = await forwardGeneration(user, "image", body);
         return response;
     } catch (err) {
         return handle(err);

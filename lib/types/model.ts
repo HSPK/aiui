@@ -13,7 +13,12 @@ export interface ModelConfig {
     max_retries: number;
     http_proxy?: Record<string, string> | null;
     default_params: Record<string, unknown>;
-    type: "chat" | "embedding" | "audio" | "reranker";
+    /**
+     * Capability id (free text). Built-in: chat | embedding | image |
+     * audio.speech | audio.transcription | rerank. New capabilities can
+     * be registered server-side without a schema migration.
+     */
+    type: string;
     pricing?: Pricing | null;
     output_dimension?: number | null;
     context_window?: number | null;
@@ -33,7 +38,7 @@ export interface ModelCreateParams {
     name: string;
     provider_id: string;
     upstream_model_id: string;
-    type?: "chat" | "embedding" | "audio" | "reranker";
+    type?: string;
     default_params?: Record<string, unknown>;
     context_window?: number | null;
     max_tokens?: number | null;

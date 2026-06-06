@@ -1,6 +1,6 @@
 import { BaseResponse, ModelConfig, ProviderConfig, User, AuthParams, LogFilterParams, LogListResponse, GenerationLogDetail, UserCreateParams, UserUpdateParams, UserListResponse, UserFilterParams } from "./types";
 import { ConversationListResponse, MessageListResponse } from "./types/playground";
-import type { ApiKey, ProviderCreateParams, ProviderUpdateParams, ModelCreateParams, ModelUpdateParams } from "./types";
+import type { ApiKey, Capability, ProviderCreateParams, ProviderUpdateParams, ModelCreateParams, ModelUpdateParams } from "./types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "/api";
 
@@ -235,4 +235,7 @@ export const api = {
         body: JSON.stringify({ name }),
     }),
     deleteApiKey: (id: string) => fetcher<null>(`/apikeys/${encodeURIComponent(id)}`, { method: "DELETE" }),
+
+    // Capabilities registered on the gateway (chat, embedding, image, ...)
+    listCapabilities: () => fetcher<Capability[]>("/capabilities"),
 };

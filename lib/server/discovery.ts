@@ -1,6 +1,8 @@
 import "server-only";
 import { db, schema } from "./db";
 import { decryptSecret } from "./crypto";
+import { classifyModel } from "./capabilities";
+import "./capabilities/register";
 import type { Provider } from "./db/schema";
 
 /**
@@ -31,6 +33,8 @@ export interface DiscoveredModel {
     provider_name: string;
     /** "deployment" for Azure deployments, "model" for the OpenAI catalog. */
     object: "model" | "deployment";
+    /** Inferred capability id (chat | embedding | image | …) from name heuristics. */
+    capability: string;
     /** Unix timestamp from upstream if available. */
     created?: number;
 }
@@ -89,6 +93,7 @@ export async function discoverModels(provider: Provider): Promise<DiscoveredMode
                     provider_id: provider.id,
                     provider_name: provider.name,
                     object: "deployment" as const,
+                    capability: classifyModel(d.model ?? d.id),
                     created: d.created,
                 }));
             }
@@ -105,6 +110,7 @@ export async function discoverModels(provider: Provider): Promise<DiscoveredMode
             provider_id: provider.id,
             provider_name: provider.name,
             object: "model" as const,
+            capability: classifyModel(m.id),
             created: m.created,
         }));
     }
@@ -119,6 +125,7 @@ export async function discoverModels(provider: Provider): Promise<DiscoveredMode
         provider_id: provider.id,
         provider_name: provider.name,
         object: "model" as const,
+        capability: classifyModel(m.id),
         created: m.created,
     }));
 }
@@ -156,6 +163,15 @@ export async function listAllDiscovered(opts: { force?: boolean } = {}): Promise
     const entries = await Promise.all(providers.map((p) => getEntry(p, opts)));
     const out: DiscoveredModel[] = [];
     for (const e of entries) out.push(...e.models);
+    return out;
+}
+
+/** Best-effort per-provider count of discovered models (zero on failure). */
+export async function discoveredCountByProvider(): Promise<Record<string, number>> {
+    const providers = enabledProviders();
+    const entries = await Promise.all(providers.map((p) => getEntry(p)));
+    const out: Record<string, number> = {};
+    providers.forEach((p, i) => { out[p.id] = entries[i].models.length; });
     return out;
 }
 

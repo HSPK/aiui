@@ -1,7 +1,7 @@
 import "server-only";
 import { NextRequest } from "next/server";
 import { ensureInit } from "@/lib/server/init";
-import { authenticateGateway, forwardEmbeddings } from "@/lib/server/gateway";
+import { authenticateGateway, forwardGeneration } from "@/lib/server/gateway";
 import { handle } from "@/lib/server/response";
 
 export const runtime = "nodejs";
@@ -12,7 +12,8 @@ export async function POST(req: NextRequest) {
         await ensureInit();
         const user = await authenticateGateway(req);
         const body = (await req.json()) as Record<string, unknown>;
-        return await forwardEmbeddings(user, body);
+        const { response } = await forwardGeneration(user, "embedding", body);
+        return response;
     } catch (err) {
         return handle(err);
     }

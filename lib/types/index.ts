@@ -4,3 +4,4 @@ export * from "./model";
 export * from "./user";
 export * from "./log";
 export * from "./apikey";
+export * from "./capability";

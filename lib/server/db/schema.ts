@@ -54,7 +54,9 @@ export const models = sqliteTable("models", {
     name: text("name").notNull().unique(),
     providerId: text("provider_id").notNull().references(() => providers.id, { onDelete: "cascade" }),
     upstreamModelId: text("upstream_model_id").notNull(),
-    type: text("type", { enum: ["chat", "embedding", "audio", "reranker"] }).notNull().default("chat"),
+    // Capability id (chat | embedding | image | audio.speech | audio.transcription | rerank | ...).
+    // Free text so adding a new capability does not require a schema migration.
+    type: text("type").notNull().default("chat"),
     defaultParams: text("default_params", { mode: "json" }).$type<Record<string, unknown>>().default({}),
     contextWindow: integer("context_window"),
     maxTokens: integer("max_tokens"),
@@ -111,8 +113,10 @@ export const generationLogs = sqliteTable("generation_logs", {
     id: text("id").primaryKey(),
     userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
     modelName: text("model_name").notNull(),
+    capability: text("capability"),
     status: text("status", { enum: ["pending", "completed", "failed"] }).notNull().default("pending"),
     input: text("input", { mode: "json" }).$type<unknown>(),
+    inputSummary: text("input_summary"),
     output: text("output"),
     reason: text("reason"),
     content: text("content", { mode: "json" }).$type<unknown>(),
@@ -131,6 +135,7 @@ export const generationLogs = sqliteTable("generation_logs", {
     userIdx: index("gen_logs_user_idx").on(t.userId),
     modelIdx: index("gen_logs_model_idx").on(t.modelName),
     statusIdx: index("gen_logs_status_idx").on(t.status),
+    capabilityIdx: index("gen_logs_capability_idx").on(t.capability),
     createdIdx: index("gen_logs_created_idx").on(t.createdAt),
 }));
 
