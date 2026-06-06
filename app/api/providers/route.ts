@@ -26,7 +26,9 @@ export async function GET() {
 
 interface CreateBody {
     name?: string;
+    type?: "openai" | "azure";
     base_url?: string;
+    api_version?: string | null;
     api_key?: string;
     default_params?: Record<string, unknown>;
     http_proxy?: Record<string, string> | null;
@@ -44,6 +46,7 @@ export async function POST(req: NextRequest) {
         const body = (await req.json()) as CreateBody;
         const name = body.name?.trim();
         const baseUrl = body.base_url?.trim();
+        const type = body.type === "azure" ? "azure" : "openai";
         if (!name) throw badRequest("Provider name is required");
         if (!baseUrl) throw badRequest("base_url is required");
 
@@ -54,7 +57,9 @@ export async function POST(req: NextRequest) {
         db.insert(schema.providers).values({
             id,
             name,
+            type,
             baseUrl,
+            apiVersion: body.api_version?.trim() || null,
             apiKeyEncrypted: encryptSecret(body.api_key ?? null),
             defaultParams: body.default_params ?? {},
             httpProxy: body.http_proxy ?? null,

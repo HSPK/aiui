@@ -47,14 +47,29 @@ export function mergeParams(
     return { ...providerDefaults, ...modelDefaults, ...body };
 }
 
-function upstreamUrl(provider: Provider, path: string): string {
+function upstreamUrl(provider: Provider, model: Model, path: "/chat/completions" | "/embeddings"): string {
     const base = provider.baseUrl.replace(/\/$/, "");
-    return `${base}${path.startsWith("/") ? path : `/${path}`}`;
+    if (provider.type === "azure") {
+        // Azure routes calls per deployment: /openai/deployments/<deployment><path>?api-version=...
+        // The "deployment" is the per-model upstreamModelId. Default to a recent stable api-version
+        // if the provider didn't pin one (we'd rather forward a working request than 400).
+        const deployment = encodeURIComponent(model.upstreamModelId);
+        const apiVersion = provider.apiVersion?.trim() || "2024-10-21";
+        return `${base}/openai/deployments/${deployment}${path}?api-version=${encodeURIComponent(apiVersion)}`;
+    }
+    return `${base}${path}`;
 }
 
-function buildUpstreamHeaders(apiKey: string | null): Record<string, string> {
+function buildUpstreamHeaders(provider: Provider, apiKey: string | null): Record<string, string> {
     const h: Record<string, string> = { "Content-Type": "application/json" };
-    if (apiKey) h["Authorization"] = `Bearer ${apiKey}`;
+    if (apiKey) {
+        if (provider.type === "azure") {
+            // Azure uses a custom header instead of Authorization: Bearer
+            h["api-key"] = apiKey;
+        } else {
+            h["Authorization"] = `Bearer ${apiKey}`;
+        }
+    }
     return h;
 }
 
@@ -134,7 +149,13 @@ export async function forwardChatCompletions(
 
     const { model, provider, apiKey } = resolveModel(requestedModel);
     const merged = mergeParams(body, model, provider);
-    merged.model = model.upstreamModelId;
+    // Azure infers the model from the deployment in the URL path; sending `model` is
+    // harmless but redundant. OpenAI-compatible providers need it set to the upstream id.
+    if (provider.type === "azure") {
+        delete merged.model;
+    } else {
+        merged.model = model.upstreamModelId;
+    }
     const stream = !!merged.stream;
 
     const logId = startLog({
@@ -148,9 +169,9 @@ export async function forwardChatCompletions(
     const started = Date.now();
     let upstream: Response;
     try {
-        upstream = await fetch(upstreamUrl(provider, "/chat/completions"), {
+        upstream = await fetch(upstreamUrl(provider, model, "/chat/completions"), {
             method: "POST",
-            headers: buildUpstreamHeaders(apiKey),
+            headers: buildUpstreamHeaders(provider, apiKey),
             body: JSON.stringify(merged),
         });
     } catch (err) {
@@ -278,16 +299,20 @@ export async function forwardEmbeddings(
 
     const { model, provider, apiKey } = resolveModel(requestedModel);
     const merged = mergeParams(body, model, provider);
-    merged.model = model.upstreamModelId;
+    if (provider.type === "azure") {
+        delete merged.model;
+    } else {
+        merged.model = model.upstreamModelId;
+    }
 
     const logId = startLog({ userId: user.id, modelName: model.name, requestBody: merged });
     const started = Date.now();
 
     let upstream: Response;
     try {
-        upstream = await fetch(upstreamUrl(provider, "/embeddings"), {
+        upstream = await fetch(upstreamUrl(provider, model, "/embeddings"), {
             method: "POST",
-            headers: buildUpstreamHeaders(apiKey),
+            headers: buildUpstreamHeaders(provider, apiKey),
             body: JSON.stringify(merged),
         });
     } catch (err) {

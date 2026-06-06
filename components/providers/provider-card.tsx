@@ -41,6 +41,11 @@ export function ProviderCard({
                                         Operational
                                     </span>
                                 </div>
+                                {provider.type === "azure" && (
+                                    <Badge variant="secondary" className="text-[9px] uppercase font-semibold h-4 px-1.5 tracking-wider">
+                                        Azure
+                                    </Badge>
+                                )}
                             </div>
                         </div>
                     </div>

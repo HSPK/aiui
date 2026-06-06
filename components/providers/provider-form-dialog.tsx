@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
-import { ProviderConfig, ProviderCreateParams, ProviderUpdateParams } from "@/lib/types"
+import { ProviderConfig, ProviderCreateParams, ProviderType, ProviderUpdateParams } from "@/lib/types"
 import {
     Dialog,
     DialogContent,
@@ -17,6 +17,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
 import { toast } from "sonner"
 import { Loader2, Eye, EyeOff } from "lucide-react"
 
@@ -30,7 +37,9 @@ interface Props {
 export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props) {
     const queryClient = useQueryClient()
     const [name, setName] = useState("")
+    const [type, setType] = useState<ProviderType>("openai")
     const [baseUrl, setBaseUrl] = useState("")
+    const [apiVersion, setApiVersion] = useState("")
     const [apiKey, setApiKey] = useState("")
     const [showKey, setShowKey] = useState(false)
     const [defaultParams, setDefaultParams] = useState("{}")
@@ -43,7 +52,9 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
         if (!open) return
         if (mode === "edit" && provider) {
             setName(provider.name)
+            setType(provider.type ?? "openai")
             setBaseUrl(provider.base_url)
+            setApiVersion(provider.api_version ?? "")
             setApiKey("")
             setDefaultParams(JSON.stringify(provider.default_params ?? {}, null, 2))
             setDocumentPage(provider.document_page ?? "")
@@ -51,7 +62,9 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
             setEnabled(provider.enabled)
         } else {
             setName("")
+            setType("openai")
             setBaseUrl("")
+            setApiVersion("")
             setApiKey("")
             setDefaultParams("{}")
             setDocumentPage("")
@@ -89,6 +102,10 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
         e.preventDefault()
         if (!name.trim()) return toast.error("Name required")
         if (!baseUrl.trim()) return toast.error("base_url required")
+        if (type === "azure" && !apiVersion.trim()) {
+            // Soft warn but allow — gateway will fall back to a known default.
+            // (No early return.)
+        }
 
         let params: Record<string, unknown> = {}
         try {
@@ -100,26 +117,27 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
             return
         }
 
+        const payload: ProviderCreateParams = {
+            name: name.trim(),
+            type,
+            base_url: baseUrl.trim(),
+            api_version: type === "azure" ? (apiVersion.trim() || null) : null,
+            default_params: params,
+            document_page: documentPage || undefined,
+            model_page: modelPage || undefined,
+            enabled,
+        }
+        if (apiKey) payload.api_key = apiKey
+
         if (mode === "create") {
-            createMutation.mutate({
-                name: name.trim(),
-                base_url: baseUrl.trim(),
-                api_key: apiKey || undefined,
-                default_params: params,
-                document_page: documentPage || undefined,
-                model_page: modelPage || undefined,
-                enabled,
-            })
-        } else if (provider) {
-            const data: ProviderUpdateParams = {
-                name: name.trim(),
-                base_url: baseUrl.trim(),
-                default_params: params,
-                document_page: documentPage || undefined,
-                model_page: modelPage || undefined,
-                enabled,
+            if (!apiKey && type === "azure") {
+                // not strictly required (e.g. AAD scenarios) but flag it
+                toast.warning("No API key set — Azure usually requires one.")
             }
-            if (apiKey) data.api_key = apiKey
+            createMutation.mutate(payload)
+        } else if (provider) {
+            const data: ProviderUpdateParams = { ...payload }
+            if (!apiKey) delete data.api_key  // don't overwrite stored key with empty
             updateMutation.mutate({ id: provider.id, data })
         }
     }
@@ -132,19 +150,58 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
                 <DialogHeader>
                     <DialogTitle>{mode === "create" ? "Add Provider" : "Edit Provider"}</DialogTitle>
                     <DialogDescription>
-                        Configure an OpenAI-compatible upstream. The API key is stored encrypted at rest.
+                        Configure an upstream. The API key is stored encrypted at rest.
                     </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleSubmit}>
                     <div className="grid gap-4 py-4">
-                        <div className="grid gap-2">
-                            <Label htmlFor="p-name" className="text-xs">Name</Label>
-                            <Input id="p-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="openai" className="h-9 text-sm" />
+                        <div className="grid grid-cols-[1fr_140px] gap-3">
+                            <div className="grid gap-2">
+                                <Label htmlFor="p-name" className="text-xs">Name</Label>
+                                <Input id="p-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="openai" className="h-9 text-sm" />
+                            </div>
+                            <div className="grid gap-2">
+                                <Label className="text-xs">Type</Label>
+                                <Select value={type} onValueChange={(v) => setType(v as ProviderType)}>
+                                    <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="openai">OpenAI-compatible</SelectItem>
+                                        <SelectItem value="azure">Azure OpenAI</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
                         </div>
                         <div className="grid gap-2">
-                            <Label htmlFor="p-url" className="text-xs">Base URL</Label>
-                            <Input id="p-url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.openai.com/v1" className="h-9 text-sm font-mono" />
+                            <Label htmlFor="p-url" className="text-xs">
+                                Base URL
+                                {type === "azure" && (
+                                    <span className="text-muted-foreground ml-1 font-normal">
+                                        (e.g. <code className="font-mono">https://&lt;resource&gt;.openai.azure.com</code>)
+                                    </span>
+                                )}
+                            </Label>
+                            <Input
+                                id="p-url"
+                                value={baseUrl}
+                                onChange={(e) => setBaseUrl(e.target.value)}
+                                placeholder={type === "azure" ? "https://my-resource.openai.azure.com" : "https://api.openai.com/v1"}
+                                className="h-9 text-sm font-mono"
+                            />
                         </div>
+                        {type === "azure" && (
+                            <div className="grid gap-2">
+                                <Label htmlFor="p-apiversion" className="text-xs">
+                                    API Version <span className="text-muted-foreground font-normal">(defaults to <code className="font-mono">2024-10-21</code> if blank)</span>
+                                </Label>
+                                <Input
+                                    id="p-apiversion"
+                                    value={apiVersion}
+                                    onChange={(e) => setApiVersion(e.target.value)}
+                                    placeholder="2024-10-21"
+                                    className="h-9 text-sm font-mono"
+                                />
+                            </div>
+                        )}
                         <div className="grid gap-2">
                             <Label htmlFor="p-key" className="text-xs">
                                 API Key {mode === "edit" && <span className="text-muted-foreground">(leave blank to keep existing)</span>}
@@ -188,6 +245,14 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
                             <Label htmlFor="p-enabled" className="text-xs">Enabled</Label>
                             <Switch id="p-enabled" checked={enabled} onCheckedChange={setEnabled} />
                         </div>
+                        {type === "azure" && (
+                            <div className="text-[11px] text-muted-foreground border-l-2 border-muted pl-3 leading-relaxed">
+                                In Azure mode each <strong>Model</strong>&apos;s &ldquo;Upstream Model ID&rdquo; should be the
+                                Azure <strong>deployment name</strong>, not the model name. Requests are routed to
+                                <code className="font-mono mx-1">/openai/deployments/&lt;deployment&gt;/chat/completions?api-version=…</code>
+                                and authenticated with the <code className="font-mono">api-key</code> header.
+                            </div>
+                        )}
                     </div>
                     <DialogFooter>
                         <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={isLoading}>Cancel</Button>

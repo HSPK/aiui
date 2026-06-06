@@ -27,7 +27,9 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
 
 interface UpdateBody {
     name?: string;
+    type?: "openai" | "azure";
     base_url?: string;
+    api_version?: string | null;
     api_key?: string;
     default_params?: Record<string, unknown>;
     http_proxy?: Record<string, string> | null;
@@ -57,9 +59,15 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
                 updates.name = newName;
             }
         }
+        if (body.type !== undefined) {
+            updates.type = body.type === "azure" ? "azure" : "openai";
+        }
         if (body.base_url !== undefined) {
             if (!body.base_url.trim()) throw badRequest("base_url cannot be empty");
             updates.baseUrl = body.base_url.trim();
+        }
+        if (body.api_version !== undefined) {
+            updates.apiVersion = body.api_version?.trim() || null;
         }
         if (body.api_key !== undefined) {
             updates.apiKeyEncrypted = body.api_key ? encryptSecret(body.api_key) : null;

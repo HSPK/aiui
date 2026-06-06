@@ -19,9 +19,17 @@ export async function POST(_req: NextRequest, ctx: { params: Promise<{ id: strin
 
         const headers: Record<string, string> = { "Content-Type": "application/json" };
         const key = decryptSecret(provider.apiKeyEncrypted);
-        if (key) headers["Authorization"] = `Bearer ${key}`;
 
-        const url = `${provider.baseUrl.replace(/\/$/, "")}/models`;
+        let url: string;
+        if (provider.type === "azure") {
+            if (key) headers["api-key"] = key;
+            const apiVersion = provider.apiVersion?.trim() || "2024-10-21";
+            url = `${provider.baseUrl.replace(/\/$/, "")}/openai/models?api-version=${encodeURIComponent(apiVersion)}`;
+        } else {
+            if (key) headers["Authorization"] = `Bearer ${key}`;
+            url = `${provider.baseUrl.replace(/\/$/, "")}/models`;
+        }
+
         const start = Date.now();
         try {
             const res = await fetch(url, { headers });

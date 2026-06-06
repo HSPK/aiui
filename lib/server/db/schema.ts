@@ -35,7 +35,9 @@ export const apiKeys = sqliteTable("api_keys", {
 export const providers = sqliteTable("providers", {
     id: text("id").primaryKey(),
     name: text("name").notNull().unique(),
+    type: text("type", { enum: ["openai", "azure"] }).notNull().default("openai"),
     baseUrl: text("base_url").notNull(),
+    apiVersion: text("api_version"),
     apiKeyEncrypted: text("api_key_encrypted"),
     defaultParams: text("default_params", { mode: "json" }).$type<Record<string, unknown>>().default({}),
     httpProxy: text("http_proxy", { mode: "json" }).$type<Record<string, string> | null>(),

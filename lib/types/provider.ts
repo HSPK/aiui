@@ -1,9 +1,13 @@
+export type ProviderType = "openai" | "azure";
+
 export interface ProviderConfig {
     id: string;
     name: string;
     provider_name: string;
+    type: ProviderType;
     base_url: string;
     proxy: string;
+    api_version?: string | null;
     api_key_mask?: string;
     has_api_key: boolean;
     default_params: Record<string, unknown>;
@@ -19,7 +23,9 @@ export interface ProviderConfig {
 
 export interface ProviderCreateParams {
     name: string;
+    type?: ProviderType;
     base_url: string;
+    api_version?: string | null;
     api_key?: string;
     default_params?: Record<string, unknown>;
     http_proxy?: Record<string, string> | null;
