@@ -5,6 +5,7 @@ import { db, schema } from "./db";
 import { authenticateBearer, getCurrentUser, type SessionUser } from "./auth";
 import { decryptSecret } from "./crypto";
 import { findModelByIdOrName } from "./serializers";
+import { resolveByDiscovery } from "./discovery";
 import { badRequest, HttpError, notFound, unauthorized } from "./response";
 import type { Model, Provider } from "./db/schema";
 
@@ -12,17 +13,67 @@ export interface ResolvedModel {
     model: Model;
     provider: Provider;
     apiKey: string | null;
+    /** True when the Model row was synthesized on-the-fly from discovery, not pulled from DB. */
+    discovered: boolean;
 }
 
-export function resolveModel(name: string): ResolvedModel {
+/** Build a transient Model object for a discovered upstream model. */
+function transientModel(name: string, provider: Provider, upstreamModelId: string): Model {
+    const now = new Date().toISOString();
+    return {
+        id: `discovered:${provider.id}:${upstreamModelId}`,
+        name,
+        providerId: provider.id,
+        upstreamModelId,
+        type: "chat",
+        defaultParams: {},
+        contextWindow: null,
+        maxTokens: null,
+        outputDimension: null,
+        pricing: null,
+        description: null,
+        knowledgeDate: null,
+        timeout: 60,
+        maxRetries: 2,
+        httpProxy: null,
+        enabled: true,
+        createdAt: now,
+        updatedAt: now,
+    } as Model;
+}
+
+/**
+ * Resolve a requested model name to (model, provider, apiKey).
+ *
+ * Resolution order:
+ *   1. DB `models` table — explicit overrides take priority. This is the only
+ *      reliable path for Azure deployments (whose names users define manually).
+ *   2. Dynamic discovery — scan each enabled provider's `/models` listing.
+ *      The first provider that lists this id wins. A transient Model object
+ *      is synthesized so the rest of the gateway code is type-stable.
+ *
+ * Throws notFound when nothing matches.
+ */
+export async function resolveModel(name: string): Promise<ResolvedModel> {
     const model = findModelByIdOrName(name);
-    if (!model) throw notFound(`Model "${name}" not found`);
-    if (!model.enabled) throw badRequest(`Model "${name}" is disabled`);
-    const provider = db.select().from(schema.providers).where(eq(schema.providers.id, model.providerId)).get();
-    if (!provider) throw notFound(`Provider for model "${name}" not found`);
-    if (!provider.enabled) throw badRequest(`Provider "${provider.name}" is disabled`);
-    const apiKey = decryptSecret(provider.apiKeyEncrypted);
-    return { model, provider, apiKey };
+    if (model) {
+        if (!model.enabled) throw badRequest(`Model "${name}" is disabled`);
+        const provider = db.select().from(schema.providers).where(eq(schema.providers.id, model.providerId)).get();
+        if (!provider) throw notFound(`Provider for model "${name}" not found`);
+        if (!provider.enabled) throw badRequest(`Provider "${provider.name}" is disabled`);
+        return { model, provider, apiKey: decryptSecret(provider.apiKeyEncrypted), discovered: false };
+    }
+
+    const discovered = await resolveByDiscovery(name);
+    if (!discovered) throw notFound(`Model "${name}" not found in any provider`);
+
+    const { provider, upstreamModelId } = discovered;
+    return {
+        model: transientModel(name, provider, upstreamModelId),
+        provider,
+        apiKey: decryptSecret(provider.apiKeyEncrypted),
+        discovered: true,
+    };
 }
 
 /** Authenticate via session cookie OR Bearer api key. Returns the resolved user. */
@@ -147,7 +198,7 @@ export async function forwardChatCompletions(
     const requestedModel = typeof body.model === "string" ? body.model : "";
     if (!requestedModel) throw badRequest("`model` is required");
 
-    const { model, provider, apiKey } = resolveModel(requestedModel);
+    const { model, provider, apiKey } = await resolveModel(requestedModel);
     const merged = mergeParams(body, model, provider);
     // Azure infers the model from the deployment in the URL path; sending `model` is
     // harmless but redundant. OpenAI-compatible providers need it set to the upstream id.
@@ -297,7 +348,7 @@ export async function forwardEmbeddings(
     const requestedModel = typeof body.model === "string" ? body.model : "";
     if (!requestedModel) throw badRequest("`model` is required");
 
-    const { model, provider, apiKey } = resolveModel(requestedModel);
+    const { model, provider, apiKey } = await resolveModel(requestedModel);
     const merged = mergeParams(body, model, provider);
     if (provider.type === "azure") {
         delete merged.model;

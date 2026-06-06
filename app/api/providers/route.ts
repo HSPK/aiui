@@ -6,6 +6,7 @@ import { db, schema } from "@/lib/server/db";
 import { ensureInit } from "@/lib/server/init";
 import { requireAdmin, requireUser } from "@/lib/server/auth";
 import { encryptSecret } from "@/lib/server/crypto";
+import { clearDiscoveryCache } from "@/lib/server/discovery";
 import { badRequest, handle, ok } from "@/lib/server/response";
 import { modelCountsByProvider, serializeProvider } from "@/lib/server/serializers";
 
@@ -68,6 +69,7 @@ export async function POST(req: NextRequest) {
             isLocal: !!body.is_local,
             enabled: body.enabled ?? true,
         }).run();
+        clearDiscoveryCache();
 
         const created = db.select().from(schema.providers).where(eq(schema.providers.id, id)).get()!;
         return ok(serializeProvider(created, 0));

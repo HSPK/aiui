@@ -24,6 +24,7 @@ export interface ModelConfig {
     provider_id?: string | null;
     is_local: boolean;
     enabled: boolean;
+    is_discovered?: boolean;
     created_at?: string;
     updated_at?: string;
 }

@@ -5,6 +5,7 @@ import { db, schema } from "@/lib/server/db";
 import { ensureInit } from "@/lib/server/init";
 import { requireAdmin, requireUser } from "@/lib/server/auth";
 import { encryptSecret } from "@/lib/server/crypto";
+import { clearDiscoveryCache } from "@/lib/server/discovery";
 import { badRequest, handle, notFound, ok } from "@/lib/server/response";
 import { findProviderByIdOrName, modelCountsByProvider, serializeProvider } from "@/lib/server/serializers";
 
@@ -82,6 +83,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string 
         updates.updatedAt = new Date().toISOString();
 
         db.update(schema.providers).set(updates).where(eq(schema.providers.id, provider.id)).run();
+        clearDiscoveryCache();
         const reloaded = db.select().from(schema.providers).where(eq(schema.providers.id, provider.id)).get()!;
         const counts = modelCountsByProvider();
         return ok(serializeProvider(reloaded, counts[provider.id] ?? 0));
@@ -98,6 +100,7 @@ export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: str
         const provider = findProviderByIdOrName(decodeURIComponent(id));
         if (!provider) throw notFound("Provider not found");
         db.delete(schema.providers).where(eq(schema.providers.id, provider.id)).run();
+        clearDiscoveryCache();
         return ok(null);
     } catch (err) {
         return handle(err);

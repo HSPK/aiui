@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
         if (!body.model) return fail("`model` is required", 400);
 
         // Resolve model early so we fail fast with a sensible 4xx.
-        resolveModel(body.model);
+        await resolveModel(body.model);
 
         const conversationId = body.conversation_id ?? randomUUID();
         const now = new Date().toISOString();

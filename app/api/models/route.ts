@@ -5,6 +5,7 @@ import { eq, inArray } from "drizzle-orm";
 import { db, schema } from "@/lib/server/db";
 import { ensureInit } from "@/lib/server/init";
 import { requireAdmin, requireUser } from "@/lib/server/auth";
+import { listAllDiscovered } from "@/lib/server/discovery";
 import { badRequest, handle, ok } from "@/lib/server/response";
 import { findProviderByIdOrName, serializeModel } from "@/lib/server/serializers";
 
@@ -16,16 +17,59 @@ export async function GET() {
         await ensureInit();
         await requireUser();
 
+        // 1) DB-backed overrides (admin-defined, including Azure deployments).
         const rows = db.select().from(schema.models).orderBy(schema.models.name).all();
         const providerIds = Array.from(new Set(rows.map((r) => r.providerId)));
         const providers = providerIds.length > 0
             ? db.select().from(schema.providers).where(inArray(schema.providers.id, providerIds)).all()
             : [];
         const providerMap = new Map(providers.map((p) => [p.id, p]));
-        return ok(rows.map((m) => {
+        const dbModels = rows.map((m) => {
             const p = providerMap.get(m.providerId);
-            return serializeModel(m, p?.name ?? null, p?.baseUrl ?? null);
-        }));
+            return {
+                ...serializeModel(m, p?.name ?? null, p?.baseUrl ?? null),
+                is_discovered: false,
+            };
+        });
+
+        // 2) Live-discovered models from each enabled provider. Skip names that
+        //    already have an explicit DB row — the override wins.
+        const seen = new Set(dbModels.map((m) => m.name));
+        const allProviders = db.select().from(schema.providers).all();
+        const providerById = new Map(allProviders.map((p) => [p.id, p]));
+        const discovered = await listAllDiscovered();
+        const synthesized = discovered
+            .filter((d) => !seen.has(d.id))
+            .map((d) => {
+                const p = providerById.get(d.provider_id);
+                seen.add(d.id);
+                return {
+                    id: `discovered:${d.provider_id}:${d.id}`,
+                    name: d.id,
+                    model_id: d.id,
+                    proxy: p?.baseUrl ?? null,
+                    timeout: 60,
+                    max_retries: 2,
+                    http_proxy: null,
+                    default_params: {},
+                    type: "chat" as const,
+                    pricing: null,
+                    output_dimension: null,
+                    context_window: null,
+                    max_tokens: null,
+                    description: null,
+                    knowledge_date: null,
+                    provider: p?.name ?? null,
+                    provider_id: d.provider_id,
+                    is_local: false,
+                    enabled: true,
+                    created_at: undefined,
+                    updated_at: undefined,
+                    is_discovered: true,
+                };
+            });
+
+        return ok([...dbModels, ...synthesized]);
     } catch (err) {
         return handle(err);
     }
