@@ -146,7 +146,7 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[520px]">
+            <DialogContent className="sm:max-w-[640px] max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                     <DialogTitle>{mode === "create" ? "Add Provider" : "Edit Provider"}</DialogTitle>
                     <DialogDescription>
@@ -155,12 +155,12 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
                 </DialogHeader>
                 <form onSubmit={handleSubmit}>
                     <div className="grid gap-4 py-4">
-                        <div className="grid grid-cols-[1fr_140px] gap-3">
-                            <div className="grid gap-2">
+                        <div className="grid sm:grid-cols-[1fr_180px] gap-3">
+                            <div className="grid gap-2 min-w-0">
                                 <Label htmlFor="p-name" className="text-xs">Name</Label>
                                 <Input id="p-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="openai" className="h-9 text-sm" />
                             </div>
-                            <div className="grid gap-2">
+                            <div className="grid gap-2 min-w-0">
                                 <Label className="text-xs">Type</Label>
                                 <Select value={type} onValueChange={(v) => setType(v as ProviderType)}>
                                     <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
@@ -220,12 +220,12 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
                                 </Button>
                             </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
-                            <div className="grid gap-2">
+                        <div className="grid sm:grid-cols-2 gap-3">
+                            <div className="grid gap-2 min-w-0">
                                 <Label htmlFor="p-doc" className="text-xs">Docs URL</Label>
                                 <Input id="p-doc" value={documentPage} onChange={(e) => setDocumentPage(e.target.value)} className="h-9 text-sm" />
                             </div>
-                            <div className="grid gap-2">
+                            <div className="grid gap-2 min-w-0">
                                 <Label htmlFor="p-models" className="text-xs">Models page URL</Label>
                                 <Input id="p-models" value={modelPage} onChange={(e) => setModelPage(e.target.value)} className="h-9 text-sm" />
                             </div>

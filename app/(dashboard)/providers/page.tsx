@@ -205,22 +205,21 @@ export default function ProvidersPage() {
                         {isLoadingProviders ? (
                             <p className="text-muted-foreground">Loading providers...</p>
                         ) : filteredProviders.map((provider) => (
-                            <div key={provider.id || provider.name} className="relative group">
-                                <ProviderCard
-                                    provider={provider}
-                                    onClick={() => router.push(`/providers/${provider.id || provider.name}`)}
-                                />
-                                {isAdmin && (
-                                    <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <Button variant="secondary" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); setProviderDialog({ open: true, mode: "edit", provider }) }}>
+                            <ProviderCard
+                                key={provider.id || provider.name}
+                                provider={provider}
+                                onClick={() => router.push(`/providers/${provider.id || provider.name}`)}
+                                hoverActions={isAdmin ? (
+                                    <>
+                                        <Button variant="secondary" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); setProviderDialog({ open: true, mode: "edit", provider }) }} title="Edit">
                                             <Pencil className="h-3.5 w-3.5" />
                                         </Button>
-                                        <Button variant="secondary" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={(e) => { e.stopPropagation(); setDeleteProvider(provider) }}>
+                                        <Button variant="secondary" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={(e) => { e.stopPropagation(); setDeleteProvider(provider) }} title="Delete">
                                             <Trash2 className="h-3.5 w-3.5" />
                                         </Button>
-                                    </div>
-                                )}
-                            </div>
+                                    </>
+                                ) : null}
+                            />
                         ))}
                         {!isLoadingProviders && filteredProviders.length === 0 && (
                             <div className="col-span-full flex flex-col items-center justify-center border-2 border-dashed rounded-lg h-[calc(100vh-220px)] text-muted-foreground">
@@ -244,7 +243,13 @@ export default function ProvidersPage() {
                             ) : (
                                 <ModelsTable
                                     models={filteredModels}
-                                    onEdit={isAdmin ? (m) => setModelDialog({ open: true, mode: "edit", model: m }) : undefined}
+                                    onEdit={isAdmin ? (m) => {
+                                        // Discovered rows have no DB row yet — opening the
+                                        // dialog in "create" mode lets the admin save it as
+                                        // an override, with all discovered defaults pre-filled.
+                                        const mode = m.is_discovered ? "create" : "edit"
+                                        setModelDialog({ open: true, mode, model: m })
+                                    } : undefined}
                                     onDelete={isAdmin ? (m) => setDeleteModel(m) : undefined}
                                 />
                             )}

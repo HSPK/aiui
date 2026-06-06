@@ -7,11 +7,18 @@ import { Badge } from "@/components/ui/badge"
 interface ProviderCardProps {
     provider: ProviderConfig;
     onClick?: () => void;
+    /**
+     * Right-hand slot rendered in place of the n_models badge on hover.
+     * Used by the providers page to inject admin edit/delete buttons
+     * without overlaying the count box.
+     */
+    hoverActions?: React.ReactNode;
 }
 
 export function ProviderCard({
     provider,
-    onClick
+    onClick,
+    hoverActions,
 }: ProviderCardProps) {
     return (
         <Card
@@ -19,9 +26,9 @@ export function ProviderCard({
             onClick={onClick}
         >
             <CardContent>
-                <div className="flex justify-between items-start mb-2">
-                    <div className="flex items-center gap-4">
-                        {/* Logo Placeholder */}
+                <div className="flex justify-between items-start mb-2 gap-3">
+                    <div className="flex items-center gap-4 min-w-0">
+                        {/* Logo */}
                         <div className="h-10 w-10 shrink-0 flex items-center justify-center">
                             <ProviderIcon
                                 providerName={provider.provider_name}
@@ -31,10 +38,9 @@ export function ProviderCard({
                             />
                         </div>
 
-                        <div className="space-y-1">
-                            <h3 className="font-bold text-base leading-none tracking-tight">{provider.provider_name}</h3>
+                        <div className="space-y-1 min-w-0">
+                            <h3 className="font-bold text-base leading-none tracking-tight truncate" title={provider.provider_name}>{provider.provider_name}</h3>
                             <div className="flex items-center gap-2">
-                                {/* Status Indicator */}
                                 <div className="flex items-center gap-1.5">
                                     <span className="h-1 w-1 rounded-full ring-1 ring-offset-1 transition-colors duration-300 bg-green-500 ring-green-200" />
                                     <span className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
@@ -50,15 +56,25 @@ export function ProviderCard({
                         </div>
                     </div>
 
-                    <div className="text-right">
-                        <div className="text-2xl font-bold tracking-tight text-foreground">{provider.n_models || 0}</div>
-                        <div className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">Models</div>
+                    {/* Top-right slot: shows model count by default; if hoverActions
+                        is supplied, swap to it on group hover. Both share the same
+                        bounding box, so they never overlap. */}
+                    <div className="shrink-0 relative h-10 min-w-[64px] flex items-start justify-end">
+                        <div className={`text-right transition-opacity duration-200 ${hoverActions ? "group-hover:opacity-0" : ""}`}>
+                            <div className="text-2xl font-bold tracking-tight text-foreground leading-none">{provider.n_models ?? 0}</div>
+                            <div className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mt-1">Models</div>
+                        </div>
+                        {hoverActions && (
+                            <div className="absolute right-0 top-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                {hoverActions}
+                            </div>
+                        )}
                     </div>
                 </div>
 
                 <div className="flex items-end justify-between">
                     <div className="flex flex-col gap-3">
-                        {/* Action Icons */}
+                        {/* External-link icons */}
                         <div className="flex gap-3">
                             {provider.model_page ? (
                                 <a
@@ -87,10 +103,10 @@ export function ProviderCard({
                             ) : <BookOpen className="h-4 w-4 text-muted-foreground/20 cursor-not-allowed" strokeWidth={1.5} />}
                         </div>
 
-                        {/* Capability Badges / Endpoint */}
+                        {/* Endpoint badge */}
                         <Badge
                             variant="outline"
-                            className="font-mono font-normal text-[10px] text-foreground/90  cursor-default transition-colors h-5 px-1.5 max-w-[160px] truncate block w-fit"
+                            className="font-mono font-normal text-[10px] text-foreground/90 cursor-default transition-colors h-5 px-1.5 max-w-[180px] truncate block w-fit"
                             title={`Endpoint: ${provider.proxy}`}
                             onClick={(e) => e.stopPropagation()}
                         >

@@ -93,8 +93,14 @@ export function ModelsTable({ models, onEdit, onDelete }: Props) {
                         {showActions && (
                             <TableCell className="text-right">
                                 <div className="flex justify-end gap-1">
-                                    {!model.is_discovered && onEdit && (
-                                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(model)} title="Edit">
+                                    {onEdit && (
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-7 w-7"
+                                            onClick={() => onEdit(model)}
+                                            title={model.is_discovered ? "Create override" : "Edit"}
+                                        >
                                             <Pencil className="h-3.5 w-3.5" />
                                         </Button>
                                     )}

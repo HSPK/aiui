@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 import { ModelConfig, ModelCreateParams, ModelUpdateParams } from "@/lib/types"
@@ -25,7 +25,7 @@ import {
     SelectValue,
 } from "@/components/ui/select"
 import { toast } from "sonner"
-import { Loader2 } from "lucide-react"
+import { Loader2, Sparkles } from "lucide-react"
 
 interface Props {
     open: boolean
@@ -35,13 +35,6 @@ interface Props {
     defaultProviderId?: string
 }
 
-const TYPES: Array<{ value: ModelCreateParams["type"]; label: string }> = [
-    { value: "chat", label: "Chat" },
-    { value: "embedding", label: "Embedding" },
-    { value: "audio", label: "Audio" },
-    { value: "reranker", label: "Reranker" },
-]
-
 export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProviderId }: Props) {
     const queryClient = useQueryClient()
     const { data: providers } = useQuery({
@@ -49,11 +42,17 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
         queryFn: api.getProviders,
         enabled: open,
     })
+    const { data: capabilities } = useQuery({
+        queryKey: ["capabilities"],
+        queryFn: api.listCapabilities,
+        enabled: open,
+        staleTime: 60_000,
+    })
 
     const [name, setName] = useState("")
     const [providerId, setProviderId] = useState<string>("")
     const [upstreamModelId, setUpstreamModelId] = useState("")
-    const [type, setType] = useState<ModelCreateParams["type"]>("chat")
+    const [type, setType] = useState<string>("chat")
     const [contextWindow, setContextWindow] = useState("")
     const [maxTokens, setMaxTokens] = useState("")
     const [outputDim, setOutputDim] = useState("")
@@ -62,19 +61,28 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
     const [enabled, setEnabled] = useState(true)
     const [parseError, setParseError] = useState<string | null>(null)
 
+    // True when the dialog is open in "create" mode but a model object was
+    // supplied — that's the "promote discovered → override" flow.
+    const isOverride = useMemo(
+        () => mode === "create" && !!model?.is_discovered,
+        [mode, model?.is_discovered],
+    )
+
     useEffect(() => {
         if (!open) return
-        if (mode === "edit" && model) {
+        if (model) {
+            // Both edit and "create-override" pre-fill from the model object.
+            // Use isOverride to know how to render labels/help text.
             setName(model.name)
             setProviderId(model.provider_id ?? "")
-            setUpstreamModelId(model.model_id ?? "")
-            setType(model.type)
+            setUpstreamModelId(model.model_id ?? model.name)
+            setType(model.type ?? "chat")
             setContextWindow(model.context_window?.toString() ?? "")
             setMaxTokens(model.max_tokens?.toString() ?? "")
             setOutputDim(model.output_dimension?.toString() ?? "")
             setDescription(model.description ?? "")
             setDefaultParams(JSON.stringify(model.default_params ?? {}, null, 2))
-            setEnabled(model.enabled)
+            setEnabled(model.enabled !== false)
         } else {
             setName("")
             setProviderId(defaultProviderId ?? "")
@@ -93,7 +101,7 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
     const createMutation = useMutation({
         mutationFn: (data: ModelCreateParams) => api.createModel(data),
         onSuccess: () => {
-            toast.success("Model created")
+            toast.success(isOverride ? "Override saved" : "Model created")
             queryClient.invalidateQueries({ queryKey: ["models"] })
             queryClient.invalidateQueries({ queryKey: ["providers"] })
             onOpenChange(false)
@@ -149,30 +157,37 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
     }
 
     const isLoading = createMutation.isPending || updateMutation.isPending
+    const title = isOverride ? "Create override" : mode === "create" ? "Add Model" : "Edit Model"
+    const submitLabel = isOverride ? "Save override" : mode === "create" ? "Create" : "Save"
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[520px]">
+            <DialogContent className="sm:max-w-[640px] max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                    <DialogTitle>{mode === "create" ? "Add Model" : "Edit Model"}</DialogTitle>
+                    <DialogTitle className="flex items-center gap-2">
+                        {isOverride && <Sparkles className="h-4 w-4 text-primary" />}
+                        {title}
+                    </DialogTitle>
                     <DialogDescription>
-                        Map an upstream model id to a display name your apps can call.
+                        {isOverride
+                            ? "This discovered model has no DB row yet. Save to create an override that customizes its config and shadows the discovered entry by name."
+                            : "Map an upstream model id to a display name your apps can call."}
                     </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleSubmit}>
                     <div className="grid gap-4 py-4">
-                        <div className="grid grid-cols-2 gap-3">
-                            <div className="grid gap-2">
+                        <div className="grid sm:grid-cols-2 gap-3">
+                            <div className="grid gap-2 min-w-0">
                                 <Label htmlFor="m-name" className="text-xs">Display Name</Label>
                                 <Input id="m-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="gpt-4o-mini" className="h-9 text-sm font-mono" />
                             </div>
-                            <div className="grid gap-2">
+                            <div className="grid gap-2 min-w-0">
                                 <Label htmlFor="m-up" className="text-xs">Upstream Model ID</Label>
                                 <Input id="m-up" value={upstreamModelId} onChange={(e) => setUpstreamModelId(e.target.value)} placeholder="gpt-4o-mini" className="h-9 text-sm font-mono" />
                             </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div className="grid gap-2">
+                        <div className="grid sm:grid-cols-2 gap-3">
+                            <div className="grid gap-2 min-w-0">
                                 <Label className="text-xs">Provider</Label>
                                 <Select value={providerId} onValueChange={setProviderId}>
                                     <SelectTrigger className="h-9 text-sm">
@@ -185,28 +200,37 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
                                     </SelectContent>
                                 </Select>
                             </div>
-                            <div className="grid gap-2">
-                                <Label className="text-xs">Type</Label>
-                                <Select value={type} onValueChange={(v) => setType(v as ModelCreateParams["type"])}>
+                            <div className="grid gap-2 min-w-0">
+                                <Label className="text-xs">Capability</Label>
+                                <Select value={type} onValueChange={setType}>
                                     <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
                                     <SelectContent>
-                                        {TYPES.map((t) => (
-                                            <SelectItem key={t.value} value={t.value!}>{t.label}</SelectItem>
+                                        {(capabilities ?? []).map((c) => (
+                                            <SelectItem key={c.id} value={c.id}>
+                                                <div className="flex flex-col">
+                                                    <span>{c.label}</span>
+                                                    <span className="text-[10px] text-muted-foreground font-mono">{c.endpoint}</span>
+                                                </div>
+                                            </SelectItem>
                                         ))}
+                                        {/* Allow saving an unregistered id so legacy rows still load */}
+                                        {type && !(capabilities ?? []).some((c) => c.id === type) && (
+                                            <SelectItem value={type}>{type}</SelectItem>
+                                        )}
                                     </SelectContent>
                                 </Select>
                             </div>
                         </div>
-                        <div className="grid grid-cols-3 gap-3">
-                            <div className="grid gap-2">
+                        <div className="grid sm:grid-cols-3 gap-3">
+                            <div className="grid gap-2 min-w-0">
                                 <Label htmlFor="m-ctx" className="text-xs">Context Window</Label>
                                 <Input id="m-ctx" type="number" value={contextWindow} onChange={(e) => setContextWindow(e.target.value)} className="h-9 text-sm" />
                             </div>
-                            <div className="grid gap-2">
+                            <div className="grid gap-2 min-w-0">
                                 <Label htmlFor="m-max" className="text-xs">Max Tokens</Label>
                                 <Input id="m-max" type="number" value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} className="h-9 text-sm" />
                             </div>
-                            <div className="grid gap-2">
+                            <div className="grid gap-2 min-w-0">
                                 <Label htmlFor="m-dim" className="text-xs">Output Dim</Label>
                                 <Input id="m-dim" type="number" value={outputDim} onChange={(e) => setOutputDim(e.target.value)} className="h-9 text-sm" />
                             </div>
@@ -229,7 +253,7 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
                         <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={isLoading}>Cancel</Button>
                         <Button type="submit" size="sm" disabled={isLoading}>
                             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                            {mode === "create" ? "Create" : "Save"}
+                            {submitLabel}
                         </Button>
                     </DialogFooter>
                 </form>

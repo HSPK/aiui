@@ -95,15 +95,15 @@ export default function ApiKeysPage() {
                         Secrets are hashed at rest. You can only see a key value at the moment of creation.
                     </CardDescription>
                 </CardHeader>
-                <CardContent className="p-0">
+                <CardContent className="px-2 pb-4">
                     <Table>
                         <TableHeader>
                             <TableRow>
-                                <TableHead>Name</TableHead>
+                                <TableHead className="pl-4">Name</TableHead>
                                 <TableHead>Prefix</TableHead>
-                                <TableHead>Created</TableHead>
-                                <TableHead>Last used</TableHead>
-                                <TableHead className="w-[80px] text-right">Actions</TableHead>
+                                <TableHead className="hidden md:table-cell">Created</TableHead>
+                                <TableHead className="hidden md:table-cell">Last used</TableHead>
+                                <TableHead className="w-[60px] text-right pr-4">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -115,11 +115,11 @@ export default function ApiKeysPage() {
                             )}
                             {keys.map((k) => (
                                 <TableRow key={k.id}>
-                                    <TableCell className="font-medium">{k.name}</TableCell>
+                                    <TableCell className="font-medium pl-4">{k.name}</TableCell>
                                     <TableCell><Badge variant="outline" className="font-mono text-xs">{k.prefix}…</Badge></TableCell>
-                                    <TableCell className="text-xs text-muted-foreground">{formatToLocal(k.created_at)}</TableCell>
-                                    <TableCell className="text-xs text-muted-foreground">{k.last_used_at ? formatToLocal(k.last_used_at) : "—"}</TableCell>
-                                    <TableCell className="text-right">
+                                    <TableCell className="text-xs text-muted-foreground hidden md:table-cell whitespace-nowrap">{formatToLocal(k.created_at)}</TableCell>
+                                    <TableCell className="text-xs text-muted-foreground hidden md:table-cell whitespace-nowrap">{k.last_used_at ? formatToLocal(k.last_used_at) : "—"}</TableCell>
+                                    <TableCell className="text-right pr-4">
                                         <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setToDelete(k)}>
                                             <Trash2 className="h-3.5 w-3.5" />
                                         </Button>
@@ -158,11 +158,12 @@ export default function ApiKeysPage() {
                             Copy this key now — it cannot be displayed again.
                         </DialogDescription>
                     </DialogHeader>
-                    <div className="flex items-center gap-2 bg-muted/50 border rounded-md p-2 my-2">
-                        <code className="flex-1 font-mono text-xs break-all">{newKey?.key}</code>
+                    <div className="flex items-start gap-2 bg-muted/50 border rounded-md p-2 my-2">
+                        <code className="flex-1 min-w-0 font-mono text-xs break-all leading-relaxed">{newKey?.key}</code>
                         <Button
                             variant="outline"
                             size="icon"
+                            className="shrink-0"
                             onClick={() => {
                                 if (newKey) {
                                     navigator.clipboard.writeText(newKey.key)
