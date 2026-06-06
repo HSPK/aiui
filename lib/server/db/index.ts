@@ -6,7 +6,8 @@ import { existsSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import * as schema from "./schema";
 
-const DB_PATH = process.env.AIUI_DB_PATH || resolve(process.cwd(), "data", "aiui.db");
+const USER_CWD = process.env.AIUI_USER_CWD || process.cwd();
+const DB_PATH = process.env.AIUI_DB_PATH || resolve(USER_CWD, "data", "aiui.db");
 
 declare global {
     var __aiui_db__: ReturnType<typeof createDb> | undefined;

@@ -1,6 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { eq } from "drizzle-orm";
@@ -8,44 +9,43 @@ import { db, schema } from "./db";
 import { encryptSecret } from "./crypto";
 
 /**
- * Local config file shape (YAML or JSON). Loaded once at server boot and
- * upserted into the DB by `name`. Entries already in the DB but not in the
- * file are left untouched — this is additive declarative, not strict
- * declarative, so UI-driven and file-driven configuration coexist.
+ * Local config file shape (YAML or JSON). Loaded once at server boot.
  *
- * Values may reference environment variables via `${VAR}` interpolation
- * (e.g. `api_key: ${OPENAI_API_KEY}`).
+ * Search order (first match wins):
+ *   1. `AIUI_CONFIG_PATH` env var (explicit override)
+ *   2. `{userCwd}/aiui.config.{yaml,yml,json}`
+ *   3. `{userCwd}/.config/aiui.{yaml,yml,json}`
+ *   4. `{XDG_CONFIG_HOME or ~/.config}/aiui.{yaml,yml,json}`
  *
- * Example:
+ * `userCwd` is `process.env.AIUI_USER_CWD` if set (so the `aiui` CLI can pass
+ * the user's working directory through when Next runs from the package dir),
+ * else `process.cwd()`.
  *
- *   providers:
- *     - name: openai
- *       type: openai
- *       base_url: https://api.openai.com/v1
- *       api_key: ${OPENAI_API_KEY}
- *     - name: azure-eastus
- *       type: azure
- *       base_url: https://my-resource.openai.azure.com
- *       api_version: "2024-10-21"
- *       api_key: ${AZURE_OPENAI_API_KEY}
+ * Top-level fields:
+ *   master_key    string  Optional. Hoisted into process.env.AIUI_MASTER_KEY
+ *                         BEFORE any provider/model upserts so the AES-GCM
+ *                         encryption can succeed without an env var. If the
+ *                         env var is already set it takes precedence — that
+ *                         keeps deployments that prefer secret-injection
+ *                         working without surprise overrides.
+ *   providers[]   Provider entries. Upserted by `name`.
+ *   models[]      Model entries. Upserted by `name`.
  *
- *   models:
- *     - name: gpt-4o-mini
- *       provider: openai
- *       upstream_model_id: gpt-4o-mini
- *       type: chat
- *       context_window: 128000
- *     - name: azure-gpt-4o
- *       provider: azure-eastus
- *       upstream_model_id: my-gpt-4o-deployment  # the Azure deployment name
- *       type: chat
+ * Behaviour: declarative-but-additive. Entries not in the file are left
+ * untouched in the DB, so UI-managed and file-managed config coexist.
+ * Strings support `${ENV_VAR}` interpolation.
  */
 
-const DEFAULT_PATHS = [
-    "aiui.config.yaml",
-    "aiui.config.yml",
-    "aiui.config.json",
-];
+const DEFAULT_FILENAMES = ["aiui.config.yaml", "aiui.config.yml", "aiui.config.json"];
+const DOT_CONFIG_FILENAMES = ["aiui.yaml", "aiui.yml", "aiui.json"];
+
+function userCwd(): string {
+    return process.env.AIUI_USER_CWD || process.cwd();
+}
+
+function xdgConfigHome(): string {
+    return process.env.XDG_CONFIG_HOME || resolve(homedir(), ".config");
+}
 
 interface ProviderEntry {
     name?: string;
@@ -79,6 +79,7 @@ interface ModelEntry {
 }
 
 interface ConfigFile {
+    master_key?: string;
     providers?: ProviderEntry[];
     models?: ModelEntry[];
 }
@@ -86,11 +87,16 @@ interface ConfigFile {
 function locateConfigFile(): string | null {
     const explicit = process.env.AIUI_CONFIG_PATH;
     if (explicit) {
-        const p = resolve(process.cwd(), explicit);
+        const p = resolve(userCwd(), explicit);
         return existsSync(p) ? p : null;
     }
-    for (const rel of DEFAULT_PATHS) {
-        const p = resolve(process.cwd(), rel);
+    const cwd = userCwd();
+    const candidates = [
+        ...DEFAULT_FILENAMES.map((f) => resolve(cwd, f)),
+        ...DOT_CONFIG_FILENAMES.map((f) => resolve(cwd, ".config", f)),
+        ...DOT_CONFIG_FILENAMES.map((f) => resolve(xdgConfigHome(), f)),
+    ];
+    for (const p of candidates) {
         if (existsSync(p)) return p;
     }
     return null;
@@ -231,6 +237,13 @@ export function loadConfigFile(): void {
     } catch (err) {
         console.error(`[aiui:config] failed to parse ${path}:`, err);
         return;
+    }
+
+    // Hoist master_key BEFORE anything that may call encryptSecret/decryptSecret.
+    // Env var wins so deployments that inject secrets via env are unaffected.
+    if (typeof cfg.master_key === "string" && cfg.master_key.trim() && !process.env.AIUI_MASTER_KEY) {
+        process.env.AIUI_MASTER_KEY = cfg.master_key.trim();
+        console.log(`[aiui:config] master_key sourced from ${path}.`);
     }
 
     const providers = Array.isArray(cfg.providers) ? cfg.providers : [];

@@ -47,4 +47,7 @@ next-env.d.ts
 /aiui.config.yaml
 /aiui.config.yml
 /aiui.config.json
+/.config/aiui.yaml
+/.config/aiui.yml
+/.config/aiui.json
 
