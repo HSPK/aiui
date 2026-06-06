@@ -221,6 +221,18 @@ export async function forwardGeneration(
     }
     const stream = !!capability.supportsStreaming && !!merged.stream;
 
+    // For streaming OpenAI-compatible chat completions, OpenAI only emits
+    // the `usage` chunk when stream_options.include_usage=true. Inject it
+    // transparently so the gateway can record prompt/completion/total
+    // tokens on every streaming log row. We don't override an explicit
+    // user value (a few providers reject the field).
+    if (stream && capability.id === "chat") {
+        const so = (merged.stream_options as Record<string, unknown> | undefined) ?? {};
+        if (so.include_usage === undefined) {
+            merged.stream_options = { ...so, include_usage: true };
+        }
+    }
+
     const inputSummary = capability.summarizeInput?.(merged) ?? null;
     const logId = startLog({
         userId: user.id,
@@ -312,6 +324,12 @@ export async function forwardGeneration(
     let accumContent = "";
     let accumReasoning = "";
     let usage: Record<string, unknown> | undefined;
+    /** Last `model` field seen in a stream chunk (echoes the upstream model). */
+    let streamModel: string | undefined;
+    /** Captured from the first chunk that carries an id (OpenAI shape). */
+    let streamId: string | undefined;
+    /** Captured from any chunk's `system_fingerprint`. */
+    let systemFingerprint: string | undefined;
     let buf = "";
     let firstTokenMs: number | null = null;
 
@@ -329,7 +347,7 @@ export async function forwardGeneration(
                 const data = trimmed.slice(5).trim();
                 if (!data || data === "[DONE]") continue;
                 try {
-                    const json = JSON.parse(data);
+                    const json = JSON.parse(data) as Record<string, unknown>;
                     const delta = capability.parseStreamChunk?.(json) ?? { content: "", reasoning: "" };
                     if (delta.content || delta.reasoning) {
                         if (firstTokenMs === null) firstTokenMs = Date.now() - started;
@@ -337,6 +355,9 @@ export async function forwardGeneration(
                         if (delta.reasoning) accumReasoning += delta.reasoning;
                         opts.onStreamDelta?.(delta);
                     }
+                    if (typeof json.id === "string" && !streamId) streamId = json.id;
+                    if (typeof json.model === "string") streamModel = json.model;
+                    if (typeof json.system_fingerprint === "string") systemFingerprint = json.system_fingerprint;
                     const maybeUsage = (json as { usage?: Record<string, unknown> })?.usage;
                     if (maybeUsage) usage = maybeUsage;
                 } catch {
@@ -346,11 +367,26 @@ export async function forwardGeneration(
         },
         flush() {
             const u = usage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined;
+            // Reconstruct an OpenAI-style completion response from the
+            // accumulated stream so logs show a single coherent JSON shape
+            // — matches the non-streaming branch's `generation` payload.
+            const message: Record<string, unknown> = { role: "assistant", content: accumContent };
+            if (accumReasoning) message.reasoning_content = accumReasoning;
+            const mergedResponse: Record<string, unknown> = {
+                id: streamId ?? logId,
+                object: "chat.completion",
+                created: Math.floor(started / 1000),
+                model: streamModel ?? model.upstreamModelId,
+                choices: [{ index: 0, message, finish_reason: "stop" }],
+            };
+            if (systemFingerprint) mergedResponse.system_fingerprint = systemFingerprint;
+            if (usage) mergedResponse.usage = usage;
+
             completeLog(logId, {
                 status: "completed",
                 output: accumContent,
-                content: { content: accumContent, reasoning_content: accumReasoning },
-                generation: usage ?? null,
+                content: mergedResponse,
+                generation: mergedResponse,
                 promptTokens: u?.prompt_tokens ?? null,
                 completionTokens: u?.completion_tokens ?? null,
                 totalTokens: u?.total_tokens ?? null,

@@ -333,7 +333,12 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                             </div>
                             <div className="space-y-1 overflow-hidden">
                                 <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">User</span>
-                                <div className="text-sm font-medium truncate" title={log.user_id}>{log.user_id}</div>
+                                <div
+                                    className="text-sm font-medium truncate"
+                                    title={log.username ? `${log.username} (${log.user_id})` : log.user_id}
+                                >
+                                    {log.username || log.user_id}
+                                </div>
                             </div>
                             <div className="space-y-1">
                                 <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Time</span>

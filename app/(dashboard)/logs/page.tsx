@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select"
 import { TablePagination } from "@/components/ui/table-pagination"
 import { RefreshButton } from "@/components/ui/refresh-button"
+import { LoadingState } from "@/components/ui/loading-state"
 import { useTableQueryState } from "@/lib/hooks/use-table-query-state"
 
 type StatusFilter = "pending" | "completed" | "failed" | "all"
@@ -122,7 +123,7 @@ export default function LogsPage() {
                 <div className="flex-1 border rounded-xl bg-card shadow-sm flex flex-col overflow-hidden relative">
                     {isLoading && !data && (
                         <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
-                            <p className="text-muted-foreground animate-pulse">Loading...</p>
+                            <LoadingState />
                         </div>
                     )}
 

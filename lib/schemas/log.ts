@@ -7,6 +7,8 @@ export const logStatusSchema = z.enum(["pending", "completed", "failed"]);
 export const logListItemDTOSchema = z.object({
     id: z.string(),
     user_id: z.string(),
+    /** Human-readable username joined from the users table at query time. */
+    username: z.string().nullable(),
     model_name: z.string(),
     capability: z.string().nullable(),
     input_summary: z.string().nullable(),

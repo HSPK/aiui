@@ -25,6 +25,7 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { LoadingState } from "@/components/ui/loading-state"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import { Plus, Trash2, Copy, KeyRound } from "lucide-react"
@@ -93,7 +94,11 @@ export default function ApiKeysPage() {
                         </TableHeader>
                         <TableBody>
                             {isLoading && (
-                                <TableRow><TableCell colSpan={5} className="text-muted-foreground text-center py-6">Loading...</TableCell></TableRow>
+                                <TableRow>
+                                    <TableCell colSpan={5} className="py-6">
+                                        <LoadingState variant="inline" className="justify-center" />
+                                    </TableCell>
+                                </TableRow>
                             )}
                             {!isLoading && keys.length === 0 && (
                                 <TableRow><TableCell colSpan={5} className="text-muted-foreground text-center py-6">No API keys yet.</TableCell></TableRow>

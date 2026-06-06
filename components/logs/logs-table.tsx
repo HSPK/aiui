@@ -84,9 +84,16 @@ export function LogsTable({ data, sorting, onSortingChange, onViewDetail }: Logs
             )
         },
         {
-            accessorKey: "user_id",
+            accessorKey: "username",
             header: "User",
-            cell: ({ row }) => <div className="text-xs truncate max-w-[100px]" title={row.getValue("user_id")}>{row.getValue("user_id")}</div>
+            cell: ({ row }) => {
+                const label = row.original.username || row.original.user_id
+                return (
+                    <div className="text-xs truncate max-w-[100px]" title={row.original.username ? `${row.original.username} (${row.original.user_id})` : row.original.user_id}>
+                        {label}
+                    </div>
+                )
+            }
         },
         {
             accessorKey: "model_name",

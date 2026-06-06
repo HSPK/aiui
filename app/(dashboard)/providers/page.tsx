@@ -20,6 +20,7 @@ import {
     SelectValue,
 } from "@/components/ui/select"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { LoadingState } from "@/components/ui/loading-state"
 import { ProviderCard } from "@/components/providers/provider-card"
 import { ModelsTable } from "@/components/providers/models-table"
 import { ProviderFormDialog } from "@/components/providers/provider-form-dialog"
@@ -180,7 +181,9 @@ export default function ProvidersPage() {
                 <TabsContent value="providers" className="mt-0">
                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                         {isLoadingProviders ? (
-                            <p className="text-muted-foreground">Loading providers...</p>
+                            <div className="col-span-full">
+                                <LoadingState label="Loading providers…" />
+                            </div>
                         ) : filteredProviders.map((provider) => (
                             <ProviderCard
                                 key={provider.id || provider.name}
@@ -216,7 +219,7 @@ export default function ProvidersPage() {
                     <Card>
                         <CardContent className="p-0 pt-0 pl-4 pr-4">
                             {isLoadingModels ? (
-                                <p className="text-muted-foreground p-6">Loading models...</p>
+                                <LoadingState label="Loading models…" />
                             ) : (
                                 <ModelsTable
                                     models={filteredModels}

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Plus, ArrowUp, RotateCcw } from "lucide-react"
 import { ConnectedModelSelector } from "@/components/playground/model-selector"
 import { ModelChipsWithConfig } from "@/components/playground/model-chips-with-config"
+import { useDeviceSettingsStore } from "@/lib/stores/device-settings-store"
 
 export interface ChatInputConfig {
     historyLimit: number
@@ -47,8 +48,17 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     const [hasInput, setHasInput] = React.useState(false) // Only track if has content for button
     const textareaRef = React.useRef<HTMLTextAreaElement>(null)
 
-    // Track IME composition state (for Chinese/Japanese/Korean input methods)
+    // Track IME composition state (for Chinese/Japanese/Korean input methods).
+    // We belt-and-braces this: many browsers fire `onKeyDown` BEFORE
+    // `onCompositionEnd` when Enter commits a composition, so we also check
+    // `e.nativeEvent.isComposing` and the legacy `keyCode === 229` sentinel.
     const isComposingRef = React.useRef(false)
+
+    // sendOnEnter device preference — when false, Enter inserts a newline
+    // and Cmd/Ctrl+Enter submits instead.
+    const sendOnEnter = useDeviceSettingsStore((s) => s.sendOnEnter)
+    const sendOnEnterRef = React.useRef(sendOnEnter)
+    sendOnEnterRef.current = sendOnEnter
 
     // Use ref for callbacks to prevent recreation
     const onSubmitRef = React.useRef(onSubmit)
@@ -91,10 +101,31 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     }, [])
 
     const handleKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-        // Ignore Enter during IME composition (e.g., selecting Chinese characters)
-        if (e.key === 'Enter' && !e.shiftKey && !isComposingRef.current) {
-            e.preventDefault()
-            handleSubmit()
+        if (e.key !== "Enter") return
+
+        // Ignore Enter while an IME composition is active — multiple
+        // signals because different browsers fire events in different
+        // orders during composition commit.
+        const composing =
+            isComposingRef.current ||
+            e.nativeEvent.isComposing ||
+            (e.nativeEvent as KeyboardEvent & { keyCode?: number }).keyCode === 229
+        if (composing) return
+
+        const cmdEnter = e.metaKey || e.ctrlKey
+
+        if (sendOnEnterRef.current) {
+            // Enter submits, Shift+Enter inserts newline (default).
+            if (!e.shiftKey) {
+                e.preventDefault()
+                handleSubmit()
+            }
+        } else {
+            // Enter inserts newline (default), Cmd/Ctrl+Enter submits.
+            if (cmdEnter) {
+                e.preventDefault()
+                handleSubmit()
+            }
         }
     }, [handleSubmit])
 

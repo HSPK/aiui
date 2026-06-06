@@ -1,7 +1,7 @@
 import "server-only";
 import { and, asc, count, desc, eq, like, type SQL } from "drizzle-orm";
 import { db } from "../db";
-import { generationLogs } from "../db/schema";
+import { generationLogs, users } from "../db/schema";
 import { forbidden, notFound } from "../response";
 import type { SessionUser } from "../auth";
 import type { Paginated } from "@/lib/schemas/common";
@@ -33,16 +33,23 @@ export function listLogs(user: SessionUser, query: LogListQuery): Paginated<LogL
     const whereExpr = and(...filters);
 
     const total = db.select({ value: count() }).from(generationLogs).where(whereExpr).get()?.value ?? 0;
-    const rows = db.select().from(generationLogs)
+    const rows = db
+        .select({
+            log: generationLogs,
+            username: users.username,
+        })
+        .from(generationLogs)
+        .leftJoin(users, eq(generationLogs.userId, users.id))
         .where(whereExpr)
         .orderBy(parseSortColumn(query.sort))
         .limit(query.page_size)
         .offset((query.page - 1) * query.page_size)
         .all();
 
-    const items: LogListItemDTO[] = rows.map((r) => ({
+    const items: LogListItemDTO[] = rows.map(({ log: r, username }) => ({
         id: r.id,
         user_id: r.userId,
+        username: username ?? null,
         model_name: r.modelName,
         capability: r.capability ?? null,
         input_summary: r.inputSummary ?? null,
@@ -63,12 +70,19 @@ export function listLogs(user: SessionUser, query: LogListQuery): Paginated<LogL
 }
 
 export function getLog(user: SessionUser, id: string): LogDetailDTO {
-    const log = db.select().from(generationLogs).where(eq(generationLogs.id, id)).get();
-    if (!log) throw notFound("Log not found");
+    const row = db
+        .select({ log: generationLogs, username: users.username })
+        .from(generationLogs)
+        .leftJoin(users, eq(generationLogs.userId, users.id))
+        .where(eq(generationLogs.id, id))
+        .get();
+    if (!row) throw notFound("Log not found");
+    const { log, username } = row;
     if (user.role !== "admin" && log.userId !== user.id) throw forbidden();
     return {
         id: log.id,
         user_id: log.userId,
+        username: username ?? null,
         model_name: log.modelName,
         capability: log.capability ?? null,
         input_summary: log.inputSummary ?? null,
