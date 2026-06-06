@@ -45,10 +45,9 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
     const [adapterId, setAdapterId] = useState<string>(ADAPTER_AUTO)
     const [baseUrl, setBaseUrl] = useState("")
     const [apiVersion, setApiVersion] = useState("")
-    /** Stored API key (server-side mask in edit mode until the user types).
-     *  Letting the input own the mask + relying on type="password" to render
-     *  it as dots is the cleanest way to communicate "a key is set" without
-     *  ever pasting the mask glyphs next to real password dots. */
+    /** API key field. Always starts empty — the server never returns the
+     *  stored plaintext, so in edit mode we just rely on the placeholder
+     *  to tell the user that leaving it empty preserves the existing key. */
     const [apiKey, setApiKey] = useState("")
     const [showKey, setShowKey] = useState(false)
     const [defaultParams, setDefaultParams] = useState("{}")
@@ -59,11 +58,6 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
     const [parseError, setParseError] = useState<string | null>(null)
     const [healthTesting, setHealthTesting] = useState(false)
 
-    /** The mask is what we initially seed the input with so the field shows
-     *  password dots (not empty). We track it so submit can tell whether the
-     *  user actually typed a new value. */
-    const initialMask = mode === "edit" ? (provider?.api_key_mask ?? "") : ""
-
     useEffect(() => {
         if (!open) return
         if (mode === "edit" && provider) {
@@ -71,9 +65,7 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
             setAdapterId(provider.adapter_id ?? "openai")
             setBaseUrl(provider.base_url)
             setApiVersion(provider.api_version ?? "")
-            // Seed with the mask — type="password" turns it into dots.
-            // First focus / first keystroke clears it so the user starts fresh.
-            setApiKey(provider.api_key_mask ?? "")
+            setApiKey("")
             setDefaultParams(JSON.stringify(provider.default_params ?? {}, null, 2))
             setDocumentPage(provider.document_page ?? "")
             setModelPage(provider.model_page ?? "")
@@ -94,14 +86,6 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
         setShowKey(false)
         setParseError(null)
     }, [open, mode, provider])
-
-    /** When the user focuses the API key field while it still holds the
-     *  server-supplied mask, wipe it so they can type a new key cleanly. */
-    const handleKeyFocus = () => {
-        if (apiKey === initialMask && initialMask !== "") {
-            setApiKey("")
-        }
-    }
 
     const createMutation = providers.useCreate({
         onSuccess: () => {
@@ -145,16 +129,15 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
             health_check_url: healthCheckUrl.trim() || null,
             enabled,
         }
-        // Treat the seed mask as "no change" — only send api_key when the
-        // user actually typed a fresh value.
-        if (apiKey && apiKey !== initialMask) payload.api_key = apiKey
+        // Only send api_key when the user actually typed something.
+        // In edit mode, an empty value leaves the existing key untouched.
+        if (apiKey) payload.api_key = apiKey
 
         if (mode === "create") {
             createMutation.mutate(payload)
         } else if (provider) {
             const data: ProviderUpdateInput = { ...payload }
-            // Don't overwrite stored key with empty / mask placeholder
-            if (!apiKey || apiKey === initialMask) delete data.api_key
+            if (!apiKey) delete data.api_key
             updateMutation.mutate({ id: provider.id, data })
         }
     }
@@ -239,13 +222,12 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
                                     id="p-key"
                                     type={showKey ? "text" : "password"}
                                     value={apiKey}
-                                    onFocus={handleKeyFocus}
                                     onChange={(e) => setApiKey(e.target.value)}
-                                    placeholder={mode === "edit" ? "" : "sk-..."}
+                                    placeholder={mode === "edit" ? "Leave empty to keep existing key" : "sk-..."}
                                     className="h-9 text-sm pr-10 font-mono"
                                     autoComplete="off"
                                 />
-                                <Button type="button" variant="ghost" size="icon" onClick={() => setShowKey(!showKey)} className="absolute right-0 top-0 h-9 w-9 text-muted-foreground">
+                                <Button type="button" variant="ghost" size="icon" onClick={() => setShowKey((s) => !s)} className="absolute right-0 top-0 h-9 w-9 text-muted-foreground">
                                     {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                                 </Button>
                             </div>

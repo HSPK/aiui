@@ -1,5 +1,4 @@
 import "server-only";
-import { maskSecret } from "../crypto";
 import type { Provider } from "../db/schema";
 import type { ProviderDTO } from "@/lib/schemas/provider";
 
@@ -13,7 +12,6 @@ export function serializeProvider(p: Provider, modelCount?: number): ProviderDTO
         proxy: p.baseUrl,
         api_version: p.apiVersion ?? null,
         has_api_key: !!p.apiKeyEncrypted,
-        api_key_mask: maskSecret(p.apiKeyEncrypted),
         default_params: (p.defaultParams ?? {}) as Record<string, unknown>,
         http_proxy: p.httpProxy ?? null,
         document_page: p.documentPage ?? "",

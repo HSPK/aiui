@@ -260,7 +260,7 @@ data/                         # 运行时 SQLite（已 .gitignore）
 
 - 任何后端路由开头必须 `await ensureInit()` 以保证首次启动跑过 migration 与 admin 引导。
 - 写操作走 `requireAdmin()`，读操作走 `requireUser()`；网关入口走 `authenticateGateway(req)`（Bearer 优先，cookie 兜底）。
-- 上游 Provider 的 `api_key` 一律走 `encryptSecret`/`decryptSecret`；列表接口仅返回 `api_key_mask`（`sk-…BEEF` 格式）。
+- 上游 Provider 的 `api_key` 一律走 `encryptSecret`/`decryptSecret`；列表接口只暴露 `has_api_key`，明文从不离开服务端。
 - 新增表：改 `lib/server/db/schema.ts` → `bunx drizzle-kit generate` → 重启服务自动跑 migration。
 - 不要在客户端直接 `fetch`；统一走 `lib/api.ts` 的 `api` 对象（自动带 cookie、统一错误处理、401 自动跳 `/login`）。
 - 流式：服务端用 `forwardChatCompletions` 的 tee（TransformStream）同时转发字节给客户端 + 累积 content 用于落日志。

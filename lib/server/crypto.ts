@@ -43,18 +43,6 @@ export function decryptSecret(payload: string | null | undefined): string | null
     return Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");
 }
 
-export function maskSecret(payload: string | null | undefined): string {
-    if (!payload) return "";
-    try {
-        const plain = decryptSecret(payload);
-        if (!plain) return "";
-        if (plain.length <= 8) return "****";
-        return `${plain.slice(0, 4)}...${plain.slice(-4)}`;
-    } catch {
-        return "****";
-    }
-}
-
 export function sha256(input: string): string {
     return createHash("sha256").update(input).digest("hex");
 }

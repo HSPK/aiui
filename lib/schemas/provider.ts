@@ -16,7 +16,6 @@ export const providerDTOSchema = z.object({
     proxy: z.string(),
     api_version: z.string().nullable(),
     has_api_key: z.boolean(),
-    api_key_mask: z.string(),
     default_params: z.record(z.string(), z.unknown()),
     http_proxy: z.record(z.string(), z.string()).nullable(),
     document_page: z.string(),
