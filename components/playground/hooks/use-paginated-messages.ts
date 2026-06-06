@@ -1,4 +1,4 @@
-import { conversations } from "@/lib/api";
+import { ApiError, conversations } from "@/lib/api";
 import * as React from "react"
 
 interface UsePaginatedMessagesOptions {
@@ -67,6 +67,13 @@ export function usePaginatedMessages({
                         setHasMore(false)
                     }
                 } catch (e) {
+                    // 404 = no server-side conversation row yet (the FE
+                    // generates the id up-front and the server creates the
+                    // row on first message). Treat as "no messages".
+                    if (e instanceof ApiError && e.status === 404) {
+                        setHasMore(false)
+                        return
+                    }
                     console.error("Failed to load initial messages", e)
                 }
             }
@@ -105,6 +112,12 @@ export function usePaginatedMessages({
             }
             return null
         } catch (e) {
+            // Same as initial load: a 404 means the conversation never made
+            // it to the server (no messages sent yet) — treat as "no more".
+            if (e instanceof ApiError && e.status === 404) {
+                setHasMore(false)
+                return null
+            }
             console.error("Failed to load more messages", e)
             return null
         } finally {
