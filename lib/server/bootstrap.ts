@@ -2,7 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { db } from "./db";
 import { users } from "./db/schema";
-import { hashPassword } from "./password";
+import { hashPassword } from "./auth";
 
 let bootstrapped = false;
 

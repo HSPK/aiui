@@ -1,22 +1,23 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { db, schema } from "./db";
-import { authenticateBearer, getCurrentUser, type SessionUser } from "./auth";
-import { decryptSecret } from "./crypto";
-import { findModelByIdOrName } from "./serializers";
-import { resolveByDiscovery } from "./discovery";
+import { db, schema } from "../db";
+import { authenticateGateway, type SessionUser } from "../auth";
+import { decryptSecret } from "../crypto";
+import { findModelByIdOrName } from "../models";
+import { resolveByDiscovery } from "../discovery";
 import {
-    DEFAULT_CAPABILITY_ID,
     classifyModel,
     getCapability,
     type CapabilityHandler,
-} from "./capabilities";
+} from "../capabilities";
 // Side-effect import: registers every built-in capability with the registry.
 // Adding a new modality is a one-line change in capabilities/register.ts.
-import "./capabilities/register";
-import { badRequest, HttpError, notFound, unauthorized } from "./response";
-import type { Model, Provider } from "./db/schema";
+import "../capabilities/register";
+import { badRequest, HttpError, notFound } from "../response";
+import type { Model, Provider } from "../db/schema";
+
+export { authenticateGateway };
 
 export interface ResolvedModel {
     model: Model;
@@ -82,17 +83,6 @@ export async function resolveModel(name: string): Promise<ResolvedModel> {
         apiKey: decryptSecret(provider.apiKeyEncrypted),
         discovered: true,
     };
-}
-
-/** Authenticate via session cookie OR Bearer api key. Returns the resolved user. */
-export async function authenticateGateway(req: Request): Promise<SessionUser> {
-    const header = req.headers.get("Authorization");
-    if (header && /^Bearer\s+/i.test(header)) {
-        return authenticateBearer(req);
-    }
-    const cookieUser = await getCurrentUser();
-    if (cookieUser) return cookieUser;
-    throw unauthorized("Missing or invalid credentials");
 }
 
 /** Merge provider/model default params under the user-supplied body. User wins. */
@@ -371,24 +361,4 @@ export async function forwardGeneration(
         },
     });
     return { response, logId };
-}
-
-// ---- Backward-compatible thin aliases ----
-
-/** @deprecated use forwardGeneration(user, "chat", body, opts). */
-export async function forwardChatCompletions(
-    user: SessionUser,
-    body: Record<string, unknown>,
-    opts: ForwardGenerationOpts = {},
-): Promise<ForwardResult> {
-    return forwardGeneration(user, DEFAULT_CAPABILITY_ID, body, opts);
-}
-
-/** @deprecated use forwardGeneration(user, "embedding", body). */
-export async function forwardEmbeddings(
-    user: SessionUser,
-    body: Record<string, unknown>,
-): Promise<Response> {
-    const { response } = await forwardGeneration(user, "embedding", body);
-    return response;
 }

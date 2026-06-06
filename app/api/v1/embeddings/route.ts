@@ -1,20 +1,15 @@
 import "server-only";
-import { NextRequest } from "next/server";
-import { ensureInit } from "@/lib/server/init";
-import { authenticateGateway, forwardGeneration } from "@/lib/server/gateway";
-import { handle } from "@/lib/server/response";
+import { z } from "zod";
+import { defineRoute } from "@/lib/server/route";
+import { forwardGeneration } from "@/lib/server/gateway";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+const bodySchema = z.looseObject({ model: z.string().min(1) });
 
-export async function POST(req: NextRequest) {
-    try {
-        await ensureInit();
-        const user = await authenticateGateway(req);
-        const body = (await req.json()) as Record<string, unknown>;
+export const POST = defineRoute({
+    auth: "gateway",
+    body: bodySchema,
+    handler: async ({ user, body }) => {
         const { response } = await forwardGeneration(user, "embedding", body);
         return response;
-    } catch (err) {
-        return handle(err);
-    }
-}
+    },
+});

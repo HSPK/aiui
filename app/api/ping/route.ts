@@ -1,9 +1,7 @@
 import "server-only";
-import { ok } from "@/lib/server/response";
+import { defineRoute } from "@/lib/server/route";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-export async function GET() {
-    return ok("pong");
-}
+export const GET = defineRoute({
+    auth: "public",
+    handler: () => "pong",
+});

@@ -1,11 +1,11 @@
 import "server-only";
 import { cookies } from "next/headers";
 import { eq, lt } from "drizzle-orm";
-import { db } from "./db";
-import { sessions, users, apiKeys } from "./db/schema";
-import { generateRandomToken, sha256 } from "./crypto";
-import { forbidden, unauthorized } from "./response";
-import type { User } from "./db/schema";
+import { db } from "../db";
+import { sessions, users } from "../db/schema";
+import { generateRandomToken, sha256 } from "../crypto";
+import { forbidden, unauthorized } from "../response";
+import { userToSession, type SessionUser } from "./types";
 
 export const SESSION_COOKIE = "aiui_session";
 
@@ -13,22 +13,6 @@ function sessionTtlMs(): number {
     const days = Number(process.env.AIUI_SESSION_TTL_DAYS);
     if (Number.isFinite(days) && days > 0) return days * 86400 * 1000;
     return 30 * 86400 * 1000; // 30-day default
-}
-
-export interface SessionUser {
-    id: string;
-    username: string;
-    role: "admin" | "user";
-    createdAt: string;
-}
-
-function userToSession(u: User): SessionUser {
-    return {
-        id: u.id,
-        username: u.username,
-        role: u.role,
-        createdAt: u.createdAt,
-    };
 }
 
 export async function createSession(userId: string): Promise<string> {
@@ -101,39 +85,4 @@ export async function requireAdmin(): Promise<SessionUser> {
     const user = await requireUser();
     if (user.role !== "admin") throw forbidden("Admin required");
     return user;
-}
-
-// ---- API key auth (for OpenAI-compatible gateway) ----
-
-export const API_KEY_PREFIX = "sk-aiui-";
-
-export function generateApiKey(): { plain: string; prefix: string; hash: string } {
-    const secret = generateRandomToken(32);
-    const plain = `${API_KEY_PREFIX}${secret}`;
-    return { plain, prefix: plain.slice(0, 12), hash: sha256(plain) };
-}
-
-export async function authenticateBearer(req: Request): Promise<SessionUser> {
-    const header = req.headers.get("Authorization") || "";
-    const match = header.match(/^Bearer\s+(.+)$/i);
-    if (!match) throw unauthorized("Missing Bearer token");
-    const token = match[1].trim();
-    const hash = sha256(token);
-
-    const rows = db
-        .select({ user: users, apiKey: apiKeys })
-        .from(apiKeys)
-        .innerJoin(users, eq(users.id, apiKeys.userId))
-        .where(eq(apiKeys.keyHash, hash))
-        .all();
-
-    const row = rows[0];
-    if (!row) throw unauthorized("Invalid API key");
-
-    db.update(apiKeys)
-        .set({ lastUsedAt: new Date().toISOString() })
-        .where(eq(apiKeys.id, row.apiKey.id))
-        .run();
-
-    return userToSession(row.user);
 }
