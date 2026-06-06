@@ -36,6 +36,14 @@ export const providerDTOSchema = z.object({
 
 // ---- Inputs ----
 
+export const providerProbeSchema = z.object({
+    health_check_url: z
+        .string()
+        .trim()
+        .min(1, "health_check_url is required")
+        .url("health_check_url must be a URL"),
+});
+
 export const providerCreateSchema = z.object({
     name: z.string().trim().min(1, "Provider name is required"),
     /** If omitted, the server auto-detects via the adapter registry's
@@ -65,3 +73,4 @@ export const providerUpdateSchema = providerCreateSchema.partial();
 export type ProviderDTO = z.infer<typeof providerDTOSchema>;
 export type ProviderCreateInput = z.infer<typeof providerCreateSchema>;
 export type ProviderUpdateInput = z.infer<typeof providerUpdateSchema>;
+export type ProviderProbeInput = z.infer<typeof providerProbeSchema>;

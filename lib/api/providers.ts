@@ -25,6 +25,12 @@ export interface ProviderCheckResult {
     latency_ms?: number;
 }
 
+export interface ProviderProbeResult {
+    ok: boolean;
+    error?: string;
+    latency_ms: number;
+}
+
 export const providers = {
     ...base,
 
@@ -38,6 +44,15 @@ export const providers = {
             `/providers/${encodeURIComponent(id)}/check`,
             { method: "POST" },
         ),
+    /** Probe an arbitrary health-check URL without touching any saved
+     *  provider — used by the form's Test button so it validates the
+     *  URL currently in the input, not the (possibly stale) saved one. */
+    probe: (healthCheckUrl: string) =>
+        fetcher<ProviderProbeResult>("/providers/probe", {
+            method: "POST",
+            body: JSON.stringify({ health_check_url: healthCheckUrl }),
+            headers: { "Content-Type": "application/json" },
+        }),
 
     // ---- custom hooks ----
     useModels: (id: string | undefined | null) =>

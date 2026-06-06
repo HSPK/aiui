@@ -8,6 +8,7 @@ export {
     updateProvider,
     deleteProvider,
     checkProvider,
+    probeHealthCheckUrl,
     findProviderByIdOrName,
     loadProviderApiKey,
 } from "./service";

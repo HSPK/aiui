@@ -174,58 +174,63 @@ export async function deleteProvider(idOrName: string): Promise<void> {
     clearDiscoveryCache();
 }
 
+/** Probe an arbitrary health-check URL. Pure I/O — no DB writes. Used
+ *  both by `checkProvider` (for the saved URL branch) and by the
+ *  `POST /providers/probe` endpoint, which lets the form Test button
+ *  validate the URL the user is currently editing before they save. */
+export async function probeHealthCheckUrl(
+    url: string,
+): Promise<{ ok: boolean; error?: string; latency_ms: number }> {
+    const start = Date.now();
+    try {
+        const res = await fetch(url, {
+            method: "GET",
+            signal: AbortSignal.timeout(10_000),
+        });
+        const ms = Date.now() - start;
+        if (!res.ok) {
+            const text = await res.text().catch(() => res.statusText);
+            return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 200)}`, latency_ms: ms };
+        }
+        const json = (await res.json().catch(() => null)) as { status?: unknown } | null;
+        if (!json || json.status !== "ok") {
+            return {
+                ok: false,
+                error: `Expected {"status":"ok"}, got ${JSON.stringify(json).slice(0, 200)}`,
+                latency_ms: ms,
+            };
+        }
+        return { ok: true, latency_ms: ms };
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return { ok: false, error: msg, latency_ms: Date.now() - start };
+    }
+}
+
 /**
- * Provider health probe. Two strategies, in priority order:
- *   1. If `provider.healthCheckUrl` is set → GET it, parse JSON, require
- *      `{ "status": "ok" }`. Any other body / shape / status is a failure.
- *      Use this when the upstream exposes a dedicated `/healthz` style
- *      endpoint that's cheaper than listing models. The result is persisted
- *      to `last_health_*` columns so the UI can render a real status pill
- *      without re-probing on every render.
- *   2. Otherwise → fall back to discovery via the resolved adapter, which
- *      returns a model count on success. Discovery probes do NOT update
- *      `last_health_*` (those columns are tied to the explicit health URL
- *      contract).
+ * Provider health probe for a saved provider. Two strategies, in
+ * priority order:
+ *   1. If `provider.healthCheckUrl` is set → call `probeHealthCheckUrl`
+ *      and persist the outcome to `last_health_*` so the UI can render
+ *      a real status pill without re-probing on every render.
+ *   2. Otherwise → fall back to discovery via the resolved adapter,
+ *      which returns a model count on success. Discovery probes do NOT
+ *      update `last_health_*` (those columns are tied to the explicit
+ *      health URL contract).
  */
 export async function checkProvider(idOrName: string): Promise<{ ok: boolean; models?: number; error?: string; latency_ms?: number }> {
     const provider = findProviderByIdOrName(idOrName);
     if (!provider) throw notFound("Provider not found");
 
     if (provider.healthCheckUrl) {
-        const start = Date.now();
-        const persist = (status: "ok" | "down", error: string | null) => {
-            db.update(providers).set({
-                lastHealthStatus: status,
-                lastHealthCheckedAt: new Date().toISOString(),
-                lastHealthError: error,
-                updatedAt: new Date().toISOString(),
-            }).where(eq(providers.id, provider.id)).run();
-        };
-        try {
-            const res = await fetch(provider.healthCheckUrl, {
-                method: "GET",
-                signal: AbortSignal.timeout(10_000),
-            });
-            const ms = Date.now() - start;
-            if (!res.ok) {
-                const text = await res.text().catch(() => res.statusText);
-                const error = `HTTP ${res.status}: ${text.slice(0, 200)}`;
-                persist("down", error);
-                return { ok: false, error, latency_ms: ms };
-            }
-            const json = (await res.json().catch(() => null)) as { status?: unknown } | null;
-            if (!json || json.status !== "ok") {
-                const error = `Expected {"status":"ok"}, got ${JSON.stringify(json).slice(0, 200)}`;
-                persist("down", error);
-                return { ok: false, error, latency_ms: ms };
-            }
-            persist("ok", null);
-            return { ok: true, latency_ms: ms };
-        } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            persist("down", msg);
-            return { ok: false, error: msg, latency_ms: Date.now() - start };
-        }
+        const result = await probeHealthCheckUrl(provider.healthCheckUrl);
+        db.update(providers).set({
+            lastHealthStatus: result.ok ? "ok" : "down",
+            lastHealthCheckedAt: new Date().toISOString(),
+            lastHealthError: result.ok ? null : (result.error ?? null),
+            updatedAt: new Date().toISOString(),
+        }).where(eq(providers.id, provider.id)).run();
+        return result;
     }
 
     // No dedicated health endpoint — fall back to a discovery probe via

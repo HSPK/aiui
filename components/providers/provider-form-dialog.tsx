@@ -142,17 +142,16 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
         }
     }
 
-    /** Probe the health URL inline. Only works in edit mode for an existing
-     *  provider — we ask the server to call its configured URL so any
-     *  CORS/private-network rules behave the same as in production. */
+    /** Probe the URL currently in the input — `providers.probe` is an
+     *  ad-hoc check that does NOT touch the saved provider, so the user
+     *  can validate edits before saving them. Works in both create and
+     *  edit modes. */
     const handleHealthTest = async () => {
-        if (!provider) {
-            toast.message("Save the provider first to run the live health check.")
-            return
-        }
+        const url = healthCheckUrl.trim()
+        if (!url) return
         setHealthTesting(true)
         try {
-            const res = await providers.check(provider.id)
+            const res = await providers.probe(url)
             if (res.ok) toast.success(`Healthy${res.latency_ms != null ? ` (${res.latency_ms}ms)` : ""}`)
             else toast.error(`Down: ${res.error ?? "unknown"}`)
         } catch (err) {
@@ -248,8 +247,8 @@ export function ProviderFormDialog({ open, onOpenChange, mode, provider }: Props
                                     size="sm"
                                     className="h-9 shrink-0"
                                     onClick={handleHealthTest}
-                                    disabled={!healthCheckUrl.trim() || healthTesting || mode === "create"}
-                                    title={mode === "create" ? "Save first, then test" : "Run the health probe now"}
+                                    disabled={!healthCheckUrl.trim() || healthTesting}
+                                    title="Run the health probe now"
                                 >
                                     {healthTesting
                                         ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
