@@ -28,10 +28,8 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { LoadingState } from "@/components/ui/loading-state"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
-import { Plus, Trash2, Copy, KeyRound } from "lucide-react"
+import { Plus, Trash2, Copy } from "lucide-react"
 import { formatToLocal } from "@/lib/utils"
-
-import { PageHeader } from "@/components/ui/page-header"
 
 export default function ApiKeysPage() {
     const [createOpen, setCreateOpen] = useState(false)
@@ -59,20 +57,19 @@ export default function ApiKeysPage() {
     })
 
     return (
-        <div className="h-full overflow-y-auto scrollbar-thin p-4 space-y-6">
-            <PageHeader
-                title={
-                    <span className="flex items-center gap-2">
-                        <KeyRound className="h-6 w-6" /> API Keys
-                    </span>
-                }
-                description={<>Use these keys with any OpenAI-compatible client to call the gateway at <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">/api/v1/chat/completions</code>.</>}
-                actions={
-                    <Button onClick={() => setCreateOpen(true)}>
-                        <Plus className="h-4 w-4 mr-1" /> Create Key
-                    </Button>
-                }
-            />
+        <div className="h-full overflow-y-auto scrollbar-thin p-4 md:p-6 space-y-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-muted-foreground">
+                    Use these keys with any OpenAI-compatible client to call the gateway at{" "}
+                    <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">
+                        /api/v1/chat/completions
+                    </code>
+                    .
+                </p>
+                <Button onClick={() => setCreateOpen(true)} size="sm">
+                    <Plus className="h-4 w-4 mr-1" /> Create key
+                </Button>
+            </div>
 
             <Card>
                 <CardHeader>
