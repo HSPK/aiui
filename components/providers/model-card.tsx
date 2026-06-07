@@ -1,23 +1,51 @@
-import type { ModelDTO } from "@/lib/schemas/model";
-import { Card } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Copy, Box, Cpu, Calendar, MessageSquare, Layers, ScanSearch, Image as ImageIcon, Mic, Volume2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
+"use client"
+
+import * as React from "react"
+import Link from "next/link"
 import { toast } from "sonner"
+import {
+    Box,
+    Calendar,
+    Copy,
+    Cpu,
+    Image as ImageIcon,
+    Layers,
+    MessageSquare,
+    Mic,
+    MoreHorizontal,
+    Pencil,
+    ScanSearch,
+    Trash2,
+    Volume2,
+} from "lucide-react"
+
+import type { ModelDTO } from "@/lib/schemas/model"
 import { cn } from "@/lib/utils"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card } from "@/components/ui/card"
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+
 import { capabilityLabel } from "./capability-label"
 
 interface ModelCardProps {
-    model: ModelDTO;
-    /** Click opens the model in edit mode. Pass `undefined` to render
-     *  the card as a passive (non-interactive) info row. */
-    onClick?: () => void;
+    model: ModelDTO
+    /** When set (admin), surfaces an Edit menu item. */
+    onEdit?: (model: ModelDTO) => void
+    /** When set (admin), surfaces a Delete menu item (override rows only). */
+    onDelete?: (model: ModelDTO) => void
 }
 
-// CapabilityDTO → (color, icon) — kept here in the UI layer so the registry stays
-// transport-only on the server. Unknown capabilities fall back to a neutral
-// box icon so the page never breaks when a new modality is added.
-const CAPABILITY_PRESENTATION: Record<string, { color: string; icon: React.ComponentType<{ className?: string }> }> = {
+const CAPABILITY_PRESENTATION: Record<
+    string,
+    { color: string; icon: React.ComponentType<{ className?: string }> }
+> = {
     chat: { color: "text-blue-600 dark:text-blue-400", icon: MessageSquare },
     embedding: { color: "text-purple-600 dark:text-purple-400", icon: Layers },
     image: { color: "text-pink-600 dark:text-pink-400", icon: ImageIcon },
@@ -26,117 +54,169 @@ const CAPABILITY_PRESENTATION: Record<string, { color: string; icon: React.Compo
     rerank: { color: "text-orange-600 dark:text-orange-400", icon: ScanSearch },
 }
 
-export function ModelCard({ model, onClick }: ModelCardProps) {
-    const presentation = CAPABILITY_PRESENTATION[model.type] ?? { color: "text-foreground", icon: Box }
+/** Dense model row used on provider detail pages. The card body is a
+ *  link to the per-model dashboard; admin actions live in a dropdown so
+ *  meta pills and the menu trigger never collide. */
+export function ModelCard({ model, onEdit, onDelete }: ModelCardProps) {
+    const presentation =
+        CAPABILITY_PRESENTATION[model.type] ?? { color: "text-foreground", icon: Box }
     const TypeIcon = presentation.icon
-    const interactive = !!onClick
+    const canDelete = !!onDelete && !model.is_discovered
+    const hasMenu = !!onEdit || canDelete
+    const dashboardHref = `/models/${encodeURIComponent(model.name)}`
 
     return (
-        <Card
-            className={cn(
-                "flex flex-col md:flex-row items-start md:items-center p-4 gap-4 bg-muted/10 border-transparent shadow-none hover:border-border hover:shadow-sm transition-all group/card",
-                interactive && "cursor-pointer",
-            )}
-            onClick={interactive ? onClick : undefined}
-            title={interactive ? (model.is_discovered ? "Click to register override" : "Click to edit") : undefined}
-        >
-            <div className="flex-1 min-w-0 space-y-2">
-                <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-semibold text-base md:text-lg leading-snug truncate py-0.5" title={model.name}>
+        <Card className="group/card relative bg-card border hover:border-primary/40 hover:shadow-sm transition-all p-0 overflow-hidden">
+            <Link
+                href={dashboardHref}
+                className="block p-4 pr-12 space-y-2"
+                aria-label={`Open ${model.name} dashboard`}
+            >
+                <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <h3
+                        className="font-semibold text-sm leading-snug truncate min-w-0 flex-1"
+                        title={model.name}
+                    >
                         {model.name}
                     </h3>
                     {model.is_discovered ? (
-                        <Badge variant="secondary" className="text-[9px] uppercase font-semibold tracking-wider">discovered</Badge>
+                        <Badge
+                            variant="secondary"
+                            className="text-[9px] uppercase font-semibold tracking-wider shrink-0"
+                        >
+                            discovered
+                        </Badge>
                     ) : (
-                        <Badge variant="outline" className="text-[9px] uppercase font-semibold tracking-wider">override</Badge>
+                        <Badge
+                            variant="outline"
+                            className="text-[9px] uppercase font-semibold tracking-wider shrink-0"
+                        >
+                            override
+                        </Badge>
                     )}
                 </div>
 
-                <div className="group flex items-center gap-1.5 text-xs text-muted-foreground font-mono">
-                    <span className="truncate max-w-[300px]" title={model.model_id || ""}>
-                        {model.model_id}
-                    </span>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={(e) => {
-                            e.stopPropagation()
-                            navigator.clipboard.writeText(model.model_id || "")
-                            toast.success("Model ID copied to clipboard")
-                        }}
-                    >
-                        <Copy className="h-3 w-3" />
-                    </Button>
-                </div>
+                <ModelIdRow modelId={model.model_id ?? ""} />
 
                 {model.description && (
-                    <p className="text-sm text-muted-foreground/80 line-clamp-2 max-w-2xl">
+                    <p className="text-xs text-muted-foreground line-clamp-2">
                         {model.description}
                     </p>
                 )}
-            </div>
 
-            <div className="flex items-center gap-6 shrink-0 w-full md:w-auto pt-2 md:pt-0 border-t md:border-t-0 mt-2 md:mt-0">
-                <div className="grid grid-cols-2 md:flex md:items-center gap-x-6 gap-y-4 w-full md:w-auto">
-                    <div className="flex flex-col md:items-end gap-0.5">
-                        <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1">
-                            <TypeIcon className="h-3 w-3" /> Type
-                        </span>
-                        <span className={cn("font-mono text-sm font-medium", presentation.color)}>
-                            {capabilityLabel(model.type)}
-                        </span>
-                    </div>
-
-                    {(model.context_window !== null && model.context_window !== undefined) && (
-                        <div className="flex flex-col md:items-end gap-0.5">
-                            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1">
-                                <Box className="h-3 w-3" /> Context
-                            </span>
-                            <span className="font-mono text-sm">
-                                {model.context_window >= 1000
-                                    ? `${Math.round(model.context_window / 1000)}k`
-                                    : model.context_window.toLocaleString()}
-                            </span>
-                        </div>
+                <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                    <MetaPill icon={TypeIcon} className={presentation.color}>
+                        {capabilityLabel(model.type)}
+                    </MetaPill>
+                    {model.context_window != null && (
+                        <MetaPill icon={Box}>{formatTokens(model.context_window)} ctx</MetaPill>
                     )}
-
-                    {(model.max_tokens !== null && model.max_tokens !== undefined) && (
-                        <div className="flex flex-col md:items-end gap-0.5">
-                            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1">
-                                <Cpu className="h-3 w-3" /> Max Output
-                            </span>
-                            <span className="font-mono text-sm">
-                                {model.max_tokens >= 1000
-                                    ? `${Math.round(model.max_tokens / 1000)}k`
-                                    : model.max_tokens.toLocaleString()}
-                            </span>
-                        </div>
+                    {model.max_tokens != null && (
+                        <MetaPill icon={Cpu}>{formatTokens(model.max_tokens)} out</MetaPill>
                     )}
-
-                    {(model.output_dimension !== null && model.output_dimension !== undefined) && (
-                        <div className="flex flex-col md:items-end gap-0.5">
-                            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1">
-                                <Layers className="h-3 w-3" /> Dim
-                            </span>
-                            <span className="font-mono text-sm">
-                                {model.output_dimension.toLocaleString()}
-                            </span>
-                        </div>
+                    {model.output_dimension != null && (
+                        <MetaPill icon={Layers}>
+                            {model.output_dimension.toLocaleString()} dim
+                        </MetaPill>
                     )}
-
                     {model.knowledge_date && (
-                        <div className="flex flex-col md:items-end gap-0.5">
-                            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1">
-                                <Calendar className="h-3 w-3" /> Knowledge
-                            </span>
-                            <span className="font-mono text-sm">
-                                {model.knowledge_date}
-                            </span>
-                        </div>
+                        <MetaPill icon={Calendar}>{model.knowledge_date}</MetaPill>
                     )}
                 </div>
-            </div>
+            </Link>
+
+            {hasMenu && (
+                <div className="absolute top-3 right-3">
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 opacity-0 group-hover/card:opacity-100 data-[state=open]:opacity-100 transition-opacity"
+                                onClick={(e) => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                }}
+                            >
+                                <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                            align="end"
+                            className="w-36"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {onEdit && (
+                                <DropdownMenuItem onSelect={() => onEdit(model)}>
+                                    <Pencil className="mr-2 h-3.5 w-3.5" />
+                                    Edit
+                                </DropdownMenuItem>
+                            )}
+                            {onEdit && canDelete && <DropdownMenuSeparator />}
+                            {canDelete && (
+                                <DropdownMenuItem
+                                    className="text-destructive focus:text-destructive"
+                                    onSelect={() => onDelete?.(model)}
+                                >
+                                    <Trash2 className="mr-2 h-3.5 w-3.5" />
+                                    Delete
+                                </DropdownMenuItem>
+                            )}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
+            )}
         </Card>
     )
+}
+
+function ModelIdRow({ modelId }: { modelId: string }) {
+    if (!modelId) return null
+    return (
+        <div className="group/id flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono">
+            <span className="truncate" title={modelId}>
+                {modelId}
+            </span>
+            <Button
+                variant="ghost"
+                size="icon"
+                className="h-5 w-5 opacity-0 group-hover/id:opacity-100 transition-opacity shrink-0"
+                onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    navigator.clipboard.writeText(modelId)
+                    toast.success("Model ID copied to clipboard")
+                }}
+            >
+                <Copy className="h-3 w-3" />
+            </Button>
+        </div>
+    )
+}
+
+function MetaPill({
+    icon: Icon,
+    children,
+    className,
+}: {
+    icon: React.ComponentType<{ className?: string }>
+    children: React.ReactNode
+    className?: string
+}) {
+    return (
+        <span
+            className={cn(
+                "inline-flex items-center gap-1 rounded-md border bg-muted/40 px-1.5 py-0.5 text-[11px] font-mono leading-none",
+                className
+            )}
+        >
+            <Icon className="h-3 w-3" />
+            {children}
+        </span>
+    )
+}
+
+function formatTokens(n: number): string {
+    if (n >= 1000) return `${Math.round(n / 1000)}k`
+    return n.toLocaleString()
 }

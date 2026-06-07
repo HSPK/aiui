@@ -1,29 +1,40 @@
 "use client"
 
-import { providers } from "@/lib/api";
-import { useAuth } from "@/context/auth-context";
-import type { ModelDTO } from "@/lib/schemas/model";
-
+import * as React from "react"
 import { useParams, useRouter } from "next/navigation"
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { ArrowLeft, RefreshCcw, Globe, FileText, Activity } from "lucide-react"
+import {
+    Activity,
+    ArrowLeft,
+    ChevronLeft,
+    FileText,
+    Globe,
+    RefreshCcw,
+} from "lucide-react"
+import { toast } from "sonner"
+
+import { providers } from "@/lib/api"
+import { useAuth } from "@/context/auth-context"
+import type { ModelDTO } from "@/lib/schemas/model"
+
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { Skeleton } from "@/components/ui/skeleton"
 import { ProviderIcon } from "@/components/ProviderIcon"
 import { ModelCard } from "@/components/providers/model-card"
 import { ModelFormDialog } from "@/components/providers/model-form-dialog"
 import { ProviderHealthPill } from "@/components/providers/provider-health-pill"
-import { Skeleton } from "@/components/ui/skeleton"
-import { toast } from "sonner"
+
+type EditingState = {
+    open: boolean
+    mode: "create" | "edit"
+    model?: ModelDTO | null
+}
 
 export default function ProviderDetailPage() {
     const params = useParams()
     const router = useRouter()
-    // Folder is named [name] so the URL segment is the provider's stable
-    // human-readable name. The server route accepts either id or name so
-    // legacy URLs with UUIDs still resolve.
-    const slug = decodeURIComponent(params.name as string)
+    const slug = decodeURIComponent(String(params.name ?? ""))
 
     const { user } = useAuth()
     const isAdmin = user?.role === "admin"
@@ -31,7 +42,7 @@ export default function ProviderDetailPage() {
     const { data: provider, isLoading: isLoadingProvider } = providers.useGet(slug)
     const { data: models, isLoading: isLoadingModels } = providers.useModels(slug)
 
-    const [editing, setEditing] = useState<{ open: boolean; mode: "create" | "edit"; model?: ModelDTO | null }>({
+    const [editing, setEditing] = React.useState<EditingState>({
         open: false,
         mode: "edit",
         model: null,
@@ -44,36 +55,36 @@ export default function ProviderDetailPage() {
 
     const checkMutation = providers.useCheck(slug, {
         onSuccess: (res) => {
-            if (res.ok) toast.success(`Healthy${res.latency_ms != null ? ` (${res.latency_ms}ms)` : ""}`)
+            if (res.ok)
+                toast.success(
+                    `Healthy${res.latency_ms != null ? ` (${res.latency_ms}ms)` : ""}`
+                )
             else toast.error(`Down: ${res.error ?? "unknown"}`)
         },
         onError: (e) => toast.error(`Health check failed: ${e.message}`),
     })
 
+    const handleEdit = React.useCallback(
+        (m: ModelDTO) =>
+            setEditing({
+                open: true,
+                // Discovered rows have no DB row yet — open "create" so
+                // the dialog pre-fills as a new override.
+                mode: m.is_discovered ? "create" : "edit",
+                model: m,
+            }),
+        []
+    )
+
     if (isLoadingProvider) {
-        return (
-            <div className="h-full overflow-y-auto scrollbar-thin space-y-6 p-4">
-                <div className="flex items-center gap-4">
-                    <Skeleton className="h-10 w-10 rounded-full" />
-                    <div className="space-y-2">
-                        <Skeleton className="h-8 w-64" />
-                        <Skeleton className="h-4 w-32" />
-                    </div>
-                </div>
-                <div className="space-y-3">
-                    {[1, 2, 3, 4].map((i) => (
-                        <Skeleton key={i} className="h-24 rounded-xl" />
-                    ))}
-                </div>
-            </div>
-        )
+        return <ProviderDetailSkeleton />
     }
 
     if (!provider) {
         return (
             <div className="flex flex-col items-center justify-center h-[50vh] gap-4">
-                <h2 className="text-2xl font-bold">Provider not found</h2>
-                <Button onClick={() => router.push("/providers")}>
+                <h2 className="text-lg font-semibold">Provider not found</h2>
+                <Button onClick={() => router.push("/providers")} size="sm">
                     <ArrowLeft className="mr-2 h-4 w-4" />
                     Back to Providers
                 </Button>
@@ -83,134 +94,186 @@ export default function ProviderDetailPage() {
 
     const dbCount = models?.filter((m) => !m.is_discovered).length ?? 0
     const discoveredCount = models?.filter((m) => m.is_discovered).length ?? 0
+    const totalModels = models?.length ?? 0
 
     return (
-        <div className="h-full overflow-y-auto scrollbar-thin space-y-6 p-4">
-            {/* Back / Refresh row */}
-            <div className="flex items-center justify-between">
-                <Button variant="ghost" className="pl-0 hover:bg-transparent" onClick={() => router.push("/providers")}>
-                    <ArrowLeft className="mr-2 h-4 w-4" /> Back
-                </Button>
-                <div className="flex items-center gap-2">
-                    {provider.health_check_url && (
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => checkMutation.mutate()}
-                            disabled={checkMutation.isPending}
-                            title="Run the configured health check now"
-                        >
-                            <Activity className={`mr-2 h-3.5 w-3.5 ${checkMutation.isPending ? "animate-pulse" : ""}`} />
-                            Check Health
-                        </Button>
-                    )}
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => refreshMutation.mutate()}
-                        disabled={refreshMutation.isPending}
-                    >
-                        <RefreshCcw className={`mr-2 h-3.5 w-3.5 ${refreshMutation.isPending ? "animate-spin" : ""}`} />
-                        Refresh Models
-                    </Button>
-                </div>
-            </div>
+        <div className="h-full overflow-y-auto">
+            <div className="mx-auto w-full max-w-7xl space-y-4 p-4 md:p-6">
+                {/* Breadcrumb */}
+                <button
+                    onClick={() => router.push("/providers")}
+                    className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                >
+                    <ChevronLeft className="h-3 w-3" />
+                    Providers
+                </button>
 
-            {/* Provider header */}
-            <div className="flex flex-col md:flex-row gap-6 md:items-start md:justify-between">
-                <div className="flex items-center gap-4 min-w-0">
-                    <div className="h-16 w-16 bg-muted/30 rounded-xl flex items-center justify-center border shrink-0">
-                        <ProviderIcon providerName={provider.provider_name} className="h-10 w-10" width={40} height={40} />
-                    </div>
-                    <div className="min-w-0">
-                        <h1 className="text-3xl font-bold tracking-tight truncate" title={provider.provider_name}>{provider.provider_name}</h1>
-                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                            <ProviderHealthPill provider={provider} size="md" />
-                            {provider.adapter_id && provider.adapter_id !== "openai" && (
-                                <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-semibold">{provider.adapter_id.replace(/^azure-/, "Azure ")}</Badge>
+                {/* Identity card */}
+                <Card className="p-4 md:p-5">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted shrink-0">
+                            <ProviderIcon
+                                providerName={provider.provider_name}
+                                className="h-6 w-6"
+                                width={24}
+                                height={24}
+                            />
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                            <h1
+                                className="text-lg font-semibold tracking-tight truncate"
+                                title={provider.provider_name}
+                            >
+                                {provider.provider_name}
+                            </h1>
+                            <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                                <ProviderHealthPill provider={provider} size="sm" />
+                                {provider.adapter_id && provider.adapter_id !== "openai" && (
+                                    <Badge
+                                        variant="outline"
+                                        className="text-[10px] uppercase tracking-wider font-semibold"
+                                    >
+                                        {provider.adapter_id.replace(/^azure-/, "Azure ")}
+                                    </Badge>
+                                )}
+                                <span className="text-xs text-muted-foreground">
+                                    {totalModels} model{totalModels === 1 ? "" : "s"} ·{" "}
+                                    {discoveredCount} discovered ·{" "}
+                                    {dbCount} override{dbCount === 1 ? "" : "s"}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 shrink-0">
+                            {provider.model_page && (
+                                <Button variant="outline" size="sm" asChild>
+                                    <a href={provider.model_page} target="_blank" rel="noreferrer">
+                                        <Globe className="mr-1.5 h-3.5 w-3.5" />
+                                        Models
+                                    </a>
+                                </Button>
                             )}
-                            <span className="text-sm text-muted-foreground font-mono">
-                                {(models?.length ?? 0)} model{(models?.length ?? 0) === 1 ? "" : "s"} ({discoveredCount} discovered, {dbCount} override{dbCount === 1 ? "" : "s"})
-                            </span>
+                            {provider.document_page && (
+                                <Button variant="outline" size="sm" asChild>
+                                    <a
+                                        href={provider.document_page}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                    >
+                                        <FileText className="mr-1.5 h-3.5 w-3.5" />
+                                        Docs
+                                    </a>
+                                </Button>
+                            )}
+                            {provider.health_check_url && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => checkMutation.mutate()}
+                                    disabled={checkMutation.isPending}
+                                    title="Run the configured health check now"
+                                >
+                                    <Activity
+                                        className={`mr-1.5 h-3.5 w-3.5 ${checkMutation.isPending ? "animate-pulse" : ""}`}
+                                    />
+                                    Check
+                                </Button>
+                            )}
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => refreshMutation.mutate()}
+                                disabled={refreshMutation.isPending}
+                            >
+                                <RefreshCcw
+                                    className={`mr-1.5 h-3.5 w-3.5 ${refreshMutation.isPending ? "animate-spin" : ""}`}
+                                />
+                                Refresh
+                            </Button>
                         </div>
                     </div>
-                </div>
 
-                <div className="flex flex-col items-start md:items-end gap-3 shrink-0">
-                    <div className="flex flex-wrap gap-2 md:justify-end">
-                        {provider.model_page && (
-                            <Button variant="outline" size="sm" asChild>
-                                <a href={provider.model_page} target="_blank" rel="noreferrer">
-                                    <Globe className="mr-2 h-3.5 w-3.5" />
-                                    Model Page
-                                </a>
-                            </Button>
-                        )}
-                        {provider.document_page && (
-                            <Button variant="outline" size="sm" asChild>
-                                <a href={provider.document_page} target="_blank" rel="noreferrer">
-                                    <FileText className="mr-2 h-3.5 w-3.5" />
-                                    Documentation
-                                </a>
-                            </Button>
-                        )}
-                    </div>
-                    <Badge variant="outline" className="font-mono font-normal text-xs text-muted-foreground max-w-full truncate">
-                        endpoint: {provider.proxy || "Standard"}
-                    </Badge>
-                </div>
-            </div>
+                    {provider.proxy && (
+                        <div className="mt-3 pt-3 border-t flex items-center gap-2 text-xs text-muted-foreground">
+                            <span className="uppercase tracking-wider text-[10px] font-semibold">
+                                Endpoint
+                            </span>
+                            <code className="font-mono truncate">{provider.proxy}</code>
+                        </div>
+                    )}
+                </Card>
 
-            {/* Models list */}
-            <div className="space-y-3">
+                {/* Models grid */}
                 {isLoadingModels ? (
-                    <div className="flex flex-col gap-3">
-                        {[1, 2, 3, 4].map((i) => (
-                            <Card key={i} className="h-24 w-full p-6 space-y-3">
-                                <Skeleton className="h-5 w-1/4" />
-                                <Skeleton className="h-4 w-1/2" />
-                            </Card>
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                        {[1, 2, 3, 4, 5, 6].map((i) => (
+                            <Skeleton key={i} className="h-32 rounded-xl" />
                         ))}
                     </div>
                 ) : models && models.length > 0 ? (
-                    <div className="flex flex-col gap-3">
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                         {models.map((model) => (
                             <ModelCard
                                 key={`${model.is_discovered ? "d" : "o"}:${model.name}`}
                                 model={model}
-                                onClick={
-                                    isAdmin
-                                        ? () => setEditing({
-                                            open: true,
-                                            // Discovered rows have no DB row yet, so opening
-                                            // in "create" pre-fills the fields as an override.
-                                            mode: model.is_discovered ? "create" : "edit",
-                                            model,
-                                        })
-                                        : undefined
-                                }
+                                onEdit={isAdmin ? handleEdit : undefined}
                             />
                         ))}
                     </div>
                 ) : (
-                    <div className="text-center py-12 border-2 border-dashed rounded-lg">
-                        <p className="text-muted-foreground mb-3">No models exposed by this provider yet.</p>
-                        <Button variant="outline" size="sm" onClick={() => refreshMutation.mutate()} disabled={refreshMutation.isPending}>
-                            <RefreshCcw className={`mr-2 h-3.5 w-3.5 ${refreshMutation.isPending ? "animate-spin" : ""}`} /> Refresh Models
+                    <div className="text-center py-12 border border-dashed rounded-lg">
+                        <p className="text-sm text-muted-foreground mb-3">
+                            No models exposed by this provider yet.
+                        </p>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => refreshMutation.mutate()}
+                            disabled={refreshMutation.isPending}
+                        >
+                            <RefreshCcw
+                                className={`mr-2 h-3.5 w-3.5 ${refreshMutation.isPending ? "animate-spin" : ""}`}
+                            />
+                            Refresh Models
                         </Button>
                     </div>
                 )}
-            </div>
 
-            {isAdmin && (
-                <ModelFormDialog
-                    open={editing.open}
-                    onOpenChange={(open) => setEditing((s) => ({ ...s, open }))}
-                    mode={editing.mode}
-                    model={editing.model}
-                    defaultProviderId={provider.id}
-                />
-            )}
+                {isAdmin && (
+                    <ModelFormDialog
+                        open={editing.open}
+                        onOpenChange={(open) => setEditing((s) => ({ ...s, open }))}
+                        mode={editing.mode}
+                        model={editing.model}
+                        defaultProviderId={provider.id}
+                    />
+                )}
+            </div>
+        </div>
+    )
+}
+
+function ProviderDetailSkeleton() {
+    return (
+        <div className="h-full overflow-y-auto">
+            <div className="mx-auto w-full max-w-7xl space-y-4 p-4 md:p-6">
+                <Skeleton className="h-3 w-20" />
+                <Card className="p-4 md:p-5">
+                    <div className="flex items-center gap-4">
+                        <Skeleton className="h-10 w-10 rounded-lg" />
+                        <div className="flex-1 space-y-2">
+                            <Skeleton className="h-5 w-48" />
+                            <Skeleton className="h-3 w-72" />
+                        </div>
+                    </div>
+                </Card>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {[1, 2, 3, 4, 5, 6].map((i) => (
+                        <Skeleton key={i} className="h-32 rounded-xl" />
+                    ))}
+                </div>
+            </div>
         </div>
     )
 }
