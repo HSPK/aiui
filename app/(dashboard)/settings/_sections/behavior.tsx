@@ -9,7 +9,10 @@ import { Switch } from "@/components/ui/switch"
 import { SettingsField, SettingsSection } from "./shared"
 
 export function BehaviorSection() {
-    const deviceSettings = useDeviceSettingsStore()
+    const sendOnEnter = useDeviceSettingsStore((s) => s.sendOnEnter)
+    const showTimestamps = useDeviceSettingsStore((s) => s.showTimestamps)
+    const compactMode = useDeviceSettingsStore((s) => s.compactMode)
+    const updateDeviceSettings = useDeviceSettingsStore((s) => s.updateDeviceSettings)
 
     return (
         <SettingsSection
@@ -19,22 +22,22 @@ export function BehaviorSection() {
         >
             <SettingsField label="Send on Enter" description="Press Enter to send messages.">
                 <Switch
-                    checked={deviceSettings.sendOnEnter}
-                    onCheckedChange={(v) => deviceSettings.updateDeviceSettings({ sendOnEnter: v })}
+                    checked={sendOnEnter}
+                    onCheckedChange={(v) => updateDeviceSettings({ sendOnEnter: v })}
                 />
             </SettingsField>
 
             <SettingsField label="Show Timestamps" description="Display message timestamps.">
                 <Switch
-                    checked={deviceSettings.showTimestamps}
-                    onCheckedChange={(v) => deviceSettings.updateDeviceSettings({ showTimestamps: v })}
+                    checked={showTimestamps}
+                    onCheckedChange={(v) => updateDeviceSettings({ showTimestamps: v })}
                 />
             </SettingsField>
 
             <SettingsField label="Compact Mode" description="Reduce spacing in chat view.">
                 <Switch
-                    checked={deviceSettings.compactMode}
-                    onCheckedChange={(v) => deviceSettings.updateDeviceSettings({ compactMode: v })}
+                    checked={compactMode}
+                    onCheckedChange={(v) => updateDeviceSettings({ compactMode: v })}
                 />
             </SettingsField>
         </SettingsSection>

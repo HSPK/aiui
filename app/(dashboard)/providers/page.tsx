@@ -39,7 +39,9 @@ export default function ProvidersPage() {
     const [deleteModel, setDeleteModel] = useState<ModelDTO | null>(null)
 
     const { data: providerList, isLoading: isLoadingProviders } = providers.useList()
-    const { data: modelList, isLoading: isLoadingModels } = models.useList()
+    const { data: modelList, isLoading: isLoadingModels } = models.useList(undefined, {
+        enabled: activeTab === "models",
+    })
 
     const getSortedProviders = (items: ProviderDTO[]) => {
         const p = [...items]

@@ -61,12 +61,12 @@ function useHashSection(): [SectionId, (next: SectionId) => void] {
 export default function SettingsPage() {
     const [active, selectSection] = useHashSection()
     const update = preferences.useUpdate()
-    const deviceSettings = useDeviceSettingsStore()
+    const resetDeviceSettings = useDeviceSettingsStore((s) => s.resetDeviceSettings)
 
     const resetAll = () => {
         update.mutate(defaultUserPreferences, {
             onSuccess: () => {
-                deviceSettings.resetDeviceSettings()
+                resetDeviceSettings()
                 toast.success("Settings reset")
             },
             onError: (e) => toast.error(e.message || "Failed to reset"),

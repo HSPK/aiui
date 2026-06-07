@@ -1,7 +1,7 @@
 "use client"
 
 import { logs } from "@/lib/api";
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { capabilityLabel } from "@/components/providers/capability-label"
 
 import {
@@ -162,7 +162,7 @@ function CopyButton({ text, className }: { text: string, className?: string }) {
 }
 
 function JsonActionButtons({ data, filename, onClick }: { data: object, filename: string, onClick?: (e: React.MouseEvent) => void }) {
-    const jsonString = JSON.stringify(data, null, 2)
+    const jsonString = useMemo(() => JSON.stringify(data, null, 2), [data])
     const [copied, setCopied] = useState(false)
 
     const handleCopy = async (e: React.MouseEvent) => {

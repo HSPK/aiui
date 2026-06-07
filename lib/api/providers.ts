@@ -15,6 +15,7 @@ const base = defineResource<
     path: "/providers",
     key: "providers",
     listShape: "array",
+    staleTime: 60_000,
     invalidates: ["models"],
 });
 

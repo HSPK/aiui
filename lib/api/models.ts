@@ -11,5 +11,6 @@ export const models = defineResource<
     path: "/models",
     key: "models",
     listShape: "array",
+    staleTime: 60_000,
     invalidates: ["providers"],
 });

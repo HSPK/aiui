@@ -22,6 +22,10 @@ export function ModelConfigPanel({ model, providerDefaults }: Props) {
     )
     const meta = model.meta ?? null
     const rawMetadata = meta?.raw ?? null
+    const rawJson = React.useMemo(
+        () => (rawMetadata ? JSON.stringify(rawMetadata, null, 2) : null),
+        [rawMetadata],
+    )
 
     return (
         <div className="grid gap-4 lg:grid-cols-2">
@@ -60,9 +64,9 @@ export function ModelConfigPanel({ model, providerDefaults }: Props) {
                             ))}
                         </div>
                     ) : null}
-                    {rawMetadata ? (
+                    {rawJson ? (
                         <pre className="max-h-96 overflow-auto rounded-md border bg-muted/20 p-2 text-[11px] leading-tight font-mono">
-                            {JSON.stringify(rawMetadata, null, 2)}
+                            {rawJson}
                         </pre>
                     ) : (
                         <p className="text-xs text-muted-foreground">No upstream entry available.</p>
@@ -85,6 +89,10 @@ function ParamsBlock({
     emphasize?: boolean
 }) {
     const isEmpty = !params || Object.keys(params).length === 0
+    const json = React.useMemo(
+        () => (isEmpty ? null : JSON.stringify(params, null, 2)),
+        [isEmpty, params],
+    )
     return (
         <div className="space-y-1">
             <div className="flex items-baseline gap-2">
@@ -97,7 +105,7 @@ function ParamsBlock({
                     </span>
                 )}
             </div>
-            {isEmpty ? (
+            {json == null ? (
                 <p className="text-[11px] text-muted-foreground/70 italic">empty</p>
             ) : (
                 <pre
@@ -107,7 +115,7 @@ function ParamsBlock({
                             : "rounded-md border bg-muted/30 p-2 text-[11px] leading-tight font-mono overflow-auto"
                     }
                 >
-                    {JSON.stringify(params, null, 2)}
+                    {json}
                 </pre>
             )}
         </div>

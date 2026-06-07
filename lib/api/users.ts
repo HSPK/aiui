@@ -11,4 +11,5 @@ export const users = defineResource<
 >({
     path: "/users",
     key: "users",
+    staleTime: 60_000,
 });
