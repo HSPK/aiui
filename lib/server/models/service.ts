@@ -3,7 +3,12 @@ import { randomUUID } from "node:crypto";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../db";
 import { models, providers, type Provider } from "../db/schema";
-import { discoverModels, listAllDiscovered, type DiscoveredModel } from "../discovery";
+import {
+    discoveredForProvider,
+    getDiscoveryStatus,
+    listAllDiscovered,
+    type DiscoveredModel,
+} from "../discovery";
 import { findProviderByIdOrName } from "../providers";
 import { resolveAdapter } from "../adapters";
 import "../adapters/register";
@@ -20,15 +25,31 @@ export function findModelByIdOrName(idOrName: string) {
     );
 }
 
-/** Re-project the stored discovered metadata for a DB-backed model row.
- *  Uses the provider's adapter; when there's no stored metadata (e.g. a
- *  proxy returned only bare /v1/models entries), feed the adapter a
- *  minimal `{id}` so it still produces its built-in defaults. */
-function metaForDbModel(model: typeof models.$inferSelect, provider: Provider | undefined): NormalizedModelMeta | null {
+/** Verbatim entry persisted at override creation, or the freshest cached
+ *  discovery entry, or null. Requires the discovery cache to be warm
+ *  for the relevant provider (callers warm via listAllDiscovered or
+ *  discoveredForProvider before invoking). */
+function rawForDbModel(model: typeof models.$inferSelect, provider: Provider | undefined): unknown {
+    if (model.discoveredMetadata !== null && model.discoveredMetadata !== undefined) {
+        return model.discoveredMetadata;
+    }
+    if (!provider) return null;
+    const cached = getDiscoveryStatus(provider.id);
+    const hit = cached?.models.find((m) => m.id === model.upstreamModelId);
+    return hit?.meta.raw ?? null;
+}
+
+/** Re-project the raw entry through the provider's adapter. When raw is
+ *  missing entirely we feed `{id}` so the adapter still emits its built-in
+ *  defaults (Foundry's accepted/rejected_fields, etc.). */
+function metaForDbModel(
+    model: typeof models.$inferSelect,
+    provider: Provider | undefined,
+    raw: unknown,
+): NormalizedModelMeta | null {
     if (!provider) return null;
     const adapter = resolveAdapter(provider);
-    const raw = model.discoveredMetadata ?? { id: model.upstreamModelId };
-    return adapter.extractModelMeta(raw, provider);
+    return adapter.extractModelMeta(raw ?? { id: model.upstreamModelId }, provider);
 }
 
 /** Synthesize a transient ModelDTO for a discovered upstream model. */
@@ -62,6 +83,10 @@ function discoveredToDTO(d: DiscoveredModel, provider: Provider | undefined): Mo
 
 /** List all DB-backed override rows plus live discovered models (union, DB shadows discovery). */
 export async function listAllModels(): Promise<ModelDTO[]> {
+    // Warm the discovery cache for every enabled provider FIRST so the
+    // sync `rawForDbModel` lookup below sees fresh entries on cold boots.
+    const discovered = await listAllDiscovered();
+
     const rows = db.select().from(models).orderBy(models.name).all();
     const providerIds = Array.from(new Set(rows.map((r) => r.providerId)));
     const providerRows = providerIds.length > 0
@@ -71,8 +96,9 @@ export async function listAllModels(): Promise<ModelDTO[]> {
 
     const dbModels: ModelDTO[] = rows.map((m) => {
         const p = providerMap.get(m.providerId);
+        const raw = rawForDbModel(m, p);
         return {
-            ...serializeModel(m, p?.name ?? null, p?.baseUrl ?? null, metaForDbModel(m, p)),
+            ...serializeModel(m, p?.name ?? null, p?.baseUrl ?? null, metaForDbModel(m, p, raw)),
             is_discovered: false,
         };
     });
@@ -80,7 +106,6 @@ export async function listAllModels(): Promise<ModelDTO[]> {
     const seen = new Set(dbModels.map((m) => m.name));
     const allProviders = db.select().from(providers).all();
     const allProvidersById = new Map(allProviders.map((p) => [p.id, p]));
-    const discovered = await listAllDiscovered();
     const synthesized = discovered
         .filter((d) => !seen.has(d.id))
         .map((d) => discoveredToDTO(d, allProvidersById.get(d.provider_id)));
@@ -92,22 +117,28 @@ export async function listModelsForProvider(providerIdOrName: string): Promise<M
     const provider = findProviderByIdOrName(providerIdOrName);
     if (!provider) throw notFound("Provider not found");
 
+    // Warm this provider's cache before DB-row projection so `rawForDbModel`
+    // sees the freshest upstream entries.
+    let discovered: DiscoveredModel[] = [];
+    try {
+        discovered = await discoveredForProvider(provider);
+    } catch (err) {
+        console.warn(`[aiui] provider "${provider.name}" discovery failed:`, err);
+    }
+
     const rows = db.select().from(models)
         .where(eq(models.providerId, provider.id))
         .orderBy(models.name)
         .all();
-    const dbModels: ModelDTO[] = rows.map((m) => ({
-        ...serializeModel(m, provider.name, provider.baseUrl, metaForDbModel(m, provider)),
-        is_discovered: false,
-    }));
+    const dbModels: ModelDTO[] = rows.map((m) => {
+        const raw = rawForDbModel(m, provider);
+        return {
+            ...serializeModel(m, provider.name, provider.baseUrl, metaForDbModel(m, provider, raw)),
+            is_discovered: false,
+        };
+    });
     const seen = new Set(dbModels.map((m) => m.name));
 
-    let discovered: DiscoveredModel[] = [];
-    try {
-        discovered = await discoverModels(provider);
-    } catch (err) {
-        console.warn(`[aiui] provider "${provider.name}" discovery failed:`, err);
-    }
     const synthesized = discovered
         .filter((d) => !seen.has(d.id))
         .map((d) => discoveredToDTO(d, provider));
@@ -117,9 +148,29 @@ export async function listModelsForProvider(providerIdOrName: string): Promise<M
 
 export async function getModel(idOrName: string): Promise<ModelDTO> {
     const model = findModelByIdOrName(idOrName);
-    if (!model) throw notFound("Model not found");
-    const provider = db.select().from(providers).where(eq(providers.id, model.providerId)).get();
-    return serializeModel(model, provider?.name ?? null, provider?.baseUrl ?? null, metaForDbModel(model, provider));
+    if (model) {
+        const provider = db.select().from(providers).where(eq(providers.id, model.providerId)).get();
+        // Warm this provider's cache so older rows without persisted
+        // discovered_metadata still get their raw upstream entry.
+        if (provider) {
+            try {
+                await discoveredForProvider(provider);
+            } catch (err) {
+                console.warn(`[aiui] provider "${provider.name}" discovery failed:`, err);
+            }
+        }
+        const raw = rawForDbModel(model, provider);
+        return serializeModel(model, provider?.name ?? null, provider?.baseUrl ?? null, metaForDbModel(model, provider, raw));
+    }
+    // No DB row — fall back to the live discovery union so /models/<name>
+    // works for transient discovered entries too.
+    const discovered = await listAllDiscovered();
+    const hit = discovered.find((d) => d.id === idOrName);
+    if (hit) {
+        const provider = db.select().from(providers).where(eq(providers.id, hit.provider_id)).get();
+        return discoveredToDTO(hit, provider);
+    }
+    throw notFound("Model not found");
 }
 
 export async function createModel(input: ModelCreateInput): Promise<ModelDTO> {
@@ -132,6 +183,16 @@ export async function createModel(input: ModelCreateInput): Promise<ModelDTO> {
 
     const existing = db.select().from(models).where(eq(models.name, name)).get();
     if (existing) throw badRequest("Model name already exists");
+
+    // Snapshot the discovery cache when the caller didn't supply a raw
+    // entry — promoting a discovered model into an override is the common
+    // case and we don't want to lose its metadata.
+    let snapshotted = input.discovered_metadata;
+    if (snapshotted === undefined || snapshotted === null) {
+        const cached = getDiscoveryStatus(provider.id);
+        const hit = cached?.models.find((m) => m.id === upstream);
+        if (hit) snapshotted = hit.meta.raw ?? null;
+    }
 
     const id = randomUUID();
     db.insert(models).values({
@@ -151,6 +212,7 @@ export async function createModel(input: ModelCreateInput): Promise<ModelDTO> {
         maxRetries: input.max_retries ?? 2,
         httpProxy: input.http_proxy ?? null,
         enabled: input.enabled ?? true,
+        discoveredMetadata: snapshotted ?? null,
     }).run();
 
     return getModel(id);
@@ -193,6 +255,7 @@ export async function updateModel(idOrName: string, input: ModelUpdateInput): Pr
     if (input.max_retries !== undefined) updates.maxRetries = input.max_retries;
     if (input.http_proxy !== undefined) updates.httpProxy = input.http_proxy ?? null;
     if (input.enabled !== undefined) updates.enabled = !!input.enabled;
+    if (input.discovered_metadata !== undefined) updates.discoveredMetadata = input.discovered_metadata;
 
     updates.updatedAt = new Date().toISOString();
 

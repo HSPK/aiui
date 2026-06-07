@@ -157,6 +157,18 @@ export async function resolveByDiscovery(
     return null;
 }
 
+/** Cache-aware per-provider model list. Refreshes when stale, returns
+ *  the cached entry otherwise. Prefer this over `discoverModels` from
+ *  outside this module — it populates the cache so subsequent
+ *  `getDiscoveryStatus` lookups see fresh data. */
+export async function discoveredForProvider(
+    provider: Provider,
+    opts: { force?: boolean } = {},
+): Promise<DiscoveredModel[]> {
+    const entry = await getEntry(provider, opts);
+    return entry.models;
+}
+
 /** Lookup the last cache state for a provider (no fetch). */
 export function getDiscoveryStatus(providerId: string): CacheEntry | null {
     return cache.get(providerId) ?? null;

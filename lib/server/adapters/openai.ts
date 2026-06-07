@@ -8,6 +8,13 @@ import type { Provider } from "../db/schema";
  * Shared helpers for adapters that speak OpenAI's Chat Completions /
  * Embeddings / etc. surface. Keeps the per-adapter files focused on
  * what's actually different (URL shape, header style, schema strictness).
+ *
+ * Policy: the gateway never implicitly injects request fields. If a caller
+ * wants `stream_options.include_usage` (or any other extra), they set it
+ * either in the request body, the model's `default_params`, or the
+ * provider's `default_params` (which the model inherits). `mergeParams`
+ * walks those three layers; this module only owns transport-level shape
+ * (URL, auth, field accept/reject).
  */
 
 /** Build the standard URL: `{base_url}{capability.endpoint.path}`. */
@@ -67,40 +74,6 @@ export function applyFieldFilter(
         out[k] = v;
     }
     return out;
-}
-
-/**
- * Inject `stream_options.include_usage = true` when:
- *  - we're streaming a chat completion
- *  - caller didn't set it
- *  - upstream is known to accept `stream_options` (per `meta.accepted_fields`
- *    or per `meta.rejected_fields`)
- */
-export function maybeInjectStreamUsage(
-    body: Record<string, unknown>,
-    args: UpstreamCallArgs,
-): Record<string, unknown> {
-    if (!args.stream) return body;
-    if (args.capability.id !== "chat") return body;
-    if (args.apiId !== "chat.completions") return body; // responses API handles usage differently
-
-    const meta = args.meta;
-    if (meta?.rejected_fields?.includes("stream_options")) return body;
-    if (meta?.accepted_fields && meta.accepted_fields.length > 0 && !meta.accepted_fields.includes("stream_options")) {
-        return body;
-    }
-
-    const existing = body.stream_options;
-    if (existing === null) {
-        const { stream_options: _drop, ...rest } = body;
-        void _drop;
-        return rest;
-    }
-    const so = (existing as Record<string, unknown> | undefined) ?? {};
-    if (so.include_usage === undefined) {
-        return { ...body, stream_options: { ...so, include_usage: true } };
-    }
-    return body;
 }
 
 /**
@@ -188,8 +161,7 @@ export const openaiAdapter: ProviderAdapter = {
     transformRequest(body, args) {
         // Sticky model id in case caller used a display name
         const withModel = { ...body, model: args.model.upstreamModelId };
-        const filtered = applyFieldFilter(withModel, args.meta);
-        return maybeInjectStreamUsage(filtered, args);
+        return applyFieldFilter(withModel, args.meta);
     },
 };
 

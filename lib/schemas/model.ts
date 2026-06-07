@@ -30,8 +30,9 @@ export const modelDTOSchema = z.object({
     enabled: z.boolean(),
     is_discovered: z.boolean().optional(),
     /** Adapter-projected metadata (supported_apis, capabilities,
-     *  accepted_fields, rate_limits, …). Drives gateway routing
-     *  decisions and the model details UI panels. */
+     *  accepted_fields, rate_limits, …). `meta.raw` carries the verbatim
+     *  upstream `/models` entry. Drives gateway routing decisions and the
+     *  model details UI panels. */
     meta: normalizedModelMetaSchema.nullable().optional(),
     created_at: z.string().optional(),
     updated_at: z.string().optional(),
@@ -55,6 +56,12 @@ export const modelCreateSchema = z.object({
     max_retries: z.number().int().min(0).optional(),
     http_proxy: z.record(z.string(), z.string()).nullable().optional(),
     enabled: z.boolean().optional(),
+    /** Verbatim entry from the provider's `/models` endpoint at the time of
+     *  override creation. Persisted so re-projection via the adapter works
+     *  even when the discovery cache is cold. Typically populated by the
+     *  admin UI when promoting a discovered model into a DB-backed
+     *  override. */
+    discovered_metadata: z.unknown().optional(),
 });
 
 export const modelUpdateSchema = modelCreateSchema.partial();

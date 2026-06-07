@@ -5,11 +5,10 @@ import { db, schema } from "../db";
 import { authenticateGateway, type SessionUser } from "../auth";
 import { decryptSecret } from "../crypto";
 import { findModelByIdOrName } from "../models";
-import { resolveByDiscovery } from "../discovery";
+import { getDiscoveryStatus, resolveByDiscovery } from "../discovery";
 import {
     classifyModel,
     getCapability,
-    type CapabilityHandler,
 } from "../capabilities";
 // Side-effect import: registers every built-in capability with the registry.
 // Adding a new modality is a one-line change in capabilities/register.ts.
@@ -88,12 +87,15 @@ export async function resolveModel(name: string): Promise<ResolvedModel> {
         if (!provider) throw notFound(`Provider for model "${name}" not found`);
         if (!provider.enabled) throw badRequest(`Provider "${provider.name}" is disabled`);
         const adapter = resolveAdapter(provider);
-        // Re-project the stored discovery metadata so we always reflect the
-        // adapter's current knowledge. If discovery never recorded anything
-        // (proxied URL that strips upstream metadata, for example), feed
-        // the adapter a minimal `{id}` so it still produces its built-in
-        // defaults (e.g. Foundry's accepted/rejected_fields).
-        const rawMeta = model.discoveredMetadata ?? { id: model.upstreamModelId };
+        // Re-project the persisted discovery snapshot (or fall back to the
+        // live discovery cache, then to a minimal `{id}`) so the gateway
+        // always reflects the best-known upstream knowledge of this model.
+        let rawMeta: unknown = model.discoveredMetadata;
+        if (rawMeta === null || rawMeta === undefined) {
+            const cached = getDiscoveryStatus(provider.id);
+            const hit = cached?.models.find((m) => m.id === model.upstreamModelId);
+            rawMeta = hit?.meta.raw ?? { id: model.upstreamModelId };
+        }
         const meta = adapter.extractModelMeta(rawMeta, provider);
         return {
             model,
@@ -121,7 +123,14 @@ export async function resolveModel(name: string): Promise<ResolvedModel> {
     };
 }
 
-/** Merge provider/model default params under the user-supplied body. User wins. */
+/** Merge defaults under the caller's body.
+ *
+ *  Precedence (low → high): provider.default_params → model.default_params
+ *  → caller body. Model defaults thus *inherit* the provider's defaults
+ *  and override them per-key; the caller's request body always wins.
+ *
+ *  The gateway does NOT inject any field on its own. If you want
+ *  `stream_options.include_usage`, set it here. */
 export function mergeParams(
     body: Record<string, unknown>,
     model: Model,

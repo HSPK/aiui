@@ -4,7 +4,6 @@ import {
     applyFieldFilter,
     bearerAuthHeaders,
     defaultSelectUpstreamApi,
-    maybeInjectStreamUsage,
 } from "./openai";
 import type { NormalizedModelMeta } from "@/lib/schemas/adapter";
 import type { Provider } from "../db/schema";
@@ -107,8 +106,7 @@ export const azureOpenAIAdapter: ProviderAdapter = {
         // redundant and historically rejected.
         const { model: _drop, ...rest } = body;
         void _drop;
-        const filtered = applyFieldFilter(rest, args.meta);
-        return maybeInjectStreamUsage(filtered, args);
+        return applyFieldFilter(rest, args.meta);
     },
 };
 

@@ -1,8 +1,12 @@
 #!/usr/bin/env node
 // E2E: verify gateway tracing fixes
-//   - bug-stream-usage: gateway auto-injects stream_options.include_usage=true so usage chunk arrives
+//   - default_params: provider/model default_params propagate to upstream so
+//     callers can opt into things like stream_options.include_usage
+//   - strict-adapter filtering: Foundry-style accepted/rejected_fields strip
+//     fields even when a caller explicitly set them
 //   - bug-raw-output: streaming logs persist a coherent merged OpenAI-style JSON in `generation`/`content`
 //   - bug-logs-username: list & detail responses include the actor's username (joined from users table)
+//   - bug-discovered-metadata: model details surface the raw upstream JSON
 
 import { spawn } from "node:child_process";
 import http from "node:http";
@@ -32,10 +36,9 @@ const stub = http.createServer((req, res) => {
     // Proxied-Foundry-as-OpenAI: looks like /v1/... at the URL layer
     // (so transport adapter auto-detects as "openai"), but the upstream
     // rejects stream_options just like a strict Foundry endpoint would.
-    // Used to assert both provider-level and model-level schema_adapter_id
-    // overrides correctly steer the gateway.
+    // Used to assert the explicit adapter_id override strips the field
+    // before the request reaches us.
     const isProxyFoundryUrl = req.url.startsWith("/proxy-foundry/");
-    const isProxyFoundryPLUrl = req.url.startsWith("/proxy-foundry-pl/");
     if (req.url === "/health-ok") {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ status: "ok" }));
@@ -46,7 +49,7 @@ const stub = http.createServer((req, res) => {
         res.end(JSON.stringify({ status: "degraded" }));
         return;
     }
-    if (req.url === "/v1/models" || req.url === "/foundry/v1/models" || req.url === "/proxy-foundry/v1/models" || req.url === "/proxy-foundry-pl/v1/models") {
+    if (req.url === "/v1/models" || req.url === "/foundry/v1/models" || req.url === "/proxy-foundry/v1/models") {
         res.writeHead(200, { "Content-Type": "application/json" });
         // Distinct model ids per endpoint so discovery routes the request
         // through the intended provider + adapter.
@@ -67,9 +70,6 @@ const stub = http.createServer((req, res) => {
         } else if (isProxyFoundryUrl) {
             // Proxy emits standard OpenAI shape — no rich metadata.
             res.end(JSON.stringify({ object: "list", data: [{ id: "proxied-fara", object: "model" }] }));
-        } else if (isProxyFoundryPLUrl) {
-            // Provider-level override version: also bare OpenAI shape.
-            res.end(JSON.stringify({ object: "list", data: [{ id: "proxied-fara-pl", object: "model" }] }));
         } else {
             // Stub returns a chat model AND an embedding model — exercises
             // the openai adapter's id-based capability classifier.
@@ -83,16 +83,16 @@ const stub = http.createServer((req, res) => {
         }
         return;
     }
-    if (req.url === "/v1/chat/completions" || req.url === "/foundry/v1/chat/completions" || req.url === "/proxy-foundry/v1/chat/completions" || req.url === "/proxy-foundry-pl/v1/chat/completions") {
+    if (req.url === "/v1/chat/completions" || req.url === "/foundry/v1/chat/completions" || req.url === "/proxy-foundry/v1/chat/completions") {
         let body = "";
         req.on("data", (c) => { body += c; });
         req.on("end", async () => {
             lastChatBody = JSON.parse(body);
             // Simulate Azure Foundry's strict `extra-parameters: error` policy
             // by rejecting requests that include stream_options. Same policy
-            // applied at all /proxy-foundry*/ paths to assert the schema-
-            // adapter override strips the field at whichever level it's set.
-            if ((isFoundryUrl || isProxyFoundryUrl || isProxyFoundryPLUrl) && lastChatBody.stream_options !== undefined) {
+            // applied at the /proxy-foundry/ path to assert that the explicit
+            // adapter_id steer makes the gateway strip the field.
+            if ((isFoundryUrl || isProxyFoundryUrl) && lastChatBody.stream_options !== undefined) {
                 res.writeHead(400, { "Content-Type": "application/json" });
                 res.end(JSON.stringify({
                     detail: "Extra parameters ['stream_options'] are not allowed when extra-parameters is not set or set to be 'error'. Set extra-parameters to 'pass-through' to pass to the model.",
@@ -137,6 +137,11 @@ providers:
     base_url: http://127.0.0.1:${UPSTREAM_PORT}/v1
     api_key: sk-test
     health_check_url: http://127.0.0.1:${UPSTREAM_PORT}/health-ok
+    # Opt into streamed usage chunks via default_params — the gateway
+    # never injects this on its own.
+    default_params:
+      stream_options:
+        include_usage: true
     enabled: true
   - name: foundry
     adapter_id: azure-foundry
@@ -151,14 +156,6 @@ providers:
     base_url: http://127.0.0.1:${UPSTREAM_PORT}/proxy-foundry/v1
     api_key: sk-test
     health_check_url: http://127.0.0.1:${UPSTREAM_PORT}/health-bad
-    enabled: true
-  - name: optout
-    # Health-bad provider, openai transport, but we disable stream_options
-    # injection at the default_params layer — no adapter trickery needed.
-    base_url: http://127.0.0.1:${UPSTREAM_PORT}/proxy-foundry-pl/v1
-    api_key: sk-test
-    default_params:
-      stream_options: null
     enabled: true
 `;
 writeFileSync(path.join(tmp, ".config", "aiui.yaml"), config);
@@ -212,7 +209,9 @@ try {
     const cookie = loginRes.headers.getSetCookie?.()?.find((c) => c.startsWith("aiui_session="))?.split(";")[0];
     expect("login succeeded", loginRes.ok && !!cookie);
 
-    // Trigger a streaming chat — caller does NOT pass stream_options.
+    // Trigger a streaming chat — caller does NOT pass stream_options,
+    // but the provider's default_params opts into include_usage so the
+    // stub emits the usage chunk.
     const stream = await fetch(`${BASE}/api/v1/chat/completions`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Cookie: cookie },
@@ -220,7 +219,7 @@ try {
             model: "stub-gpt",
             stream: true,
             messages: [{ role: "user", content: "hi" }],
-            // No stream_options here on purpose — gateway must inject.
+            // No stream_options here — provider default_params provides it.
         }),
     });
     expect("streaming request 200", stream.status === 200);
@@ -228,9 +227,10 @@ try {
     while (true) { const { done } = await reader.read(); if (done) break; }
     await sleep(500);
 
-    // ---- bug-stream-usage: gateway injected stream_options.include_usage=true ----
+    // ---- default_params inheritance: stream_options.include_usage from
+    //      the provider's YAML reached the upstream verbatim ----
     expect(
-        "gateway injected stream_options.include_usage=true",
+        "provider default_params.stream_options.include_usage propagated to upstream",
         lastChatBody?.stream_options?.include_usage === true,
         JSON.stringify(lastChatBody?.stream_options),
     );
@@ -244,7 +244,7 @@ try {
     expect("logs list returned item", !!item);
     expect("logs list item has username=traceadmin (bug-logs-username)", item?.username === "traceadmin", `username=${item?.username}`);
     expect("logs list item still has user_id", typeof item?.user_id === "string" && item.user_id.length > 0);
-    expect("logs list item has prompt_tokens (bug-stream-usage payoff)", item?.prompt_tokens === 7, `prompt_tokens=${item?.prompt_tokens}`);
+    expect("logs list item has prompt_tokens (default_params payoff)", item?.prompt_tokens === 7, `prompt_tokens=${item?.prompt_tokens}`);
     expect("logs list item has completion_tokens", item?.completion_tokens === 4);
     expect("logs list item has total_tokens", item?.total_tokens === 11);
 
@@ -263,10 +263,10 @@ try {
     expect("generation.usage present", detail?.generation?.usage?.total_tokens === 11);
 
     // -------------------------------------------------------------------
-    // bug-stream-opts-optout: when provider default_params.stream_options
-    // is null, the gateway must strip the field instead of injecting it
-    // — Azure Foundry / strict endpoints (here simulated by /foundry/...)
-    // would otherwise reject the request with HTTP 400.
+    // Strict-adapter filtering: when a caller explicitly asks for a field
+    // the upstream is known to reject, the adapter's accepted/rejected
+    // fields list strips it before send. The foundry stub would otherwise
+    // return HTTP 400 with "extra-parameters" error.
     // -------------------------------------------------------------------
     lastChatBody = null;
     const foundryStream = await fetch(`${BASE}/api/v1/chat/completions`, {
@@ -275,17 +275,20 @@ try {
         body: JSON.stringify({
             model: "gcr-fara-7b",
             stream: true,
+            // Caller explicitly asks for stream_options — adapter MUST strip
+            // it because Foundry's rejected_fields includes it.
+            stream_options: { include_usage: true },
             messages: [{ role: "user", content: "hi" }],
         }),
     });
-    expect("foundry streaming request 200 (would 400 without opt-out)", foundryStream.status === 200, `status=${foundryStream.status}`);
+    expect("foundry streaming request 200 (would 400 without strip)", foundryStream.status === 200, `status=${foundryStream.status}`);
     if (foundryStream.body) {
         const fReader = foundryStream.body.getReader();
         while (true) { const { done } = await fReader.read(); if (done) break; }
     }
     await sleep(300);
     expect(
-        "gateway stripped stream_options for foundry provider",
+        "foundry adapter stripped explicitly-set stream_options",
         lastChatBody?.stream_options === undefined,
         `stream_options=${JSON.stringify(lastChatBody?.stream_options)}`,
     );
@@ -387,6 +390,8 @@ try {
         body: JSON.stringify({
             model: "proxied-fara",  // discovered under proxy-foundry
             stream: true,
+            // Explicit field — adapter must strip via accepted/rejected lists
+            stream_options: { include_usage: true },
             messages: [{ role: "user", content: "hi" }],
         }),
     });
@@ -407,44 +412,35 @@ try {
     );
 
     // -------------------------------------------------------------------
-    // Default-params escape hatch: provider sets `default_params.stream_options: null`
-    // → mergeParams puts null into the body → maybeInjectStreamUsage sees
-    // null and DROPS the field. No backend adapter magic needed.
+    // Discovered-metadata persistence: when an admin promotes a discovered
+    // model into an override, the raw upstream entry is snapshotted into
+    // models.discovered_metadata and surfaced on the DTO so the details
+    // page can render it.
     // -------------------------------------------------------------------
-    const optoutProvider = providersAfter.find((p) => p.name === "optout");
-    expect("optout provider exists", !!optoutProvider);
-    expect(
-        "optout provider preserves default_params.stream_options=null from YAML",
-        // YAML's `null` becomes JSON null in the DTO
-        Object.prototype.hasOwnProperty.call(optoutProvider?.default_params ?? {}, "stream_options")
-            && optoutProvider?.default_params?.stream_options === null,
-        `default_params=${JSON.stringify(optoutProvider?.default_params)}`,
-    );
-
-    lastChatBody = null;
-    const optoutStream = await fetch(`${BASE}/api/v1/chat/completions`, {
+    const foundryProvider = providersAfter.find((p) => p.name === "foundry");
+    expect("foundry provider exists", !!foundryProvider);
+    const promoteRes = await fetch(`${BASE}/api/models`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Cookie: cookie },
         body: JSON.stringify({
-            model: "proxied-fara-pl",
-            stream: true,
-            messages: [{ role: "user", content: "hi" }],
+            name: "fara-override",
+            provider_id: foundryProvider.id,
+            upstream_model_id: "gcr-fara-7b",
+            type: "chat",
         }),
     });
+    const promoted = (await promoteRes.json()).data;
+    expect("override creation succeeded", promoteRes.status === 200 && !!promoted?.id);
     expect(
-        "default_params escape: stream succeeded (would 400 with stream_options)",
-        optoutStream.status === 200,
-        `status=${optoutStream.status}`,
+        "override snapshotted raw upstream entry into meta.raw",
+        promoted?.meta?.raw?.id === "gcr-fara-7b" &&
+            promoted?.meta?.raw?.RateLimits?.requests === 850,
+        `meta.raw=${JSON.stringify(promoted?.meta?.raw)}`,
     );
-    if (optoutStream.body) {
-        const r = optoutStream.body.getReader();
-        while (true) { const { done } = await r.read(); if (done) break; }
-    }
-    await sleep(300);
     expect(
-        "default_params.stream_options=null drops the field entirely",
-        lastChatBody?.stream_options === undefined,
-        `stream_options=${JSON.stringify(lastChatBody?.stream_options)}`,
+        "override surfaces meta projected from snapshotted raw entry",
+        promoted?.meta?.publisher === "xAI" && promoted?.meta?.rate_limits?.requests === 850,
+        `meta=${JSON.stringify(promoted?.meta)}`,
     );
 } catch (err) {
     console.error("Test threw:", err);

@@ -4,7 +4,6 @@ import {
     applyFieldFilter,
     defaultSelectUpstreamApi,
     fetchOpenAIModels,
-    maybeInjectStreamUsage,
 } from "./openai";
 import type { NormalizedModelMeta, UpstreamApiId } from "@/lib/schemas/adapter";
 
@@ -174,10 +173,9 @@ export const azureFoundryAdapter: ProviderAdapter = {
 
     transformRequest(body, args) {
         const withModel = { ...body, model: args.model.upstreamModelId };
-        const filtered = applyFieldFilter(withModel, args.meta);
-        // maybeInjectStreamUsage already checks accepted/rejected_fields,
-        // so it'll skip injection for Foundry OSS models.
-        return maybeInjectStreamUsage(filtered, args);
+        // applyFieldFilter strips Foundry's known-rejected fields
+        // (stream_options, parallel_tool_calls, …) — see FOUNDRY_OSS_*.
+        return applyFieldFilter(withModel, args.meta);
     },
 };
 
