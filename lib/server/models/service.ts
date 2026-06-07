@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { models, providers, type Provider } from "../db/schema";
 import {
@@ -83,19 +83,20 @@ function discoveredToDTO(d: DiscoveredModel, provider: Provider | undefined): Mo
 
 /** List all DB-backed override rows plus live discovered models (union, DB shadows discovery). */
 export async function listAllModels(): Promise<ModelDTO[]> {
-    // Warm the discovery cache for every enabled provider FIRST so the
-    // sync `rawForDbModel` lookup below sees fresh entries on cold boots.
-    const discovered = await listAllDiscovered();
+    // Kick off discovery + the bulk providers fetch BEFORE the DB scan so
+    // the network round-trip overlaps with local work. Drizzle is sync via
+    // better-sqlite3, so without this overlap discovery would always be on
+    // the critical path.
+    const discoveredPromise = listAllDiscovered();
 
     const rows = db.select().from(models).orderBy(models.name).all();
-    const providerIds = Array.from(new Set(rows.map((r) => r.providerId)));
-    const providerRows = providerIds.length > 0
-        ? db.select().from(providers).where(inArray(providers.id, providerIds)).all()
-        : [];
-    const providerMap = new Map(providerRows.map((p) => [p.id, p]));
+    const allProviders = db.select().from(providers).all();
+    const allProvidersById = new Map(allProviders.map((p) => [p.id, p]));
+
+    const discovered = await discoveredPromise;
 
     const dbModels: ModelDTO[] = rows.map((m) => {
-        const p = providerMap.get(m.providerId);
+        const p = allProvidersById.get(m.providerId);
         const raw = rawForDbModel(m, p);
         return {
             ...serializeModel(m, p?.name ?? null, p?.baseUrl ?? null, metaForDbModel(m, p, raw)),
@@ -104,8 +105,6 @@ export async function listAllModels(): Promise<ModelDTO[]> {
     });
 
     const seen = new Set(dbModels.map((m) => m.name));
-    const allProviders = db.select().from(providers).all();
-    const allProvidersById = new Map(allProviders.map((p) => [p.id, p]));
     const synthesized = discovered
         .filter((d) => !seen.has(d.id))
         .map((d) => discoveredToDTO(d, allProvidersById.get(d.provider_id)));
@@ -117,19 +116,19 @@ export async function listModelsForProvider(providerIdOrName: string): Promise<M
     const provider = findProviderByIdOrName(providerIdOrName);
     if (!provider) throw notFound("Provider not found");
 
-    // Warm this provider's cache before DB-row projection so `rawForDbModel`
-    // sees the freshest upstream entries.
-    let discovered: DiscoveredModel[] = [];
-    try {
-        discovered = await discoveredForProvider(provider);
-    } catch (err) {
+    // Overlap discovery with the DB scan.
+    const discoveredPromise = discoveredForProvider(provider).catch((err) => {
         console.warn(`[aiui] provider "${provider.name}" discovery failed:`, err);
-    }
+        return [] as DiscoveredModel[];
+    });
 
     const rows = db.select().from(models)
         .where(eq(models.providerId, provider.id))
         .orderBy(models.name)
         .all();
+
+    const discovered = await discoveredPromise;
+
     const dbModels: ModelDTO[] = rows.map((m) => {
         const raw = rawForDbModel(m, provider);
         return {
@@ -150,9 +149,11 @@ export async function getModel(idOrName: string): Promise<ModelDTO> {
     const model = findModelByIdOrName(idOrName);
     if (model) {
         const provider = db.select().from(providers).where(eq(providers.id, model.providerId)).get();
-        // Warm this provider's cache so older rows without persisted
-        // discovered_metadata still get their raw upstream entry.
-        if (provider) {
+        // Network warmup is only worth doing when the DB row lacks a
+        // persisted snapshot — otherwise `rawForDbModel` already has
+        // everything it needs and we'd just be paying upstream latency
+        // for no UI win.
+        if (provider && model.discoveredMetadata == null) {
             try {
                 await discoveredForProvider(provider);
             } catch (err) {

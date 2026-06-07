@@ -143,16 +143,18 @@ export async function discoveredCountByProvider(): Promise<Record<string, number
 
 /**
  * Locate which enabled provider exposes a model with the given id. Returns
- * the first match; ordering is the providers table's natural row order.
+ * the first match in providers-table order; cache entries are fetched in
+ * parallel so total latency is bounded by the slowest provider, not the
+ * sum across them.
  */
 export async function resolveByDiscovery(
     modelName: string,
 ): Promise<{ provider: Provider; upstreamModelId: string; meta: NormalizedModelMeta } | null> {
     const providers = enabledProviders();
-    for (const p of providers) {
-        const entry = await getEntry(p);
-        const hit = entry.models.find((m) => m.id === modelName);
-        if (hit) return { provider: p, upstreamModelId: hit.id, meta: hit.meta };
+    const entries = await Promise.all(providers.map((p) => getEntry(p)));
+    for (let i = 0; i < providers.length; i++) {
+        const hit = entries[i].models.find((m) => m.id === modelName);
+        if (hit) return { provider: providers[i], upstreamModelId: hit.id, meta: hit.meta };
     }
     return null;
 }
