@@ -8,33 +8,29 @@ import {
     ChevronLeft,
     FileText,
     Globe,
+    Plus,
     RefreshCcw,
 } from "lucide-react"
 import { toast } from "sonner"
 
-import { providers } from "@/lib/api"
+import { models as modelsApi, providers } from "@/lib/api"
 import { useAuth } from "@/context/auth-context"
 import type { ModelDTO } from "@/lib/schemas/model"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ProviderIcon } from "@/components/ProviderIcon"
-import { ModelCard } from "@/components/providers/model-card"
-import { ModelFormDialog } from "@/components/providers/model-form-dialog"
+import { ModelsTable } from "@/components/providers/models-table"
 import { ProviderHealthPill } from "@/components/providers/provider-health-pill"
-
-type EditingState = {
-    open: boolean
-    mode: "create" | "edit"
-    model?: ModelDTO | null
-}
 
 export default function ProviderDetailPage() {
     const params = useParams()
     const router = useRouter()
     const slug = decodeURIComponent(String(params.name ?? ""))
+    const backHref = `/providers/${encodeURIComponent(slug)}`
 
     const { user } = useAuth()
     const isAdmin = user?.role === "admin"
@@ -42,11 +38,7 @@ export default function ProviderDetailPage() {
     const { data: provider, isLoading: isLoadingProvider } = providers.useGet(slug)
     const { data: models, isLoading: isLoadingModels } = providers.useModels(slug)
 
-    const [editing, setEditing] = React.useState<EditingState>({
-        open: false,
-        mode: "edit",
-        model: null,
-    })
+    const [deleting, setDeleting] = React.useState<ModelDTO | null>(null)
 
     const refreshMutation = providers.useReload({
         onSuccess: () => toast.success("Refreshed model list"),
@@ -64,17 +56,13 @@ export default function ProviderDetailPage() {
         onError: (e) => toast.error(`Health check failed: ${e.message}`),
     })
 
-    const handleEdit = React.useCallback(
-        (m: ModelDTO) =>
-            setEditing({
-                open: true,
-                // Discovered rows have no DB row yet — open "create" so
-                // the dialog pre-fills as a new override.
-                mode: m.is_discovered ? "create" : "edit",
-                model: m,
-            }),
-        []
-    )
+    const deleteMutation = modelsApi.useDelete({
+        onSuccess: () => {
+            toast.success("Model deleted")
+            setDeleting(null)
+        },
+        onError: (e) => toast.error(e.message || "Delete failed"),
+    })
 
     if (isLoadingProvider) {
         return <ProviderDetailSkeleton />
@@ -99,7 +87,6 @@ export default function ProviderDetailPage() {
     return (
         <div className="h-full overflow-y-auto">
             <div className="mx-auto w-full max-w-7xl space-y-4 p-4 md:p-6">
-                {/* Breadcrumb */}
                 <button
                     onClick={() => router.push("/providers")}
                     className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
@@ -108,9 +95,9 @@ export default function ProviderDetailPage() {
                     Providers
                 </button>
 
-                {/* Identity card */}
+                {/* Identity */}
                 <Card className="p-4 md:p-5">
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+                    <div className="flex items-start gap-3">
                         <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted shrink-0">
                             <ProviderIcon
                                 providerName={provider.provider_name}
@@ -119,15 +106,59 @@ export default function ProviderDetailPage() {
                                 height={24}
                             />
                         </div>
-
-                        <div className="min-w-0 flex-1">
-                            <h1
-                                className="text-lg font-semibold tracking-tight truncate"
-                                title={provider.provider_name}
-                            >
-                                {provider.provider_name}
-                            </h1>
-                            <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                        <div className="min-w-0 flex-1 space-y-2">
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                                <h1
+                                    className="text-lg font-semibold tracking-tight truncate min-w-0"
+                                    title={provider.provider_name}
+                                >
+                                    {provider.provider_name}
+                                </h1>
+                                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                                    {provider.model_page && (
+                                        <Button variant="outline" size="sm" asChild>
+                                            <a href={provider.model_page} target="_blank" rel="noreferrer">
+                                                <Globe className="mr-1.5 h-3.5 w-3.5" />
+                                                Models
+                                            </a>
+                                        </Button>
+                                    )}
+                                    {provider.document_page && (
+                                        <Button variant="outline" size="sm" asChild>
+                                            <a href={provider.document_page} target="_blank" rel="noreferrer">
+                                                <FileText className="mr-1.5 h-3.5 w-3.5" />
+                                                Docs
+                                            </a>
+                                        </Button>
+                                    )}
+                                    {provider.health_check_url && (
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => checkMutation.mutate()}
+                                            disabled={checkMutation.isPending}
+                                            title="Run the configured health check now"
+                                        >
+                                            <Activity
+                                                className={`mr-1.5 h-3.5 w-3.5 ${checkMutation.isPending ? "animate-pulse" : ""}`}
+                                            />
+                                            Check
+                                        </Button>
+                                    )}
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => refreshMutation.mutate()}
+                                        disabled={refreshMutation.isPending}
+                                    >
+                                        <RefreshCcw
+                                            className={`mr-1.5 h-3.5 w-3.5 ${refreshMutation.isPending ? "animate-spin" : ""}`}
+                                        />
+                                        Refresh
+                                    </Button>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
                                 <ProviderHealthPill provider={provider} size="sm" />
                                 {provider.adapter_id && provider.adapter_id !== "openai" && (
                                     <Badge
@@ -143,43 +174,55 @@ export default function ProviderDetailPage() {
                                     {dbCount} override{dbCount === 1 ? "" : "s"}
                                 </span>
                             </div>
+                            {provider.proxy && (
+                                <div className="pt-2 mt-1 border-t flex items-center gap-2 text-xs text-muted-foreground">
+                                    <span className="uppercase tracking-wider text-[10px] font-semibold shrink-0">
+                                        Endpoint
+                                    </span>
+                                    <code className="font-mono truncate min-w-0">{provider.proxy}</code>
+                                </div>
+                            )}
                         </div>
+                    </div>
+                </Card>
 
-                        <div className="flex flex-wrap items-center gap-2 shrink-0">
-                            {provider.model_page && (
-                                <Button variant="outline" size="sm" asChild>
-                                    <a href={provider.model_page} target="_blank" rel="noreferrer">
-                                        <Globe className="mr-1.5 h-3.5 w-3.5" />
-                                        Models
-                                    </a>
-                                </Button>
-                            )}
-                            {provider.document_page && (
-                                <Button variant="outline" size="sm" asChild>
-                                    <a
-                                        href={provider.document_page}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                    >
-                                        <FileText className="mr-1.5 h-3.5 w-3.5" />
-                                        Docs
-                                    </a>
-                                </Button>
-                            )}
-                            {provider.health_check_url && (
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => checkMutation.mutate()}
-                                    disabled={checkMutation.isPending}
-                                    title="Run the configured health check now"
-                                >
-                                    <Activity
-                                        className={`mr-1.5 h-3.5 w-3.5 ${checkMutation.isPending ? "animate-pulse" : ""}`}
-                                    />
-                                    Check
-                                </Button>
-                            )}
+                {/* Models — header + add button + table */}
+                <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                        <h2 className="text-sm font-semibold tracking-tight">Models</h2>
+                        {isAdmin && (
+                            <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() =>
+                                    router.push(
+                                        `/models/new?provider_id=${encodeURIComponent(provider.id)}&from=${encodeURIComponent(backHref)}`,
+                                    )
+                                }
+                            >
+                                <Plus className="h-3.5 w-3.5 mr-1" />
+                                Add model
+                            </Button>
+                        )}
+                    </div>
+
+                    {isLoadingModels ? (
+                        <div className="border rounded-xl bg-card overflow-hidden">
+                            <Skeleton className="h-64 rounded-none" />
+                        </div>
+                    ) : models && models.length > 0 ? (
+                        <div className="border rounded-xl bg-card shadow-sm overflow-hidden">
+                            <ModelsTable
+                                models={models}
+                                onDelete={isAdmin ? setDeleting : undefined}
+                                backHref={backHref}
+                            />
+                        </div>
+                    ) : (
+                        <div className="text-center py-12 border border-dashed rounded-lg">
+                            <p className="text-sm text-muted-foreground mb-3">
+                                No models exposed by this provider yet.
+                            </p>
                             <Button
                                 variant="outline"
                                 size="sm"
@@ -187,68 +230,24 @@ export default function ProviderDetailPage() {
                                 disabled={refreshMutation.isPending}
                             >
                                 <RefreshCcw
-                                    className={`mr-1.5 h-3.5 w-3.5 ${refreshMutation.isPending ? "animate-spin" : ""}`}
+                                    className={`mr-2 h-3.5 w-3.5 ${refreshMutation.isPending ? "animate-spin" : ""}`}
                                 />
-                                Refresh
+                                Refresh Models
                             </Button>
                         </div>
-                    </div>
-
-                    {provider.proxy && (
-                        <div className="mt-3 pt-3 border-t flex items-center gap-2 text-xs text-muted-foreground">
-                            <span className="uppercase tracking-wider text-[10px] font-semibold">
-                                Endpoint
-                            </span>
-                            <code className="font-mono truncate">{provider.proxy}</code>
-                        </div>
                     )}
-                </Card>
+                </div>
 
-                {/* Models grid */}
-                {isLoadingModels ? (
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                        {[1, 2, 3, 4, 5, 6].map((i) => (
-                            <Skeleton key={i} className="h-32 rounded-xl" />
-                        ))}
-                    </div>
-                ) : models && models.length > 0 ? (
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                        {models.map((model) => (
-                            <ModelCard
-                                key={`${model.is_discovered ? "d" : "o"}:${model.name}`}
-                                model={model}
-                                onEdit={isAdmin ? handleEdit : undefined}
-                            />
-                        ))}
-                    </div>
-                ) : (
-                    <div className="text-center py-12 border border-dashed rounded-lg">
-                        <p className="text-sm text-muted-foreground mb-3">
-                            No models exposed by this provider yet.
-                        </p>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => refreshMutation.mutate()}
-                            disabled={refreshMutation.isPending}
-                        >
-                            <RefreshCcw
-                                className={`mr-2 h-3.5 w-3.5 ${refreshMutation.isPending ? "animate-spin" : ""}`}
-                            />
-                            Refresh Models
-                        </Button>
-                    </div>
-                )}
-
-                {isAdmin && (
-                    <ModelFormDialog
-                        open={editing.open}
-                        onOpenChange={(open) => setEditing((s) => ({ ...s, open }))}
-                        mode={editing.mode}
-                        model={editing.model}
-                        defaultProviderId={provider.id}
-                    />
-                )}
+                <ConfirmDialog
+                    open={!!deleting}
+                    onOpenChange={(o) => !o && setDeleting(null)}
+                    title="Delete model?"
+                    description={<>This will permanently delete model <b>{deleting?.name}</b>. This cannot be undone.</>}
+                    confirmLabel="Delete"
+                    destructive
+                    isLoading={deleteMutation.isPending}
+                    onConfirm={() => deleting && deleteMutation.mutate(deleting.id)}
+                />
             </div>
         </div>
     )
@@ -268,11 +267,7 @@ function ProviderDetailSkeleton() {
                         </div>
                     </div>
                 </Card>
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {[1, 2, 3, 4, 5, 6].map((i) => (
-                        <Skeleton key={i} className="h-32 rounded-xl" />
-                    ))}
-                </div>
+                <Skeleton className="h-64 rounded-xl" />
             </div>
         </div>
     )

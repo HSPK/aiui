@@ -1,20 +1,14 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Copy, MoreHorizontal, Pencil, Trash2 } from "lucide-react"
+import { Copy, Pencil, Trash2 } from "lucide-react"
 
 import type { ModelDTO } from "@/lib/schemas/model"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import {
     DataTableBody,
     DataTableCell,
@@ -36,21 +30,23 @@ import { capabilityLabel } from "./capability-label"
 
 interface Props {
     models: ModelDTO[]
-    /** Admin: opens edit dialog (or "register override" for discovered rows). */
-    onEdit?: (model: ModelDTO) => void
-    /** Admin: opens delete confirmation. */
+    /** Admin: per-row Delete handler. Edit is always a direct link (no
+     *  callback) so it can be middle-clicked / opened in a new tab. */
     onDelete?: (model: ModelDTO) => void
+    /** When set, edit links carry `?from=<href>` so cancel returns here.
+     *  Defaults to the current pathname. */
+    backHref?: string
 }
 
-/** Table of models. Row click navigates to the per-model dashboard;
- *  admin Edit / Delete live in the row dropdown so a stray click never
- *  triggers them. Built on the shared DataTable primitives so it inherits
- *  the same look as /logs (sticky muted header, uppercase head text,
- *  zebra rows, hover highlight). */
-export function ModelsTable({ models, onEdit, onDelete }: Props) {
+/** Table of models. Row click navigates to the per-model dashboard.
+ *  Per-row Edit is a direct link to /models/<name>/edit (1 click, no
+ *  popups, opens-in-new-tab works). Delete sits beside it and triggers
+ *  the parent's confirm dialog. */
+export function ModelsTable({ models, onDelete, backHref }: Props) {
     const router = useRouter()
-    const showActions = !!onEdit || !!onDelete
+    const showActions = !!onDelete
     const columnCount = showActions ? 7 : 6
+    const fromParam = backHref ? `?from=${encodeURIComponent(backHref)}` : ""
 
     return (
         <DataTableShell>
@@ -62,7 +58,7 @@ export function ModelsTable({ models, onEdit, onDelete }: Props) {
                     <DataTableHead>Type</DataTableHead>
                     <DataTableHead>Context</DataTableHead>
                     <DataTableHead>Source</DataTableHead>
-                    {showActions && <DataTableHead className="w-[40px]" />}
+                    {showActions && <DataTableHead className="w-[88px] text-right">Actions</DataTableHead>}
                 </DataTableHeaderRow>
             </DataTableHeader>
             <DataTableBody>
@@ -139,14 +135,39 @@ export function ModelsTable({ models, onEdit, onDelete }: Props) {
                             </DataTableCell>
                             {showActions && (
                                 <DataTableCell
-                                    className="w-[40px] text-right"
+                                    className="text-right"
                                     onClick={(e) => e.stopPropagation()}
                                 >
-                                    <RowActions
-                                        model={model}
-                                        onEdit={onEdit}
-                                        onDelete={onDelete}
-                                    />
+                                    <div className="flex items-center justify-end gap-1">
+                                        <Button
+                                            asChild
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-7 w-7"
+                                            title={model.is_discovered ? "Promote to override" : "Edit"}
+                                        >
+                                            <Link
+                                                href={`/models/${encodeURIComponent(model.name)}/edit${fromParam}`}
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                <Pencil className="h-3.5 w-3.5" />
+                                            </Link>
+                                        </Button>
+                                        {!model.is_discovered && (
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-7 w-7 text-destructive hover:text-destructive"
+                                                title="Delete"
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    onDelete?.(model)
+                                                }}
+                                            >
+                                                <Trash2 className="h-3.5 w-3.5" />
+                                            </Button>
+                                        )}
+                                    </div>
                                 </DataTableCell>
                             )}
                         </DataTableRow>
@@ -157,48 +178,3 @@ export function ModelsTable({ models, onEdit, onDelete }: Props) {
     )
 }
 
-function RowActions({
-    model,
-    onEdit,
-    onDelete,
-}: {
-    model: ModelDTO
-    onEdit?: (model: ModelDTO) => void
-    onDelete?: (model: ModelDTO) => void
-}) {
-    const canDelete = !!onDelete && !model.is_discovered
-    if (!onEdit && !canDelete) return null
-
-    return (
-        <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={(e) => e.stopPropagation()}
-                >
-                    <MoreHorizontal className="h-4 w-4" />
-                </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
-                {onEdit && (
-                    <DropdownMenuItem onSelect={() => onEdit(model)}>
-                        <Pencil className="mr-2 h-3.5 w-3.5" />
-                        Edit
-                    </DropdownMenuItem>
-                )}
-                {onEdit && canDelete && <DropdownMenuSeparator />}
-                {canDelete && (
-                    <DropdownMenuItem
-                        className="text-destructive focus:text-destructive"
-                        onSelect={() => onDelete?.(model)}
-                    >
-                        <Trash2 className="mr-2 h-3.5 w-3.5" />
-                        Delete
-                    </DropdownMenuItem>
-                )}
-            </DropdownMenuContent>
-        </DropdownMenu>
-    )
-}

@@ -24,7 +24,6 @@ import { RefreshButton } from "@/components/ui/refresh-button"
 import { ProviderCard } from "@/components/providers/provider-card"
 import { ModelsTable } from "@/components/providers/models-table"
 import { ProviderFormDialog } from "@/components/providers/provider-form-dialog"
-import { ModelFormDialog } from "@/components/providers/model-form-dialog"
 import { useAuth } from "@/context/auth-context"
 
 export default function ProvidersPage() {
@@ -36,7 +35,6 @@ export default function ProvidersPage() {
     const [sortOrder, setSortOrder] = useState("default")
 
     const [providerDialog, setProviderDialog] = useState<{ open: boolean; mode: "create" | "edit"; provider?: ProviderDTO | null }>({ open: false, mode: "create" })
-    const [modelDialog, setModelDialog] = useState<{ open: boolean; mode: "create" | "edit"; model?: ModelDTO | null }>({ open: false, mode: "create" })
     const [deleteProvider, setDeleteProvider] = useState<ProviderDTO | null>(null)
     const [deleteModel, setDeleteModel] = useState<ModelDTO | null>(null)
 
@@ -177,7 +175,7 @@ export default function ProvidersPage() {
                             size="icon"
                             variant="secondary"
                             className="h-8 w-8 shrink-0"
-                            onClick={() => setModelDialog({ open: true, mode: "create" })}
+                            onClick={() => router.push("/models/new?from=/providers")}
                             title="Add model"
                             aria-label="Add model"
                         >
@@ -254,14 +252,8 @@ export default function ProvidersPage() {
                         <div className="flex-1 overflow-auto">
                             <ModelsTable
                                 models={filteredModels}
-                                onEdit={isAdmin ? (m) => {
-                                    // Discovered rows have no DB row yet — opening the
-                                    // dialog in "create" mode lets the admin save it as
-                                    // an override, with all discovered defaults pre-filled.
-                                    const mode = m.is_discovered ? "create" : "edit"
-                                    setModelDialog({ open: true, mode, model: m })
-                                } : undefined}
                                 onDelete={isAdmin ? (m) => setDeleteModel(m) : undefined}
+                                backHref="/providers"
                             />
                         </div>
                     </div>
@@ -273,12 +265,6 @@ export default function ProvidersPage() {
                 onOpenChange={(open) => setProviderDialog((s) => ({ ...s, open }))}
                 mode={providerDialog.mode}
                 provider={providerDialog.provider}
-            />
-            <ModelFormDialog
-                open={modelDialog.open}
-                onOpenChange={(open) => setModelDialog((s) => ({ ...s, open }))}
-                mode={modelDialog.mode}
-                model={modelDialog.model}
             />
 
             <ConfirmDialog
