@@ -5,6 +5,7 @@ import { ThemeProvider as NextThemesProvider } from "next-themes"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { Toaster } from "@/components/ui/sonner"
 import { AuthProvider } from "@/context/auth-context"
+import { ThemeApplier } from "@/components/theme/theme-applier"
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
     const [queryClient] = React.useState(() => new QueryClient({
@@ -26,6 +27,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
             <QueryClientProvider client={queryClient}>
                 <React.Suspense fallback={null}>
                     <AuthProvider>
+                        <ThemeApplier />
                         {children}
                     </AuthProvider>
                 </React.Suspense>
