@@ -24,12 +24,15 @@ import {
     ChevronLeft,
     Clock,
     MessageSquare,
+    Pencil,
     Zap,
 } from "lucide-react"
 
-import { stats } from "@/lib/api"
+import { models as modelsApi, providers, stats } from "@/lib/api"
+import { useAuth } from "@/context/auth-context"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -43,13 +46,18 @@ import {
     shortDay,
 } from "@/components/dashboard/shared"
 import { ProviderIcon } from "@/components/ProviderIcon"
+import { ModelConfigPanel } from "@/components/models/model-config-panel"
 
 export default function ModelDashboardPage() {
     const params = useParams()
     const router = useRouter()
+    const { user } = useAuth()
+    const isAdmin = user?.role === "admin"
     const modelName = decodeURIComponent(String(params.name ?? ""))
     const [days, setDays] = React.useState(14)
     const { data, isLoading, isFetching, error } = stats.useModel(modelName, { days })
+    const { data: modelDetail } = modelsApi.useGet(modelName)
+    const { data: providerDetail } = providers.useGet(modelDetail?.provider_id ?? null)
 
     /** Open the chat playground with this model preselected. We have
      *  to seed the per-conversation settings store BEFORE navigating
@@ -71,7 +79,6 @@ export default function ModelDashboardPage() {
             ? Math.round((totals.failed / totals.requests) * 1000) / 10
             : 0
 
-    // Error rate per day, percent.
     const errorTrend = React.useMemo(
         () =>
             trend.map((d) => ({
@@ -86,7 +93,6 @@ export default function ModelDashboardPage() {
         [trend]
     )
 
-    // Latency trend keeps both TTFT and total — line per metric, ms unit.
     const latencyTrend = React.useMemo(
         () =>
             trend.map((d) => ({
@@ -98,11 +104,11 @@ export default function ModelDashboardPage() {
     )
 
     const hasData = trend.some((t) => t.requests > 0)
+    const editHref = `/models/${encodeURIComponent(modelName)}/edit?from=${encodeURIComponent(`/models/${encodeURIComponent(modelName)}`)}`
 
     return (
         <div className="h-full overflow-y-auto">
             <div className="mx-auto w-full max-w-7xl space-y-4 p-4 md:p-6">
-                {/* Breadcrumb */}
                 <Link
                     href="/"
                     className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
@@ -111,78 +117,113 @@ export default function ModelDashboardPage() {
                     Dashboard
                 </Link>
 
-                {/* Model identity card */}
+                {/* Identity card — narrow-screen safe: icon stays next to
+                 *  the title block; badges/actions wrap inline; description
+                 *  flows below at full width. */}
                 <Card>
                     <CardContent className="p-4 md:p-5">
-                        <div className="flex flex-wrap items-start justify-between gap-4">
-                            <div className="flex items-start gap-3 min-w-0">
-                                <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 shrink-0">
-                                    {data?.provider ? (
-                                        <ProviderIcon
-                                            providerName={data.provider}
-                                            className="h-6 w-6"
-                                            width={24}
-                                            height={24}
-                                        />
-                                    ) : (
-                                        <Bot className="h-5 w-5 text-primary" />
-                                    )}
-                                </span>
-                                <div className="min-w-0 space-y-1">
+                        <div className="flex items-start gap-3">
+                            <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 shrink-0">
+                                {data?.provider ? (
+                                    <ProviderIcon
+                                        providerName={data.provider}
+                                        className="h-6 w-6"
+                                        width={24}
+                                        height={24}
+                                    />
+                                ) : (
+                                    <Bot className="h-5 w-5 text-primary" />
+                                )}
+                            </span>
+                            <div className="min-w-0 flex-1 space-y-2">
+                                <div className="flex flex-wrap items-start justify-between gap-2">
                                     <h1
-                                        className="text-lg font-semibold tracking-tight truncate"
+                                        className="text-lg font-semibold tracking-tight truncate min-w-0"
                                         title={modelName}
                                     >
                                         {modelName}
                                     </h1>
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                        {data?.provider && (
-                                            <Badge variant="outline" className="text-[10px] font-medium">
-                                                {data.provider}
-                                            </Badge>
+                                    <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                                        {data?.capability === "chat" && (
+                                            <Button
+                                                type="button"
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={tryInPlayground}
+                                            >
+                                                <MessageSquare className="mr-1.5 h-3.5 w-3.5" />
+                                                Try
+                                            </Button>
                                         )}
-                                        {data?.capability && (
-                                            <Badge variant="outline" className="text-[10px] font-medium uppercase tracking-wider">
-                                                {data.capability}
-                                            </Badge>
-                                        )}
-                                        {data?.context_window != null && (
-                                            <Badge variant="secondary" className="text-[10px] font-medium">
-                                                {compactNumber(data.context_window)} ctx
-                                            </Badge>
-                                        )}
-                                        {!!data && !data.provider && !data.capability && (
-                                            <Badge variant="outline" className="text-[10px] text-muted-foreground">
-                                                Not registered
-                                            </Badge>
+                                        {isAdmin && modelDetail && (
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                asChild
+                                            >
+                                                <Link href={editHref}>
+                                                    <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                                                    {modelDetail.is_discovered ? "Override" : "Edit"}
+                                                </Link>
+                                            </Button>
                                         )}
                                     </div>
-                                    {isLoading && !data ? (
-                                        <Skeleton className="h-3 w-72" />
-                                    ) : (
-                                        data?.description && (
-                                            <p className="text-xs text-muted-foreground leading-relaxed max-w-prose">
-                                                {data.description}
-                                            </p>
-                                        )
+                                </div>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                    {data?.provider && (
+                                        <Badge variant="outline" className="text-[10px] font-medium">
+                                            {data.provider}
+                                        </Badge>
+                                    )}
+                                    {data?.capability && (
+                                        <Badge variant="outline" className="text-[10px] font-medium uppercase tracking-wider">
+                                            {data.capability}
+                                        </Badge>
+                                    )}
+                                    {data?.context_window != null && (
+                                        <Badge variant="secondary" className="text-[10px] font-medium">
+                                            {compactNumber(data.context_window)} ctx
+                                        </Badge>
+                                    )}
+                                    {modelDetail && (
+                                        <Badge
+                                            variant={modelDetail.is_discovered ? "secondary" : "default"}
+                                            className="text-[10px] uppercase tracking-wider"
+                                        >
+                                            {modelDetail.is_discovered ? "discovered" : "override"}
+                                        </Badge>
+                                    )}
+                                    {!!data && !data.provider && !data.capability && (
+                                        <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                                            Not registered
+                                        </Badge>
                                     )}
                                 </div>
+                                {isLoading && !data ? (
+                                    <Skeleton className="h-3 w-72" />
+                                ) : (
+                                    data?.description && (
+                                        <p className="text-xs text-muted-foreground leading-relaxed">
+                                            {data.description}
+                                        </p>
+                                    )
+                                )}
                             </div>
-                            {data?.capability === "chat" && (
-                                <button
-                                    type="button"
-                                    onClick={tryInPlayground}
-                                    className="inline-flex items-center gap-1.5 rounded-md border bg-card px-3 py-1.5 text-xs font-medium hover:bg-muted/40 transition-colors"
-                                >
-                                    <MessageSquare className="h-3.5 w-3.5" />
-                                    Try in playground
-                                </button>
-                            )}
                         </div>
                     </CardContent>
                 </Card>
 
-                {/* Toolbar */}
+                {/* Configuration: effective params + raw upstream entry. */}
+                {modelDetail && (
+                    <ModelConfigPanel
+                        model={modelDetail}
+                        providerDefaults={
+                            (providerDetail?.default_params ?? null) as Record<string, unknown> | null
+                        }
+                    />
+                )}
+
+                {/* Stats */}
                 <StatsToolbar
                     windowStart={data?.window_start}
                     windowEnd={data?.window_end}
@@ -191,7 +232,6 @@ export default function ModelDashboardPage() {
                     isFetching={isFetching}
                 />
 
-                {/* KPIs */}
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <Kpi
                         label="Requests"
@@ -236,7 +276,6 @@ export default function ModelDashboardPage() {
                     />
                 </div>
 
-                {/* Usage trend — stacked success / failed */}
                 <Card>
                     <CardHeader>
                         <CardTitle className="text-base">Usage trend</CardTitle>
@@ -306,7 +345,6 @@ export default function ModelDashboardPage() {
                     </CardContent>
                 </Card>
 
-                {/* Error rate + latency trends, side by side */}
                 <div className="grid gap-4 lg:grid-cols-2">
                     <Card>
                         <CardHeader>
