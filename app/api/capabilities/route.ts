@@ -9,7 +9,6 @@ export const GET = defineRoute({
             id: c.id,
             label: c.label,
             description: c.description ?? null,
-            endpoint: c.endpoint.path,
-            supports_streaming: c.supportsStreaming,
+            default_variant: c.defaultVariantId,
         })),
 });

@@ -4,9 +4,8 @@ import { registerCapability } from "./index";
 registerCapability({
     id: "audio.speech",
     label: "Text-to-speech",
-    description: "Synthesize speech audio from text. OpenAI /audio/speech shape.",
-    endpoint: { path: "/audio/speech" },
-    supportsStreaming: false,
+    description: "Synthesize speech audio from text.",
+    defaultVariantId: "audio.speech",
     priority: 25,
     matches: (id) => /\b(tts|speech|voice|elevenlabs|piper|xtts|fish)/i.test(id),
     summarizeInput: (body) => {
@@ -15,5 +14,4 @@ registerCapability({
         const text = typeof input === "string" ? input.slice(0, 180) : "";
         return voice ? `[${voice}] ${text}` : text;
     },
-    parseResponse: () => ({ output: "audio stream returned" }),
 });

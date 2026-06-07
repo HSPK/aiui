@@ -1,26 +1,21 @@
 import "server-only";
 import { registerAdapter, type ProviderAdapter, type UpstreamCallArgs } from ".";
-import {
-    applyFieldFilter,
-    bearerAuthHeaders,
-    defaultSelectUpstreamApi,
-} from "./openai";
 import type { NormalizedModelMeta } from "@/lib/schemas/adapter";
 import type { Provider } from "../db/schema";
 
 /**
- * Azure OpenAI — the "first-party" Azure-hosted OpenAI models (gpt-4o,
- * gpt-3.5-turbo, …). Wraps each call into a per-deployment URL and uses
- * the `api-key` header instead of Bearer.
+ * Azure OpenAI — first-party Azure-hosted OpenAI models. Wraps each call
+ * into a per-deployment URL and uses the `api-key` header.
  *
- * URL shape:
- *   POST {base_url}/openai/deployments/{deployment}/{capability.path}?api-version=…
+ *   POST {base_url}/openai/deployments/{deployment}{variant.path}?api-version=…
  *
- * Discovery: `/openai/models?api-version=…` returns the catalog of BASE
- * model names (not callable deployment ids). The user has to register a
- * Model row in the admin UI mapping a display name to the actual
- * deployment id; that's why we surface base models with `chat: false`
- * here — they're informational only and not directly callable.
+ * The variant's path (e.g. `/chat/completions`, `/responses`) slots in
+ * after the deployment segment.
+ *
+ * Discovery: `/openai/models?api-version=…` returns BASE model names
+ * (not callable deployment ids). The user must register a Model row
+ * mapping a display name to the deployment id; surfaced here with
+ * `capabilities.chat = false` to flag that.
  */
 
 const DEFAULT_API_VERSION = "2024-10-21";
@@ -35,9 +30,6 @@ function baseUrl(provider: Provider): string {
 
 function isAzureOpenAIHost(host: string): boolean {
     // First-party Azure OpenAI hosts always end with .openai.azure.com.
-    // The Foundry adapter checks for inference.ai.azure.com which is
-    // technically a *.ai.azure.com host (not .openai.azure.com), so this
-    // check is safe to overlap.
     return /\.openai\.azure\.com$/.test(host);
 }
 
@@ -74,9 +66,9 @@ export const azureOpenAIAdapter: ProviderAdapter = {
         return {
             upstream_id: id,
             label: id,
-            // Azure OpenAI catalog returns BASE model names. They're not
-            // directly callable — the user needs to register a deployment
-            // row in the admin UI. Mark `chat: false` so UI knows.
+            // Azure OpenAI catalog returns BASE model names — not directly
+            // callable. The user must register a deployment row in the
+            // admin UI. Mark `chat: false` so UI knows.
             supported_apis: [],
             capabilities: { chat: false },
             owned_by: typeof r.owned_by === "string" ? r.owned_by : null,
@@ -84,15 +76,10 @@ export const azureOpenAIAdapter: ProviderAdapter = {
         };
     },
 
-    selectUpstreamApi(capability, _model, meta) {
-        return defaultSelectUpstreamApi(capability.id, meta);
-    },
-
     upstreamUrl(args: UpstreamCallArgs) {
         const deployment = encodeURIComponent(args.model.upstreamModelId);
-        const path = args.capability.endpoint.path;
         const v = apiVersion(args.provider);
-        return `${baseUrl(args.provider)}/openai/deployments/${deployment}${path}?api-version=${encodeURIComponent(v)}`;
+        return `${baseUrl(args.provider)}/openai/deployments/${deployment}${args.variant.path}?api-version=${encodeURIComponent(v)}`;
     },
 
     upstreamHeaders(_args, apiKey) {
@@ -101,16 +88,13 @@ export const azureOpenAIAdapter: ProviderAdapter = {
         return h;
     },
 
-    transformRequest(body, args) {
+    finalizeRequest(body) {
         // Azure routes to the deployment via URL — `model` in body is
         // redundant and historically rejected.
         const { model: _drop, ...rest } = body;
         void _drop;
-        return applyFieldFilter(rest, args.meta);
+        return rest;
     },
 };
 
 registerAdapter(azureOpenAIAdapter);
-
-// Re-export to also keep them on bearerAuthHeaders import paths (no-op)
-export { bearerAuthHeaders };

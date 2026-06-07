@@ -1,10 +1,6 @@
 import "server-only";
 import { registerAdapter, type ProviderAdapter, type UpstreamCallArgs } from ".";
-import {
-    applyFieldFilter,
-    defaultSelectUpstreamApi,
-    fetchOpenAIModels,
-} from "./openai";
+import { fetchOpenAIModels } from "./openai";
 import type { NormalizedModelMeta, UpstreamApiId } from "@/lib/schemas/adapter";
 
 /**
@@ -13,19 +9,19 @@ import type { NormalizedModelMeta, UpstreamApiId } from "@/lib/schemas/adapter";
  * Grok, Cohere, etc.) behind an OpenAI-style URL surface.
  *
  * Defining quirks:
- *   - URL form: {base_url}/v1/chat/completions (no deployment wrapping)
+ *   - URL form: {base_url}{variant.path} (no deployment wrapping)
  *   - Auth: `api-key` header (same as Azure OpenAI)
  *   - **Strict schema** — `extra-parameters: error` is the default, so
- *     any request field outside the underlying model's own schema returns
- *     HTTP 400. The OpenAI gateway-injected `stream_options` triggers
- *     this regularly.
+ *     any request field outside the underlying model's schema returns
+ *     HTTP 400. Enforced via `accepted_fields` / `rejected_fields` in
+ *     extractModelMeta — the gateway-level field filter strips them
+ *     before they reach upstream.
  *   - **Rich /models metadata** with non-standard nested shape:
  *       {
- *         id: "...",
- *         model: { Publisher, Format, Name, Version, ... },
- *         capabilities: { chatCompletion: "true", batch: "true", ... },
+ *         id, model: { Publisher, Format, Name, Version, ... },
+ *         capabilities: { chatCompletion, batch, ... },
  *         RateLimits: { requests, tokens },
- *         owned_by: "...",
+ *         owned_by,
  *       }
  */
 
@@ -40,7 +36,7 @@ const CAP_KEY_TO_API: Record<string, UpstreamApiId> = {
     rerank: "rerank",
 };
 
-/** A best-effort baseline of fields a generic OpenAI-spec OSS model
+/** Best-effort baseline of fields a generic OpenAI-spec OSS model
  *  hosted on Foundry is likely to accept. Tuned to exclude the OpenAI-
  *  proprietary additions that trigger `extra-parameters: error` 400s. */
 const FOUNDRY_OSS_ACCEPTED_FIELDS = [
@@ -63,8 +59,6 @@ const FOUNDRY_OSS_ACCEPTED_FIELDS = [
     "response_format",
 ];
 
-/** Foundry-specific fields the upstream is known to NOT accept on most
- *  OSS models — these MUST NOT be injected by the gateway. */
 const FOUNDRY_OSS_REJECTED_FIELDS = [
     "stream_options",
     "parallel_tool_calls",
@@ -78,11 +72,6 @@ const FOUNDRY_OSS_REJECTED_FIELDS = [
 ];
 
 function isFoundryHost(host: string): boolean {
-    // Common Foundry inference hosts:
-    //   <name>.inference.ai.azure.com         (regional)
-    //   <name>.services.ai.azure.com          (serverless)
-    //   <name>.cognitiveservices.azure.com    (some legacy)
-    //   <name>.openai.azure.com               (also used when deployed via Foundry-OpenAI mode)
     return /\.(inference|services)\.ai\.azure\.com$/.test(host);
 }
 
@@ -107,7 +96,7 @@ export const azureFoundryAdapter: ProviderAdapter = {
         const id = typeof r?.id === "string" ? r.id : null;
         if (!id) return null;
 
-        // ----- supported_apis from `capabilities` block -----
+        // supported_apis from the capabilities block.
         const supportedApis: UpstreamApiId[] = [];
         const caps = (r.capabilities ?? {}) as Record<string, unknown>;
         for (const [key, value] of Object.entries(caps)) {
@@ -116,17 +105,12 @@ export const azureFoundryAdapter: ProviderAdapter = {
             const api = CAP_KEY_TO_API[key];
             if (api && !supportedApis.includes(api)) supportedApis.push(api);
         }
-        // Default to chat.completions if Foundry didn't advertise anything
-        // explicitly (some Foundry deployments omit the block).
         if (supportedApis.length === 0) supportedApis.push("chat.completions");
 
-        // ----- nested `model.*` (xAI / Mistral / Meta / …) -----
         const m = (r.model ?? {}) as Record<string, unknown>;
         const publisher = (m.Publisher as string | null | undefined) ?? null;
         const format = (m.Format as string | null | undefined) ?? null;
         const version = (m.Version as string | null | undefined) ?? null;
-
-        // ----- RateLimits block (capital R is Foundry convention) -----
         const rl = (r.RateLimits ?? r.rate_limits ?? {}) as Record<string, unknown>;
 
         return {
@@ -139,9 +123,6 @@ export const azureFoundryAdapter: ProviderAdapter = {
                 embeddings: supportedApis.includes("embeddings"),
                 batch: caps.batch === true || caps.batch === "true",
             },
-            // The crucial bit: strict whitelist + explicit reject of the
-            // OpenAI-proprietary fields that this endpoint family rejects
-            // with `extra-parameters: error` 400s.
             accepted_fields: FOUNDRY_OSS_ACCEPTED_FIELDS,
             rejected_fields: FOUNDRY_OSS_REJECTED_FIELDS,
             publisher,
@@ -156,13 +137,9 @@ export const azureFoundryAdapter: ProviderAdapter = {
         };
     },
 
-    selectUpstreamApi(capability, _model, meta) {
-        return defaultSelectUpstreamApi(capability.id, meta);
-    },
-
     upstreamUrl(args: UpstreamCallArgs) {
         const base = args.provider.baseUrl.replace(/\/$/, "");
-        return `${base}${args.capability.endpoint.path}`;
+        return `${base}${args.variant.path}`;
     },
 
     upstreamHeaders(_args, apiKey) {
@@ -171,11 +148,10 @@ export const azureFoundryAdapter: ProviderAdapter = {
         return h;
     },
 
-    transformRequest(body, args) {
-        const withModel = { ...body, model: args.model.upstreamModelId };
-        // applyFieldFilter strips Foundry's known-rejected fields
-        // (stream_options, parallel_tool_calls, …) — see FOUNDRY_OSS_*.
-        return applyFieldFilter(withModel, args.meta);
+    finalizeRequest(body, args) {
+        // Stamp upstream id (Foundry routes to the model via body.model
+        // when no deployment URL segment exists).
+        return { ...body, model: args.model.upstreamModelId };
     },
 };
 

@@ -1,35 +1,22 @@
 import "server-only";
+import type { UpstreamApiId } from "@/lib/schemas/adapter";
 
 /**
- * Capability registry.
+ * Capability registry — describes one *user-facing modality* (chat,
+ * embedding, image, audio.*, rerank). Capability is independent of the
+ * wire shape (which is owned by `lib/server/api-variants/`) and of the
+ * upstream provider (owned by `lib/server/adapters/`).
  *
- * A "capability" describes one upstream interaction shape — chat completion,
- * embedding, image generation, audio synthesis, etc. Each registered
- * capability tells the generic gateway how to:
- *   • build the upstream URL (`endpoint.path`)
- *   • decide if streaming applies
- *   • recognise its own models from a `/models` listing (`matches`)
- *   • summarise a request into a one-line log entry (`summarizeInput`)
- *   • extract content + token counts from the upstream response (`parseResponse`)
- *   • extract incremental deltas while streaming (`parseStreamChunk`)
+ * A capability declares its default wire variant; the actual selection
+ * per request goes through `adapter.selectVariant(capability, model, meta)`
+ * which consults the model's `meta.supported_apis` and falls back here.
  *
  * Adding a new modality is a self-contained operation: drop a file in
- * `lib/server/capabilities/`, register it with `registerCapability(...)`, and
- * add a thin Route Handler that calls `forwardGeneration(user, "<id>", body)`.
+ * `lib/server/capabilities/`, register it with `registerCapability(...)`,
+ * register the wire shape via `registerVariant(...)`, and add a thin
+ * Route Handler that calls `forwardGeneration(user, "<id>", body)`.
  * The gateway core needs no changes.
  */
-
-export interface CapabilityResponseLog {
-    output?: string | null;
-    promptTokens?: number | null;
-    completionTokens?: number | null;
-    totalTokens?: number | null;
-}
-
-export interface CapabilityStreamDelta {
-    content: string;
-    reasoning: string;
-}
 
 export interface CapabilityHandler {
     /** Stable id used by Models.type and the routing tables (e.g. "chat", "image"). */
@@ -38,20 +25,25 @@ export interface CapabilityHandler {
     label: string;
     /** Optional one-line description for tooltips / docs. */
     description?: string;
-    /** OpenAI-style path appended to provider.base_url (e.g. "/chat/completions"). */
-    endpoint: { path: string };
-    /** Does the upstream support stream:true requests? */
-    supportsStreaming: boolean;
+    /** Default upstream API variant when the model declares no specific
+     *  preference via `meta.supported_apis` and the preference chain
+     *  yields no match. */
+    defaultVariantId: UpstreamApiId;
+    /** Ordered preference list of variants for this modality. The
+     *  selector walks this list (most-preferred first) and picks the
+     *  first one the model declares support for. Decouples gateway-side
+     *  opinion (e.g. "Responses API is more capable than Chat Completions
+     *  for chat") from per-adapter metadata ordering. Omit to fall back
+     *  to whatever variant the model declared first. */
+    variantPreference?: UpstreamApiId[];
     /** Cheap heuristic to recognise this capability from a `/models` listing id. */
     matches?: (modelId: string) => boolean;
     /** Higher priority handlers run first when classifying a discovered model. Default 0. */
     priority?: number;
-    /** Build a short input summary (≤120 chars) suitable for the logs table. */
+    /** Build a short input summary (≤120 chars) suitable for the logs
+     *  table. Operates on the gateway's canonical chat-completion shape
+     *  body BEFORE any variant-specific translation. */
     summarizeInput?: (body: Record<string, unknown>) => string;
-    /** Parse a non-streaming upstream response into log-friendly fields. */
-    parseResponse?: (json: unknown) => CapabilityResponseLog;
-    /** Parse one SSE chunk's JSON into a delta (or empty if non-applicable). */
-    parseStreamChunk?: (json: unknown) => CapabilityStreamDelta;
 }
 
 const registry = new Map<string, CapabilityHandler>();

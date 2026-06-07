@@ -6,44 +6,41 @@ import { authenticateGateway, type SessionUser } from "../auth";
 import { decryptSecret } from "../crypto";
 import { findModelByIdOrName } from "../models";
 import { getDiscoveryStatus, resolveByDiscovery } from "../discovery";
-import {
-    classifyModel,
-    getCapability,
-} from "../capabilities";
-// Side-effect import: registers every built-in capability with the registry.
-// Adding a new modality is a one-line change in capabilities/register.ts.
+import { classifyModel, getCapability } from "../capabilities";
+// Side-effect import: registers every built-in capability.
 import "../capabilities/register";
-import { resolveAdapter, type ProviderAdapter, type UpstreamCallArgs } from "../adapters";
-// Side-effect import: registers every built-in adapter with the registry.
-// Adding a new upstream protocol variant is a one-line change in
-// adapters/register.ts.
+import {
+    resolveAdapter,
+    resolveVariantId,
+    type ProviderAdapter,
+    type UpstreamCallArgs,
+} from "../adapters";
+// Side-effect import: registers every built-in adapter.
 import "../adapters/register";
+import { applyFieldFilter } from "../adapters/openai";
+import { getVariant, type UpstreamApiVariant, type VariantContext } from "../api-variants";
+// Side-effect import: registers every built-in upstream API variant.
+import "../api-variants/register";
 import { badRequest, HttpError, notFound } from "../response";
 import type { Model, Provider } from "../db/schema";
 import type { NormalizedModelMeta } from "@/lib/schemas/adapter";
 
 export { authenticateGateway };
 
+// =============================================================================
+// Model resolution
+// =============================================================================
+
 export interface ResolvedModel {
     model: Model;
     provider: Provider;
-    /** The adapter for this provider — owns URL, auth, response shape,
-     *  AND request body shape (accepted/rejected fields, supported_apis).
-     *  Resolved from `provider.adapter_id` with auto-detect fallback.
-     *  To use a different field-filtering policy than the URL suggests
-     *  (e.g. a proxy that re-shapes Foundry as OpenAI), set
-     *  `provider.adapter_id` explicitly. */
     adapter: ProviderAdapter;
-    /** Adapter-projected metadata (drives field filtering, API selection, …).
-     *  Sourced from `models.discoveredMetadata` for DB rows or from the
-     *  discovery cache for transient hits. */
     meta: NormalizedModelMeta | null;
     apiKey: string | null;
     /** True when the Model row was synthesized on-the-fly from discovery, not pulled from DB. */
     discovered: boolean;
 }
 
-/** Build a transient Model object for a discovered upstream model. */
 function transientModel(name: string, provider: Provider, upstreamModelId: string, capability: string): Model {
     const now = new Date().toISOString();
     return {
@@ -69,16 +66,6 @@ function transientModel(name: string, provider: Provider, upstreamModelId: strin
     } as Model;
 }
 
-/**
- * Resolve a requested model name to (model, provider, adapter, meta, apiKey).
- *
- * Order:
- *   1. DB `models` row by name — explicit overrides win. Sole path for Azure
- *      deployments and aliases. Adapter is picked from the provider.
- *   2. Discovery — scan each enabled provider's `/models` listing via its
- *      adapter. The first provider that exposes this id wins; a transient
- *      Model is synthesized so the rest of the gateway code stays type-stable.
- */
 export async function resolveModel(name: string): Promise<ResolvedModel> {
     const model = findModelByIdOrName(name);
     if (model) {
@@ -87,9 +74,7 @@ export async function resolveModel(name: string): Promise<ResolvedModel> {
         if (!provider) throw notFound(`Provider for model "${name}" not found`);
         if (!provider.enabled) throw badRequest(`Provider "${provider.name}" is disabled`);
         const adapter = resolveAdapter(provider);
-        // Re-project the persisted discovery snapshot (or fall back to the
-        // live discovery cache, then to a minimal `{id}`) so the gateway
-        // always reflects the best-known upstream knowledge of this model.
+        // Re-project DB snapshot (or warm cache) into adapter-shaped meta.
         let rawMeta: unknown = model.discoveredMetadata;
         if (rawMeta === null || rawMeta === undefined) {
             const cached = getDiscoveryStatus(provider.id);
@@ -126,11 +111,8 @@ export async function resolveModel(name: string): Promise<ResolvedModel> {
 /** Merge defaults under the caller's body.
  *
  *  Precedence (low → high): provider.default_params → model.default_params
- *  → caller body. Model defaults thus *inherit* the provider's defaults
- *  and override them per-key; the caller's request body always wins.
- *
- *  The gateway does NOT inject any field on its own. If you want
- *  `stream_options.include_usage`, set it here. */
+ *  → caller body. Model defaults inherit from provider; caller body
+ *  always wins. The gateway never injects fields on its own. */
 export function mergeParams(
     body: Record<string, unknown>,
     model: Model,
@@ -221,18 +203,24 @@ export interface ForwardGenerationOpts {
 }
 
 /**
- * Generic capability-aware upstream forwarder. The protocol-specific bits
- * (URL, headers, request shape, response shape, stream chunk shape) all
- * live in the `ProviderAdapter` chosen by `resolveAdapter(provider)`. The
- * gateway core only owns:
- *   - Argument validation + model resolution
- *   - Log start/complete + token accounting
- *   - Streaming TransformStream tee + accumulation
- *   - Error mapping
+ * Generic capability-aware upstream forwarder.
  *
- * Adding a new upstream protocol variant = one adapter file. Adding a new
- * user-facing capability (image/audio/...) = one capability file + one
- * 6-line Route Handler.
+ * Pipeline (gateway owns; never branches on provider/variant id):
+ *
+ *   1. mergeParams           — caller body wins over model/provider defaults
+ *   2. applyFieldFilter      — adapter-meta accept/reject (canonical shape)
+ *   3. variant.transformRequest — canonical → variant-specific body
+ *   4. adapter.finalizeRequest  — last-mile transport polish
+ *   5. POST adapter.upstreamUrl, adapter.upstreamHeaders
+ *   6a. non-stream: variant.parseResponse → normalized chat-completion JSON
+ *   6b. stream:    variant.parseStreamChunk per SSE event; transcode to
+ *                  chat-completion-shaped SSE so the user-facing API is
+ *                  uniform regardless of upstream variant
+ *
+ * Adding a new upstream API shape = one file in api-variants/.
+ * Adding a new upstream provider flavour = one file in adapters/.
+ * Adding a new user-facing modality = one file in capabilities/ + one
+ * matching variant + a 6-line Route Handler.
  */
 export async function forwardGeneration(
     user: SessionUser,
@@ -248,17 +236,27 @@ export async function forwardGeneration(
 
     const { model, provider, adapter, meta, apiKey } = await resolveModel(requestedModel);
 
+    const variantId = resolveVariantId(adapter, capability, model, meta);
+    const variant = getVariant(variantId);
+    if (!variant) throw badRequest(`No upstream variant registered for "${variantId}"`);
+    if (variant.capability !== capability.id) {
+        throw badRequest(
+            `Variant "${variantId}" serves "${variant.capability}", not "${capability.id}"`,
+        );
+    }
+
+    const stream = !!variant.supportsStreaming && !!body.stream;
+    const ctx: VariantContext = { provider, model, meta, capability, stream };
+    const callArgs: UpstreamCallArgs = { provider, model, meta, capability, variant, stream };
+
+    // Build the upstream body in stages.
     const merged = mergeParams(body, model, provider);
-    const stream = !!capability.supportsStreaming && !!merged.stream;
+    const filtered = applyFieldFilter(merged, meta);
+    const transformed = variant.transformRequest?.(filtered, ctx) ?? filtered;
+    const upstreamBody = adapter.finalizeRequest?.(transformed, callArgs) ?? transformed;
 
-    const apiId = adapter.selectUpstreamApi(capability, model, meta);
-    const callArgs: UpstreamCallArgs = { provider, model, meta, capability, apiId, stream };
-
-    // Adapter handles field filtering, model-id sticking, stream_options
-    // injection (if model accepts it), Chat → Responses translation, etc.
-    const upstreamBody = adapter.transformRequest(merged, callArgs);
-
-    const inputSummary = capability.summarizeInput?.(upstreamBody) ?? null;
+    // Summarize the canonical (pre-translation) body so logs reflect intent.
+    const inputSummary = capability.summarizeInput?.(merged) ?? null;
     const logId = startLog({
         userId: user.id,
         modelName: model.name,
@@ -301,51 +299,99 @@ export async function forwardGeneration(
     }
 
     if (!stream) {
-        const contentType = upstream.headers.get("Content-Type") ?? "";
-        if (contentType.startsWith("application/json")) {
-            const upstreamJson = await upstream.json().catch(() => ({}));
-            // Let the adapter normalize (e.g. Responses-API JSON → Chat
-            // Completions shape) so capability.parseResponse keeps working.
-            const json = adapter.transformResponse
-                ? (adapter.transformResponse(upstreamJson, callArgs) as Record<string, unknown>)
-                : (upstreamJson as Record<string, unknown>);
-            const parsed = capability.parseResponse?.(json) ?? {};
-            completeLog(logId, {
-                status: "completed",
-                output: parsed.output ?? null,
-                content: json,
-                generation: typeof json === "object" && json !== null ? json : null,
-                promptTokens: parsed.promptTokens ?? null,
-                completionTokens: parsed.completionTokens ?? null,
-                totalTokens: parsed.totalTokens ?? null,
-                totalLatencyMs: Date.now() - started,
-            });
-            opts.onComplete?.({
-                content: typeof parsed.output === "string" ? parsed.output : "",
-                reasoning: "",
-                usage: (json as { usage?: Record<string, unknown> })?.usage,
-            });
-            return {
-                response: new Response(JSON.stringify(json), { headers: { "Content-Type": "application/json" } }),
-                logId,
-            };
-        }
-        // Binary or unknown response — log generically and pass through.
-        const buf = await upstream.arrayBuffer();
+        return handleNonStream({
+            upstream,
+            variant,
+            ctx,
+            opts,
+            started,
+            logId,
+        });
+    }
+    return handleStream({
+        upstream,
+        variant,
+        ctx,
+        opts,
+        started,
+        logId,
+        model,
+    });
+}
+
+// =============================================================================
+// Non-stream branch
+// =============================================================================
+
+interface BranchArgs {
+    upstream: Response;
+    variant: UpstreamApiVariant;
+    ctx: VariantContext;
+    opts: ForwardGenerationOpts;
+    started: number;
+    logId: string;
+}
+
+async function handleNonStream({ upstream, variant, ctx, opts, started, logId }: BranchArgs): Promise<ForwardResult> {
+    const contentType = upstream.headers.get("Content-Type") ?? "";
+
+    if (contentType.startsWith("application/json")) {
+        const json = await upstream.json().catch(() => ({}));
+        const parsed = variant.parseResponse(json, ctx);
         completeLog(logId, {
             status: "completed",
-            output: `binary response (${contentType || "unknown"}, ${buf.byteLength} bytes)`,
+            output: parsed.output,
+            content: parsed.normalized,
+            generation: parsed.normalized,
+            promptTokens: parsed.promptTokens,
+            completionTokens: parsed.completionTokens,
+            totalTokens: parsed.totalTokens,
             totalLatencyMs: Date.now() - started,
         });
+        opts.onComplete?.({
+            content: parsed.output ?? "",
+            reasoning: "",
+            usage: parsed.normalized.usage as Record<string, unknown> | undefined,
+        });
         return {
-            response: new Response(buf, { headers: { "Content-Type": contentType || "application/octet-stream" } }),
+            response: new Response(JSON.stringify(parsed.normalized), {
+                headers: { "Content-Type": "application/json" },
+            }),
             logId,
         };
     }
 
-    // ---- streaming branch ----
+    // Binary or unknown — log size, pass through.
+    const buf = await upstream.arrayBuffer();
+    completeLog(logId, {
+        status: "completed",
+        output: `binary response (${contentType || "unknown"}, ${buf.byteLength} bytes)`,
+        totalLatencyMs: Date.now() - started,
+    });
+    return {
+        response: new Response(buf, {
+            headers: { "Content-Type": contentType || "application/octet-stream" },
+        }),
+        logId,
+    };
+}
+
+// =============================================================================
+// Stream branch — always transcodes to chat-completion SSE so the
+// user-facing API surface is uniform regardless of upstream variant.
+// =============================================================================
+
+interface StreamBranchArgs extends BranchArgs {
+    model: Model;
+}
+
+function handleStream({ upstream, variant, ctx, opts, started, logId, model }: StreamBranchArgs): ForwardResult {
     if (!upstream.body) {
-        completeLog(logId, { status: "failed", reason: "Upstream returned empty stream", totalLatencyMs: Date.now() - started });
+        completeLog(logId, {
+            status: "failed",
+            reason: "Upstream returned empty stream",
+            totalLatencyMs: Date.now() - started,
+        });
         throw new HttpError("Upstream returned empty stream", 502);
     }
 
@@ -359,51 +405,92 @@ export async function forwardGeneration(
     let firstTokenMs: number | null = null;
 
     const decoder = new TextDecoder();
+    const encoder = new TextEncoder();
+    const createdAt = Math.floor(started / 1000);
+
+    const emitChunk = (
+        controller: TransformStreamDefaultController<Uint8Array>,
+        delta: { content?: string; reasoning?: string },
+        usagePayload?: Record<string, unknown>,
+        finishReason: string | null = null,
+    ) => {
+        const messageDelta: Record<string, unknown> = {};
+        if (delta.content) messageDelta.content = delta.content;
+        if (delta.reasoning) messageDelta.reasoning_content = delta.reasoning;
+        const chunkObj: Record<string, unknown> = {
+            id: streamId ?? logId,
+            object: "chat.completion.chunk",
+            created: createdAt,
+            model: streamModel ?? model.upstreamModelId,
+            choices: [
+                {
+                    index: 0,
+                    delta: messageDelta,
+                    finish_reason: finishReason,
+                },
+            ],
+        };
+        if (systemFingerprint) chunkObj.system_fingerprint = systemFingerprint;
+        if (usagePayload) chunkObj.usage = usagePayload;
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunkObj)}\n\n`));
+    };
+
     const transformer = new TransformStream<Uint8Array, Uint8Array>({
         transform(chunk, controller) {
-            controller.enqueue(chunk);
-            const text = decoder.decode(chunk, { stream: true });
-            buf += text;
+            buf += decoder.decode(chunk, { stream: true });
             const lines = buf.split("\n");
             buf = lines.pop() || "";
+
             for (const line of lines) {
                 const trimmed = line.trim();
                 if (!trimmed.startsWith("data:")) continue;
                 const data = trimmed.slice(5).trim();
                 if (!data || data === "[DONE]") continue;
+
+                let json: unknown;
                 try {
-                    const json = JSON.parse(data) as Record<string, unknown>;
-                    // Adapter parses first (for non-OpenAI stream shapes);
-                    // fall back to the capability's default Chat-Completions
-                    // parser.
-                    const delta =
-                        adapter.transformStreamChunk?.(json, callArgs) ??
-                        capability.parseStreamChunk?.(json) ??
-                        { content: "", reasoning: "" };
-                    if (delta.content || delta.reasoning) {
-                        if (firstTokenMs === null) firstTokenMs = Date.now() - started;
-                        if (delta.content) accumContent += delta.content;
-                        if (delta.reasoning) accumReasoning += delta.reasoning;
-                        opts.onStreamDelta?.(delta);
-                    }
-                    if (typeof json.id === "string" && !streamId) streamId = json.id;
-                    if (typeof json.model === "string") streamModel = json.model;
-                    if (typeof json.system_fingerprint === "string") systemFingerprint = json.system_fingerprint;
-                    const maybeUsage = (json as { usage?: Record<string, unknown> })?.usage;
-                    if (maybeUsage) usage = maybeUsage;
+                    json = JSON.parse(data);
                 } catch {
-                    // ignore mid-stream parse errors
+                    continue; // mid-stream parse error
+                }
+
+                const delta = variant.parseStreamChunk(json, ctx);
+                if (!delta) continue;
+
+                if (delta.id && !streamId) streamId = delta.id;
+                if (delta.model) streamModel = delta.model;
+                if (delta.systemFingerprint) systemFingerprint = delta.systemFingerprint;
+                if (delta.usage) usage = delta.usage;
+
+                const hasContent = !!(delta.content || delta.reasoning);
+                if (hasContent) {
+                    if (firstTokenMs === null) firstTokenMs = Date.now() - started;
+                    if (delta.content) accumContent += delta.content;
+                    if (delta.reasoning) accumReasoning += delta.reasoning;
+                    opts.onStreamDelta?.({
+                        content: delta.content ?? "",
+                        reasoning: delta.reasoning ?? "",
+                    });
+                    emitChunk(controller, {
+                        content: delta.content,
+                        reasoning: delta.reasoning,
+                    });
                 }
             }
         },
-        flush() {
+        flush(controller) {
+            // Terminal stop chunk (carries final usage if known) + [DONE].
+            emitChunk(controller, {}, usage, "stop");
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+
+            // Persist the merged log entry in canonical chat-completion shape.
             const u = usage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined;
             const message: Record<string, unknown> = { role: "assistant", content: accumContent };
             if (accumReasoning) message.reasoning_content = accumReasoning;
             const mergedResponse: Record<string, unknown> = {
                 id: streamId ?? logId,
                 object: "chat.completion",
-                created: Math.floor(started / 1000),
+                created: createdAt,
                 model: streamModel ?? model.upstreamModelId,
                 choices: [{ index: 0, message, finish_reason: "stop" }],
             };
@@ -426,12 +513,14 @@ export async function forwardGeneration(
     });
 
     const piped = upstream.body.pipeThrough(transformer);
-    const response = new Response(piped, {
-        headers: {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-        },
-    });
-    return { response, logId };
+    return {
+        response: new Response(piped, {
+            headers: {
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+            },
+        }),
+        logId,
+    };
 }

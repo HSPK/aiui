@@ -4,8 +4,8 @@ export const capabilityDTOSchema = z.object({
     id: z.string(),
     label: z.string(),
     description: z.string().nullable(),
-    endpoint: z.string(),
-    supports_streaming: z.boolean(),
+    /** Default upstream API variant id (e.g. "chat.completions"). */
+    default_variant: z.string(),
 });
 
 export type CapabilityDTO = z.infer<typeof capabilityDTOSchema>;

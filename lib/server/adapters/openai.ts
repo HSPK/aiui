@@ -1,30 +1,29 @@
 import "server-only";
 import { registerAdapter, type ProviderAdapter, type UpstreamCallArgs } from ".";
 import { classifyModel } from "../capabilities";
-import type { NormalizedModelMeta, UpstreamApiId } from "@/lib/schemas/adapter";
+import type { NormalizedModelMeta } from "@/lib/schemas/adapter";
 import type { Provider } from "../db/schema";
 
 /**
- * Shared helpers for adapters that speak OpenAI's Chat Completions /
- * Embeddings / etc. surface. Keeps the per-adapter files focused on
- * what's actually different (URL shape, header style, schema strictness).
+ * Shared transport helpers for OpenAI-shaped upstreams. Lives here so
+ * the other adapters (azure-openai, azure-foundry) can reuse the URL /
+ * header / model-listing pieces without duplication.
  *
- * Policy: the gateway never implicitly injects request fields. If a caller
- * wants `stream_options.include_usage` (or any other extra), they set it
- * either in the request body, the model's `default_params`, or the
- * provider's `default_params` (which the model inherits). `mergeParams`
- * walks those three layers; this module only owns transport-level shape
- * (URL, auth, field accept/reject).
+ * Policy: the gateway never implicitly injects request fields. Stream
+ * usage etc. flow through provider/model `default_params` + caller body.
+ * The adapter only owns transport (URL, auth, last-mile body shaping
+ * such as model-id stamping).
  */
 
-/** Build the standard URL: `{base_url}{capability.endpoint.path}`. */
+// ----- URL / header helpers -----
+
+/** Standard `{base_url}{variant.path}` URL builder. */
 export function defaultUpstreamUrl(args: UpstreamCallArgs): string {
     const base = args.provider.baseUrl.replace(/\/$/, "");
-    const path = args.capability.endpoint.path;
-    return `${base}${path}`;
+    return `${base}${args.variant.path}`;
 }
 
-/** Standard OpenAI `Authorization: Bearer …` header. */
+/** Standard `Authorization: Bearer …` header. */
 export function bearerAuthHeaders(_args: UpstreamCallArgs, apiKey: string | null): Record<string, string> {
     const h: Record<string, string> = { "Content-Type": "application/json" };
     if (apiKey) h["Authorization"] = `Bearer ${apiKey}`;
@@ -45,11 +44,17 @@ export async function fetchOpenAIModels(provider: Provider, apiKey: string | nul
     return Array.isArray(json?.data) ? json.data : [];
 }
 
-/** Filter `body` to only fields in `accepted` (or remove fields in `rejected`).
- *  Always-on keys (`model`, `messages`, `stream`, `input`, `prompt`) bypass
- *  both lists since they're carry-through routing/payload keys. */
+// ----- field filter -----
+
+/** Always-on keys bypass `accepted_fields` / `rejected_fields` because they
+ *  are carry-through routing / payload keys that the variant translation
+ *  needs to keep producing valid output. */
 const ALWAYS_ON = new Set(["model", "messages", "stream", "input", "prompt"]);
 
+/** Filter `body` to only fields in `accepted` (or remove fields in `rejected`).
+ *  Operates on the gateway's canonical body shape (chat-completion-like) so
+ *  it runs BEFORE the variant translation; the variant produces a clean
+ *  per-shape body from whatever fields survived the filter. */
 export function applyFieldFilter(
     body: Record<string, unknown>,
     meta: NormalizedModelMeta | null,
@@ -74,35 +79,6 @@ export function applyFieldFilter(
         out[k] = v;
     }
     return out;
-}
-
-/**
- * Default upstream API picker — favours `responses` when the model
- * declares support for it (gateway-side opinion that the Responses API
- * is more capable), otherwise falls back to `chat.completions`. Other
- * capabilities pass through unchanged.
- */
-export function defaultSelectUpstreamApi(
-    capabilityId: string,
-    meta: NormalizedModelMeta | null,
-): UpstreamApiId {
-    switch (capabilityId) {
-        case "chat":
-            if (meta?.supported_apis.includes("responses")) return "responses";
-            return "chat.completions";
-        case "embedding":
-            return "embeddings";
-        case "image":
-            return "images.generations";
-        case "audio.speech":
-            return "audio.speech";
-        case "audio.transcription":
-            return "audio.transcriptions";
-        case "rerank":
-            return "rerank";
-        default:
-            return "chat.completions";
-    }
 }
 
 // =============================================================================
@@ -146,22 +122,17 @@ export const openaiAdapter: ProviderAdapter = {
                 audio_out: cap === "audio.speech",
             },
             owned_by: typeof r.owned_by === "string" ? r.owned_by : null,
-            // accepted_fields left undefined ⇒ trust everything
             raw: rawEntry,
         };
-    },
-
-    selectUpstreamApi(capability, _model, meta) {
-        return defaultSelectUpstreamApi(capability.id, meta);
     },
 
     upstreamUrl: defaultUpstreamUrl,
     upstreamHeaders: bearerAuthHeaders,
 
-    transformRequest(body, args) {
-        // Sticky model id in case caller used a display name
-        const withModel = { ...body, model: args.model.upstreamModelId };
-        return applyFieldFilter(withModel, args.meta);
+    finalizeRequest(body, args) {
+        // Stamp the upstream id so callers can reference a model by its
+        // display name without confusing the upstream.
+        return { ...body, model: args.model.upstreamModelId };
     },
 };
 

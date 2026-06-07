@@ -7,14 +7,15 @@
 1. **新增功能必须最小改动**：
    - wire 字段 = 3 处（zod schema + Drizzle column + 1 行 serializer）
    - CRUD 端点 = 3 处（zod + `defineRoute` + service）
-   - 新模态 = 2 文件（`capabilities/<id>.ts` + 1 行 `register.ts` import + 6 行 Route Handler 调 `forwardGeneration`）
+   - 新模态（modality）= 3 文件（`capabilities/<id>.ts` 声明 modality + `api-variants/<id>.ts` 声明 wire shape + 6 行 Route Handler 调 `forwardGeneration`，外加各自 register.ts 一行 import）
+   - 新上游 wire shape（同一 modality 的另一种 API 形态，如 chat 的 `/responses`）= 1 个 `api-variants/<id>.ts` + 1 行 `api-variants/register.ts` import；capability 加一个 `variantPreference` 条目（可选）
    - 新上游协议变体（Anthropic / Bedrock / 严格 schema 的厂家…）= 1 个 `adapters/<id>.ts` + 1 行 `adapters/register.ts` import；gateway 主体永远不动
    - 新 FE domain = 1 个 `defineResource(...)` 调用（5 行；api + hooks + keys 自动派生）
    - 新 CLI 子命令 = 1 个 `defineCommand({ meta, args, run })` 挂到 `bin/aiui.ts` 的 `subCommands`
 2. **功能原子性**：一个 domain 一个文件夹/文件，不起 thin re-export 中间层
 3. **单一真相**：`lib/schemas/<domain>.ts`（zod）是 wire 类型唯一来源，`lib/server/db/schema.ts`（Drizzle）是 DB 唯一来源。**所有** TS 类型通过 `z.infer` 派生，绝不手写并行 interface
 4. **开发期不保后向兼容**：thin wrapper / 过渡 alias / dead code 发现就删
-5. 优先用工厂（`defineRoute` / `defineResource` / `registerCapability` / `registerAdapter` / `defineCommand`）；只有形态特殊（auth、SSE gateway、singleton prefs）才手写
+5. 优先用工厂（`defineRoute` / `defineResource` / `registerCapability` / `registerVariant` / `registerAdapter` / `defineCommand`）；只有形态特殊（auth、SSE gateway、singleton prefs）才手写
 
 ### SOLID — 映射到本仓库的具体执行规则
 
@@ -88,9 +89,12 @@ export const providers = {
 - **路径别名** `@/*` → repo 根
 - **路由组**：`app/(auth)/login/` 公开；`app/(dashboard)/` 由 `context/auth-context.tsx` 兜底；`app/api/**` 全部 Route Handlers
 - **后端 `lib/server/<domain>/`** 每个文件夹 = `index.ts`（一行 `export * from "./service"`） + `service.ts` + 可选 `serializer.ts`。**不要**起 `schemas.ts` thin re-export——route 和 service 都直接 `import from "@/lib/schemas/<domain>"`。所有 server 文件首行 `import "server-only"`
-- **gateway**：`lib/server/gateway/index.ts` `resolveModel(name)` (async) 顺序 = DB `models` 表 → discovery cache → 404。`forwardGeneration(user, capabilityId, body, opts)` 统一转发。**流式用 TransformStream tee**：原样吐给客户端的同时累积日志。每次调用都写 `generation_logs`，含 capability、input_summary、tokens、`first_token_latency_ms` (TTFT, 仅流式)、`total_latency_ms` (E2E, 总是)
-- **Provider Adapter（`lib/server/adapters/`）**：每个上游协议变体（OpenAI、Azure OpenAI、Azure Foundry、未来 Anthropic/Bedrock/...）一个 adapter 文件。Gateway 主体永远不 `if (provider.type === ...)`——URL/headers/字段过滤/`responses` vs `chat.completions` 选择全走 `resolveAdapter(provider)` 返回的实例。新增协议变体 = 一个文件 + 一行 `adapters/register.ts` side-effect import + `matches(provider)` 决定 auto-detect 优先级（更具体的先注册）。`/api/adapters` 暴露注册列表给前端 dropdown
-- **单 adapter 模型**：`resolveModel` 返回单个 `adapter` — 来自 `provider.adapter_id`（auto-detect via base_url 或显式），同时承担 transport (URL/auth/响应) + schema (accepted/rejected_fields、selectUpstreamApi、transformRequest)。proxy 场景（比如把 Foundry 包成 OpenAI URL）→ 显式设 `provider.adapter_id: azure-foundry`，gateway 会按 Foundry 的 strict 规则过滤字段。**没有 schema_adapter_id 覆盖** — 复杂分离不值得维护
+- **gateway**：`lib/server/gateway/index.ts` `resolveModel(name)` (async) 顺序 = DB `models` 表 → discovery cache → 404。`forwardGeneration(user, capabilityId, body, opts)` 统一转发。**流式用 TransformStream**：变体 SSE 经 `variant.parseStreamChunk` 解析后**统一转码成 chat-completion shape** 吐给客户端（client 只看一种形态），同时累积日志。每次调用都写 `generation_logs`，含 capability、input_summary、tokens、`first_token_latency_ms` (TTFT, 仅流式)、`total_latency_ms` (E2E, 总是)
+- **三层架构（capability / variant / adapter）** — 各管一件事，互相正交：
+  - **Capability**（`lib/server/capabilities/<id>.ts`）：用户面向的 modality（chat / embedding / image / audio.* / rerank）。声明 `defaultVariantId` + 可选 `variantPreference: UpstreamApiId[]`（gateway 偏好链，e.g. chat 默认偏好 `["responses","chat.completions"]`）。负责 `summarizeInput`（基于 canonical chat-completion shape body 摘要）
+  - **Variant**（`lib/server/api-variants/<id>.ts`）：上游 wire shape（`chat.completions` / `responses` / `embeddings` / ...）。一个文件一个 variant。声明 `{id, capability, path, supportsStreaming, transformRequest?, parseResponse, parseStreamChunk}`。`transformRequest` 把 canonical chat-completion body 翻译成本 variant 的 upstream body（如 `responses` 把 `messages → input`、`system → instructions`、`max_tokens → max_output_tokens`）；`parseResponse.normalized` 输出 canonical chat-completion JSON（log + 客户端响应统一形态）；`parseStreamChunk` 解析 variant SSE 事件并归一化成 `{content, reasoning, id?, model?, usage?, ...}`
+  - **Adapter**（`lib/server/adapters/<id>.ts`）：上游 transport（OpenAI / Azure OpenAI / Azure Foundry / 未来 Anthropic / Bedrock / Vertex / ...）。负责 `fetchModels`、`extractModelMeta`、`upstreamUrl(args)` （`{baseUrl}{variant.path}` 或 Azure 的 deployment wrap）、`upstreamHeaders`、可选 `finalizeRequest`（last-mile 形态调整，如 Azure 删 body.model）、可选 `selectVariant`（覆盖默认 picker）
+- **Pipeline 顺序**：`mergeParams (defaults inheritance) → applyFieldFilter (canonical-shape 字段白/黑名单) → variant.transformRequest (canonical → variant body) → adapter.finalizeRequest (transport polish) → fetch`。新增上游 wire shape = 1 个 variant 文件 + 1 行 `api-variants/register.ts` import；新增 transport = 1 个 adapter 文件 + 1 行 `adapters/register.ts` import；新增 modality = 1 个 capability + 1 个对应 variant + 6 行 Route Handler。Gateway 主体永远不动
 - **零隐式注入**：gateway 不会主动往请求里加任何字段。`stream_options.include_usage`、`temperature`、`max_tokens` 这些都通过 caller body / `model.default_params` / `provider.default_params` 三层逐级覆盖（caller 优先，`mergeParams` 实现 `provider → model → body` 的继承）。model 默认继承自 provider，可被按 key 覆盖
 - **Discovered metadata 持久化**：从 discovered 模型提升为 override 时，FE 会把 `meta.raw` 当作 `discovered_metadata` 写回 DB。`metaForDbModel`/`resolveModel` 优先读 DB 快照，否则回退到 in-memory discovery cache，最后才退化为 `{id}`。模型详情页 (`/models/[name]`) 渲染原始 JSON
 - **Provider 字段** `adapter_id`（默认 `"openai"`，空 = auto-detect）+ `health_check_url`（可选，GET 必须返 `{"status":"ok"}`，否则 fallback 走 `discoverModels` 探活）+ `last_health_{status,checked_at,error}`（`checkProvider` 写入；FE `<ProviderHealthPill>` 仅在 `health_check_url` 存在时渲染——**永远不要**无脑显示绿色 "Operational"）

@@ -4,9 +4,11 @@ import { registerCapability } from "./index";
 registerCapability({
     id: "chat",
     label: "Chat",
-    description: "Conversational completion. OpenAI /chat/completions shape.",
-    endpoint: { path: "/chat/completions" },
-    supportsStreaming: true,
+    description: "Conversational completion. Canonical OpenAI chat-completion shape.",
+    defaultVariantId: "chat.completions",
+    // Gateway opinion: Responses API is more capable (better tool calls,
+    // reasoning, multi-step) so prefer it when the model claims support.
+    variantPreference: ["responses", "chat.completions"],
     priority: 10,
     matches: (id) =>
         /^(gpt|chatgpt|o\d|claude|gemini|llama|qwen|deepseek-(chat|r1|reasoner|v\d)|mistral|mixtral|grok|yi|baichuan|moonshot|kimi|hunyuan|glm|spark|abab|step|doubao|ernie)/i.test(id) ||
@@ -26,26 +28,5 @@ registerCapability({
                 .join(" ");
         }
         return text.slice(0, 200);
-    },
-    parseResponse: (json) => {
-        const j = json as {
-            choices?: Array<{ message?: { content?: string; reasoning_content?: string } }>;
-            usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
-        };
-        const message = j?.choices?.[0]?.message;
-        return {
-            output: message?.content ?? null,
-            promptTokens: j?.usage?.prompt_tokens ?? null,
-            completionTokens: j?.usage?.completion_tokens ?? null,
-            totalTokens: j?.usage?.total_tokens ?? null,
-        };
-    },
-    parseStreamChunk: (json) => {
-        const delta = (json as { choices?: Array<{ delta?: { content?: string; reasoning_content?: string } }> })
-            ?.choices?.[0]?.delta;
-        return {
-            content: typeof delta?.content === "string" ? delta.content : "",
-            reasoning: typeof delta?.reasoning_content === "string" ? delta.reasoning_content : "",
-        };
     },
 });
