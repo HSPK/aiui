@@ -1,11 +1,12 @@
 "use client"
 
 import * as React from "react"
+import { useQueryClient } from "@tanstack/react-query"
+import { ArrowUp, Loader2 } from "lucide-react"
+
 import { usePlaygroundChat } from "@/components/playground/use-playground-chat"
-import { usePlaygroundStore } from "@/lib/stores/playground-store"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { ArrowUp } from "lucide-react"
 import { MessageList } from "@/components/playground/message-list"
 import { ChatInput } from "@/components/playground/chat-input"
 import {
@@ -16,42 +17,39 @@ import {
     useContextAssistant,
     useTitleGeneration,
     useMessageSync,
-    useModelConfigs
+    useModelConfigs,
 } from "@/components/playground/hooks"
+import { readCachedMessages } from "@/components/playground/hooks/use-paginated-messages"
 import { LogDetails } from "@/components/logs/log-details"
-import { useShallow } from "zustand/react/shallow"
+import { usePlaygroundStore } from "@/lib/stores/playground-store"
 
-export function ChatFlow({ tabId }: { tabId: string }) {
-    // Store access - use getState() for non-reactive reads
-    const storeRef = React.useRef(usePlaygroundStore)
-    const getTab = React.useCallback(() => storeRef.current.getState().tabs.find(t => t.id === tabId), [tabId])
-    const getModelIds = React.useCallback(() => getTab()?.modelIds || [], [getTab])
-    const updateTab = usePlaygroundStore((state) => state.updateTab)
+const INITIAL_PAGE_SIZE = 20
 
-    // Subscribe only to fields that need reactivity
-    const conversationId = usePlaygroundStore(
-        (state) => state.tabs.find(t => t.id === tabId)?.conversationId
-    )
-    const tabMessages = usePlaygroundStore(
-        useShallow((state) => state.tabs.find(t => t.id === tabId)?.messages || [])
+/** Single-conversation chat surface. `conversationId` comes from the
+ *  URL via the chat page's `?c=` query param. */
+export function ChatFlow({ conversationId }: { conversationId: string }) {
+    const queryClient = useQueryClient()
+
+    const getModelIds = React.useCallback(
+        () => usePlaygroundStore.getState().getSettings(conversationId).modelIds ?? [],
+        [conversationId]
     )
 
-    // Generation detail drawer state
     const [selectedGenerationId, setSelectedGenerationId] = React.useState<string | null>(null)
 
-    // --- Custom Hooks ---
-
-    // Global config (historyLimit)
-    const { configRef, callbacksRef, historyLimit } = useChatConfig(tabId)
-
-    // Per-model configs
-    const { buildConfigForModel } = useModelConfigs(tabId)
-
-    // Sibling navigation state
+    const { configRef, callbacksRef, historyLimit } = useChatConfig(conversationId)
+    const { buildConfigForModel } = useModelConfigs(conversationId)
     const { selectedSiblings, onSelectSibling } = useSiblingNavigation()
 
-    // Chat hook — `tabMessages` is already in canonical `Message[]` shape
-    // (string content) so no normalization layer is needed.
+    // Seed from the cached initial page (if present) so revisiting a
+    // recently-viewed conversation renders messages immediately on mount
+    // — no fetch flash. Computed once per mount; conversationId change
+    // triggers a fresh mount via the `key` prop in the chat page.
+    const cachedInitial = React.useMemo(
+        () => readCachedMessages(queryClient, conversationId, INITIAL_PAGE_SIZE) ?? [],
+        [queryClient, conversationId]
+    )
+
     const {
         messages,
         handleSubmit,
@@ -60,95 +58,70 @@ export function ChatFlow({ tabId }: { tabId: string }) {
         isLoading,
         setMessages,
         stop,
-    } = usePlaygroundChat({
-        conversationId,
-        initialMessages: tabMessages,
-    })
+    } = usePlaygroundChat({ conversationId, initialMessages: cachedInitial })
 
-    // Context assistant calculation (for sibling branching)
     const { contextAssistantIdRef } = useContextAssistant(messages, selectedSiblings)
 
-    // Pagination
-    const { hasMore, loadMore, isLoadingMore } = usePaginatedMessages({
+    const { hasMore, loadMore, isLoadingMore, isInitialLoading } = usePaginatedMessages({
         conversationId,
         initialMessages: messages,
         setMessages,
+        pageSize: INITIAL_PAGE_SIZE,
     })
 
-    // Scroll management
     const {
         viewportRef,
         showScrollBottom,
         handleScroll,
         scrollToBottom,
-        preserveScrollPosition
+        preserveScrollPosition,
     } = useChatScroll({
         messages,
         onLoadMore: () => preserveScrollPosition(loadMore),
         hasMore,
         isLoadingMore,
-        savedScrollPosition: getTab()?.scrollPosition,
-        onSaveScrollPosition: (pos) => updateTab(tabId, { scrollPosition: pos }),
     })
 
-    // Auto-generate title
-    useTitleGeneration({
-        tabId,
-        conversationId,
-        messages,
-        isLoading,
-        getModelIds
-    })
+    useTitleGeneration({ conversationId, messages, isLoading, getModelIds })
+    useMessageSync({ conversationId, messages, isLoading, pageSize: INITIAL_PAGE_SIZE })
 
-    // Sync messages to store & refresh sidebar
-    useMessageSync({
-        tabId,
-        conversationId,
-        messages,
-        isLoading
-    })
+    const handleViewGeneration = React.useCallback(
+        (generationId: string) => setSelectedGenerationId(generationId),
+        []
+    )
 
-    // --- Handlers ---
+    const buildPerModelConfig = React.useCallback(
+        (modelId: string) => buildConfigForModel(modelId, historyLimit),
+        [buildConfigForModel, historyLimit]
+    )
 
-    const handleViewGeneration = React.useCallback((generationId: string) => {
-        setSelectedGenerationId(generationId)
-    }, [])
+    const onFormSubmit = React.useCallback(
+        (inputText: string) => {
+            const modelIds = getModelIds()
+            handleSubmit(inputText, {
+                models: modelIds.length > 0 ? modelIds : ["gpt-3.5-turbo"],
+                getModelConfig: buildPerModelConfig,
+                contextMessageId: contextAssistantIdRef.current,
+            })
+        },
+        [buildPerModelConfig, handleSubmit, getModelIds, contextAssistantIdRef]
+    )
 
-    // Build per-model config for API calls
-    const buildPerModelConfig = React.useCallback((modelId: string) => {
-        return buildConfigForModel(modelId, historyLimit)
-    }, [buildConfigForModel, historyLimit])
-
-    // Form submit - receives input text directly from ChatInput
-    const onFormSubmit = React.useCallback((inputText: string) => {
-        const modelIds = getModelIds()
-        handleSubmit(inputText, {
-            models: modelIds.length > 0 ? modelIds : ["gpt-3.5-turbo"],
-            getModelConfig: buildPerModelConfig,
-            contextMessageId: contextAssistantIdRef.current
-        })
-    }, [buildPerModelConfig, handleSubmit, getModelIds, contextAssistantIdRef])
-
-    // Regenerate (create sibling response for last assistant message)
     const onRegenerate = React.useCallback(() => {
-        handleRegenerate({
-            models: getModelIds(),
-            getModelConfig: buildPerModelConfig
-        })
+        handleRegenerate({ models: getModelIds(), getModelConfig: buildPerModelConfig })
     }, [buildPerModelConfig, handleRegenerate, getModelIds])
 
-    // Per-message retry — triggered by the retry button on an inline
-    // error card. Re-streams just that one failed assistant slot. This
-    // is the ONLY retry surface — the old "last message is user" retry
-    // button in ChatInput was removed in favor of inline error UI.
-    const onRetryFailed = React.useCallback((failedAssistantId: string) => {
-        handleRetryFailed(failedAssistantId, {
-            models: getModelIds(),
-            getModelConfig: buildPerModelConfig
-        })
-    }, [buildPerModelConfig, handleRetryFailed, getModelIds])
+    const onRetryFailed = React.useCallback(
+        (failedAssistantId: string) => {
+            handleRetryFailed(failedAssistantId, {
+                models: getModelIds(),
+                getModelConfig: buildPerModelConfig,
+            })
+        },
+        [buildPerModelConfig, handleRetryFailed, getModelIds]
+    )
 
-    // --- Render ---
+    const showInitialLoading = isInitialLoading && messages.length === 0
 
     return (
         <div className="h-full relative overflow-hidden w-full max-w-full">
@@ -158,15 +131,22 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                 onScroll={handleScroll}
             >
                 <div className="w-full max-w-full overflow-hidden">
-                    <MessageList
-                        messages={messages}
-                        isLoading={isLoading}
-                        onViewGeneration={handleViewGeneration}
-                        onRegenerate={onRegenerate}
-                        onRetryFailed={onRetryFailed}
-                        selectedSiblings={selectedSiblings}
-                        onSelectSibling={onSelectSibling}
-                    />
+                    {showInitialLoading ? (
+                        <div className="flex flex-col items-center justify-center h-[60vh] gap-2">
+                            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                            <p className="text-xs text-muted-foreground">Loading conversation…</p>
+                        </div>
+                    ) : (
+                        <MessageList
+                            messages={messages}
+                            isLoading={isLoading}
+                            onViewGeneration={handleViewGeneration}
+                            onRegenerate={onRegenerate}
+                            onRetryFailed={onRetryFailed}
+                            selectedSiblings={selectedSiblings}
+                            onSelectSibling={onSelectSibling}
+                        />
+                    )}
                 </div>
             </ScrollArea>
 
@@ -183,7 +163,7 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                 )}
 
                 <ChatInput
-                    tabId={tabId}
+                    conversationId={conversationId}
                     onSubmit={onFormSubmit}
                     isLoading={isLoading}
                     onStop={stop}
@@ -192,7 +172,6 @@ export function ChatFlow({ tabId }: { tabId: string }) {
                 />
             </div>
 
-            {/* Generation Detail Drawer */}
             <LogDetails
                 logId={selectedGenerationId}
                 open={!!selectedGenerationId}

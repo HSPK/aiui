@@ -1,11 +1,12 @@
 "use client"
 
 import * as React from "react"
-import { Button } from "@/components/ui/button"
 import { Plus, ArrowUp } from "lucide-react"
+
+import { Button } from "@/components/ui/button"
+import { useDeviceSettingsStore } from "@/lib/stores/device-settings-store"
 import { ConnectedModelSelector } from "@/components/playground/model-selector"
 import { ModelChipsWithConfig } from "@/components/playground/model-chips-with-config"
-import { useDeviceSettingsStore } from "@/lib/stores/device-settings-store"
 
 export interface ChatInputConfig {
     historyLimit: number
@@ -16,11 +17,10 @@ export interface ChatInputCallbacks {
 }
 
 interface ChatInputProps {
-    tabId: string
+    conversationId: string
     onSubmit: (input: string) => void
     isLoading: boolean
     onStop: () => void
-    // Config passed via ref to prevent re-renders
     configRef: React.RefObject<ChatInputConfig>
     callbacksRef: React.RefObject<ChatInputCallbacks>
 }
@@ -32,37 +32,29 @@ export interface ChatInputRef {
 }
 
 export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProps>(function ChatInput({
-    tabId,
+    conversationId,
     onSubmit,
     isLoading,
     onStop,
     configRef,
     callbacksRef,
 }, ref) {
-    // Use ref for input value - avoid React re-renders on every keystroke
     const inputRef = React.useRef("")
-    const [hasInput, setHasInput] = React.useState(false) // Only track if has content for button
+    const [hasInput, setHasInput] = React.useState(false)
     const textareaRef = React.useRef<HTMLTextAreaElement>(null)
 
-    // Track IME composition state (for Chinese/Japanese/Korean input methods).
-    // We belt-and-braces this: many browsers fire `onKeyDown` BEFORE
-    // `onCompositionEnd` when Enter commits a composition, so we also check
-    // `e.nativeEvent.isComposing` and the legacy `keyCode === 229` sentinel.
+    // IME composition guard (Chinese / Japanese / Korean).
     const isComposingRef = React.useRef(false)
 
-    // sendOnEnter device preference — when false, Enter inserts a newline
-    // and Cmd/Ctrl+Enter submits instead.
     const sendOnEnter = useDeviceSettingsStore((s) => s.sendOnEnter)
     const sendOnEnterRef = React.useRef(sendOnEnter)
     sendOnEnterRef.current = sendOnEnter
 
-    // Use ref for callbacks to prevent recreation
     const onSubmitRef = React.useRef(onSubmit)
     const onStopRef = React.useRef(onStop)
     onSubmitRef.current = onSubmit
     onStopRef.current = onStop
 
-    // Expose methods to parent
     React.useImperativeHandle(ref, () => ({
         focus: () => textareaRef.current?.focus(),
         clear: () => {
@@ -73,7 +65,6 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
         getValue: () => inputRef.current,
     }), [])
 
-    // Stable submit handler - NEVER changes
     const handleSubmit = React.useCallback((e?: React.FormEvent) => {
         e?.preventDefault()
         const value = inputRef.current.trim()
@@ -85,21 +76,15 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
         }
     }, [])
 
-    // Handle input change - minimal state updates
     const handleInputChange = React.useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
         const value = e.target.value
         inputRef.current = value
         const newHasInput = value.trim().length > 0
-        // Only update state if hasInput actually changed
-        setHasInput(prev => prev !== newHasInput ? newHasInput : prev)
+        setHasInput((prev) => (prev !== newHasInput ? newHasInput : prev))
     }, [])
 
     const handleKeyDown = React.useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key !== "Enter") return
-
-        // Ignore Enter while an IME composition is active — multiple
-        // signals because different browsers fire events in different
-        // orders during composition commit.
         const composing =
             isComposingRef.current ||
             e.nativeEvent.isComposing ||
@@ -107,40 +92,32 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
         if (composing) return
 
         const cmdEnter = e.metaKey || e.ctrlKey
-
         if (sendOnEnterRef.current) {
-            // Enter submits, Shift+Enter inserts newline (default).
             if (!e.shiftKey) {
                 e.preventDefault()
                 handleSubmit()
             }
-        } else {
-            // Enter inserts newline (default), Cmd/Ctrl+Enter submits.
-            if (cmdEnter) {
-                e.preventDefault()
-                handleSubmit()
-            }
+        } else if (cmdEnter) {
+            e.preventDefault()
+            handleSubmit()
         }
     }, [handleSubmit])
 
     const handleCompositionStart = React.useCallback(() => {
         isComposingRef.current = true
     }, [])
-
     const handleCompositionEnd = React.useCallback(() => {
         isComposingRef.current = false
     }, [])
 
-    // Show submit button based on hasInput state (not full input value)
     const showSubmit = !isLoading && hasInput
 
     return (
         <form onSubmit={handleSubmit} className="flex flex-col gap-2 w-full mx-auto max-w-4xl relative">
-            {/* Model chips row - shows above input when models selected */}
             <div className="flex items-center gap-2 px-2">
-                <ConnectedModelSelector tabId={tabId} />
+                <ConnectedModelSelector conversationId={conversationId} />
                 <ModelChipsWithConfig
-                    tabId={tabId}
+                    conversationId={conversationId}
                     historyLimit={configRef.current?.historyLimit ?? 20}
                     onHistoryLimitChange={callbacksRef.current?.onHistoryLimitChange ?? (() => { })}
                 />
@@ -195,11 +172,8 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
         </form>
     )
 }), (prevProps, nextProps) => {
-    // Custom comparison - only re-render when these specific props change
     return (
-        prevProps.tabId === nextProps.tabId &&
+        prevProps.conversationId === nextProps.conversationId &&
         prevProps.isLoading === nextProps.isLoading
-        // Refs are stable, no need to compare
-        // onSubmit, onStop use refs internally, no need to compare
     )
 })

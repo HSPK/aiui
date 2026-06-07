@@ -1,5 +1,5 @@
 "use client";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { defineResource } from "./resource";
 import { fetcher } from "./client";
 import type { Paginated } from "@/lib/schemas/common";
@@ -22,25 +22,58 @@ const base = defineResource<
     }),
 });
 
+/** Cache key for the initial page of messages of a single conversation.
+ *  Lives under the conversation resource so it gets gc'd if the resource
+ *  is gc'd, but is isolated from list/infinite queries so we can invalidate
+ *  list-only without dropping the message cache. */
+export function messagesCacheKey(conversationId: string, pageSize: number) {
+    return [...base.keys.one(conversationId), "messages-cache", pageSize] as const;
+}
+
 export const conversations = {
     ...base,
 
     // ---- shorthand: title-only update ----
     updateTitle: (id: string, title: string) => base.update(id, { title }),
 
+    // ---- shared message cache key (used by usePaginatedMessages / sync) ----
+    messagesCacheKey,
+
+    /** Invalidate only the conversation LIST queries (list/infinite),
+     *  leaving the per-conversation messages cache intact. */
+    useInvalidateList: () => {
+        const qc = useQueryClient();
+        return () => qc.invalidateQueries({
+            queryKey: base.keys.all(),
+            predicate: (q) => {
+                const k = q.queryKey as readonly unknown[];
+                return k.length >= 2 && (k[1] === "list" || k[1] === "infinite");
+            },
+        });
+    },
+
     // ---- infinite scroll variant of useList ----
-    useInfinite: (params?: { pageSize?: number; scope?: string }) =>
-        useInfiniteQuery({
-            queryKey: [...base.keys.all(), "infinite", params?.scope ?? "default", params?.pageSize ?? 20] as const,
+    useInfinite: (params?: { pageSize?: number; scope?: string; keyword?: string }) => {
+        const pageSize = params?.pageSize ?? 20;
+        const keyword = params?.keyword?.trim() || undefined;
+        return useInfiniteQuery({
+            queryKey: [
+                ...base.keys.all(),
+                "infinite",
+                params?.scope ?? "default",
+                pageSize,
+                keyword ?? "",
+            ] as const,
             initialPageParam: 1,
             queryFn: ({ pageParam = 1 }) =>
-                base.list({ page: pageParam as number, page_size: params?.pageSize ?? 20 }),
+                base.list({ page: pageParam as number, page_size: pageSize, keyword }),
             getNextPageParam: (lastPage) => {
                 if (!lastPage) return undefined;
                 const hasMore = lastPage.page * lastPage.page_size < lastPage.total;
                 return hasMore ? lastPage.page + 1 : undefined;
             },
-        }),
+        });
+    },
 
     // ---- nested: messages under a conversation ----
     listMessages: (id: string, params?: { page?: number; page_size?: number; sort?: string }) =>

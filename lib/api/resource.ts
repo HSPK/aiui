@@ -140,8 +140,11 @@ export function defineResource<
         const invalidate = useInvalidate();
         return useMutation<TDTO, Error, TCreate>({
             mutationFn: create,
-            onSuccess: invalidate,
             ...opts,
+            onSuccess: (...args) => {
+                invalidate();
+                opts?.onSuccess?.(...args);
+            },
         });
     };
 
@@ -151,8 +154,11 @@ export function defineResource<
         const invalidate = useInvalidate();
         return useMutation<TDTO | null, Error, { id: string; data: TUpdate }>({
             mutationFn: ({ id, data }) => update(id, data),
-            onSuccess: invalidate,
             ...opts,
+            onSuccess: (...args) => {
+                invalidate();
+                opts?.onSuccess?.(...args);
+            },
         });
     };
 
@@ -162,8 +168,11 @@ export function defineResource<
         const invalidate = useInvalidate();
         return useMutation<null, Error, string>({
             mutationFn: remove,
-            onSuccess: invalidate,
             ...opts,
+            onSuccess: (...args) => {
+                invalidate();
+                opts?.onSuccess?.(...args);
+            },
         });
     };
 

@@ -1,50 +1,51 @@
 "use client"
 
 import * as React from "react"
+import { useQueryClient } from "@tanstack/react-query"
+
 import { conversations } from "@/lib/api"
-import { usePlaygroundStore } from "@/lib/stores/playground-store"
 import type { Message } from "@/components/playground/chat/types"
 
 interface UseMessageSyncOptions {
-    tabId: string
     conversationId: string | undefined
     messages: Message[]
     isLoading: boolean
+    pageSize: number
 }
 
-/**
- * Hook to sync messages to store and refresh sidebar.
+/** After a streaming run completes:
+ *  - Refresh the sidebar conversation list (new title / updated_at).
+ *  - Write the current message tail into the per-conversation messages
+ *    cache so that switching away and back stays in sync with what the
+ *    user just sent (no stale flash).
  *
- * - Debounced (1s) write of the hook's authoritative `Message[]` into
- *   the store. We persist the same shape we hold in component state —
- *   `Message` from `chat/types` — so there's no round-trip conversion
- *   between hook and store. (Wire-format conversion happens once at
- *   the server boundary in `usePaginatedMessages.transformMessage`.)
- * - Refresh the sidebar when streaming completes so the conversation
- *   list picks up the new title / preview.
- */
+ *  The invalidator is list-only — it deliberately does NOT touch the
+ *  per-conversation messages cache, which is the whole point of having
+ *  the cache survive conversation switches. */
 export function useMessageSync({
-    tabId,
-    conversationId: _conversationId,
+    conversationId,
     messages,
-    isLoading
+    isLoading,
+    pageSize,
 }: UseMessageSyncOptions): void {
-    const updateTab = usePlaygroundStore((state) => state.updateTab)
-    const invalidateConversations = conversations.useInvalidate()
+    const invalidateList = conversations.useInvalidateList()
+    const queryClient = useQueryClient()
+    const prevLoadingRef = React.useRef(isLoading)
 
     React.useEffect(() => {
-        const timeout = setTimeout(() => {
-            updateTab(tabId, { messages })
-        }, 1000)
-        return () => clearTimeout(timeout)
-    }, [messages, updateTab, tabId])
+        const justFinished = prevLoadingRef.current && !isLoading
+        prevLoadingRef.current = isLoading
+        if (!justFinished) return
 
-    // Refresh sidebar when message sending completes
-    const prevIsLoadingRef = React.useRef(isLoading)
-    React.useEffect(() => {
-        if (prevIsLoadingRef.current && !isLoading && messages.length > 0) {
-            invalidateConversations()
+        invalidateList()
+
+        if (conversationId && messages.length > 0) {
+            // Keep the cache aligned with the head of the visible list so
+            // a quick switch-away-and-back doesn't show pre-stream state.
+            queryClient.setQueryData<Message[]>(
+                conversations.messagesCacheKey(conversationId, pageSize),
+                messages.slice(-pageSize)
+            )
         }
-        prevIsLoadingRef.current = isLoading
-    }, [isLoading, messages.length, invalidateConversations])
+    }, [isLoading, conversationId, messages, pageSize, invalidateList, queryClient])
 }

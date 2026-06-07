@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { usePlaygroundStore, ModelConfig } from "@/lib/stores/playground-store"
+import { usePlaygroundStore, type ModelConfig } from "@/lib/stores/playground-store"
 import { useShallow } from "zustand/react/shallow"
 
 export interface UseModelConfigsReturn {
@@ -9,100 +9,62 @@ export interface UseModelConfigsReturn {
     getModelConfig: (modelId: string) => ModelConfig
     updateModelConfig: (modelId: string, config: ModelConfig) => void
     removeModelConfig: (modelId: string) => void
-    buildConfigForModel: (modelId: string, globalHistoryLimit?: number) => Record<string, any>
+    buildConfigForModel: (modelId: string, globalHistoryLimit?: number) => Record<string, unknown>
 }
 
-// Empty object constant to avoid creating new references
 const EMPTY_CONFIGS: Record<string, ModelConfig> = {}
 
-/**
- * Hook to manage per-model configurations
- * Stores configs in the tab and provides helpers to build API configs
- */
-export function useModelConfigs(tabId: string): UseModelConfigsReturn {
-    const updateTab = usePlaygroundStore((state) => state.updateTab)
+/** Per-model configs keyed by conversationId in the playground store. */
+export function useModelConfigs(conversationId: string): UseModelConfigsReturn {
+    const updateSettings = usePlaygroundStore((s) => s.updateSettings)
 
-    // Get current tab's model configs
-    const getTabConfigs = React.useCallback(() => {
-        const tab = usePlaygroundStore.getState().tabs.find(t => t.id === tabId)
-        return tab?.modelConfigs || EMPTY_CONFIGS
-    }, [tabId])
-
-    // Subscribe to model configs changes with shallow comparison
     const modelConfigs = usePlaygroundStore(
-        useShallow((state) => {
-            const tab = state.tabs.find(t => t.id === tabId)
-            return tab?.modelConfigs || EMPTY_CONFIGS
-        })
+        useShallow((state) => state.settings[conversationId]?.modelConfigs ?? EMPTY_CONFIGS)
     )
 
-    // Get config for a specific model
-    const getModelConfig = React.useCallback((modelId: string): ModelConfig => {
-        const configs = getTabConfigs()
-        return configs[modelId] || {}
-    }, [getTabConfigs])
+    const getCurrent = React.useCallback(
+        () => usePlaygroundStore.getState().getSettings(conversationId).modelConfigs ?? EMPTY_CONFIGS,
+        [conversationId]
+    )
 
-    // Update config for a specific model
-    const updateModelConfig = React.useCallback((modelId: string, config: ModelConfig) => {
-        const currentConfigs = getTabConfigs()
-        updateTab(tabId, {
-            modelConfigs: {
-                ...currentConfigs,
-                [modelId]: config
-            }
-        })
-    }, [tabId, updateTab, getTabConfigs])
+    const getModelConfig = React.useCallback(
+        (modelId: string): ModelConfig => getCurrent()[modelId] ?? {},
+        [getCurrent]
+    )
 
-    // Remove config for a model (when model is removed)
-    const removeModelConfig = React.useCallback((modelId: string) => {
-        const currentConfigs = getTabConfigs()
-        const { [modelId]: _, ...rest } = currentConfigs
-        updateTab(tabId, { modelConfigs: rest })
-    }, [tabId, updateTab, getTabConfigs])
+    const updateModelConfig = React.useCallback(
+        (modelId: string, config: ModelConfig) => {
+            updateSettings(conversationId, {
+                modelConfigs: { ...getCurrent(), [modelId]: config },
+            })
+        },
+        [conversationId, updateSettings, getCurrent]
+    )
 
-    // Build API config object for a specific model
-    const buildConfigForModel = React.useCallback((
-        modelId: string,
-        globalHistoryLimit?: number
-    ): Record<string, any> => {
-        const config = getModelConfig(modelId)
-        const result: Record<string, any> = {
-            stream: true,
-        }
+    const removeModelConfig = React.useCallback(
+        (modelId: string) => {
+            const rest = { ...getCurrent() }
+            delete rest[modelId]
+            updateSettings(conversationId, { modelConfigs: rest })
+        },
+        [conversationId, updateSettings, getCurrent]
+    )
 
-        // Add history limit if provided
-        if (globalHistoryLimit !== undefined) {
-            result.conv_history_limit = globalHistoryLimit
-        }
+    const buildConfigForModel = React.useCallback(
+        (modelId: string, globalHistoryLimit?: number): Record<string, unknown> => {
+            const config = getModelConfig(modelId)
+            const result: Record<string, unknown> = { stream: true }
+            if (globalHistoryLimit !== undefined) result.conv_history_limit = globalHistoryLimit
+            if (config.temperature !== undefined) result.temperature = config.temperature
+            if (config.maxTokens !== undefined) result.max_tokens = config.maxTokens
+            if (config.topP !== undefined) result.top_p = config.topP
+            if (config.frequencyPenalty !== undefined) result.frequency_penalty = config.frequencyPenalty
+            if (config.presencePenalty !== undefined) result.presence_penalty = config.presencePenalty
+            if (config.reasoningEffort) result.reasoning_effort = config.reasoningEffort
+            return result
+        },
+        [getModelConfig]
+    )
 
-        // Add model-specific params if set
-        if (config.temperature !== undefined) {
-            result.temperature = config.temperature
-        }
-        if (config.maxTokens !== undefined) {
-            result.max_tokens = config.maxTokens
-        }
-        if (config.topP !== undefined) {
-            result.top_p = config.topP
-        }
-        if (config.frequencyPenalty !== undefined) {
-            result.frequency_penalty = config.frequencyPenalty
-        }
-        if (config.presencePenalty !== undefined) {
-            result.presence_penalty = config.presencePenalty
-        }
-        if (config.reasoningEffort) {
-            result.reasoning_effort = config.reasoningEffort
-        }
-
-        return result
-    }, [getModelConfig])
-
-    return {
-        modelConfigs,
-        getModelConfig,
-        updateModelConfig,
-        removeModelConfig,
-        buildConfigForModel
-    }
+    return { modelConfigs, getModelConfig, updateModelConfig, removeModelConfig, buildConfigForModel }
 }

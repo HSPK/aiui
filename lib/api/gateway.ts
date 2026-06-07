@@ -1,4 +1,8 @@
-import { ApiError, rawFetch } from "./client";
+import { ApiError, fetcher, rawFetch } from "./client";
+import type {
+    PlaygroundEmbeddingInput,
+    PlaygroundEmbeddingResult,
+} from "@/lib/schemas/playground";
 
 interface PlaygroundChatBody {
     message: string;
@@ -32,6 +36,15 @@ interface TitleArgs {
 export const gateway = {
     playgroundChat: (body: PlaygroundChatBody) =>
         rawFetch("/playground/chat", { method: "POST", body: JSON.stringify(body) }),
+
+    /** Run the same A/B pair through every requested model and return
+     *  vectors + cosine similarity. Goes through the standard envelope
+     *  like other internal endpoints, so error handling is uniform. */
+    playgroundEmbedding: (body: PlaygroundEmbeddingInput) =>
+        fetcher<PlaygroundEmbeddingResult>("/playground/embedding", {
+            method: "POST",
+            body: JSON.stringify(body),
+        }),
 
     /** Title generator (uses the in-house OpenAI-compatible endpoint over cookie). */
     async generateTitle({ model, user, assistant }: TitleArgs): Promise<string> {

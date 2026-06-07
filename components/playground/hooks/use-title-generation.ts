@@ -1,87 +1,117 @@
 "use client"
 
-import { conversations, gateway, preferences } from "@/lib/api";
 import * as React from "react"
-import { usePlaygroundStore } from "@/lib/stores/playground-store"
+import { useQueryClient } from "@tanstack/react-query"
 
+import { conversations, gateway, preferences } from "@/lib/api"
+import type { ConversationDTO } from "@/lib/schemas/conversation"
+import type { Paginated } from "@/lib/schemas/common"
 import type { Message } from "@/components/playground/chat/types"
 
 interface UseTitleGenerationOptions {
-    tabId: string
     conversationId: string | undefined
     messages: Message[]
     isLoading: boolean
     getModelIds: () => string[]
 }
 
-/**
- * Hook to auto-generate conversation title after first response
- * Only generates once per conversation, skips if already has meaningful title
- */
+const DEFAULT_TITLES = new Set(["", "New Chat", "Chat", "New Tab"])
+
+type ConvCacheEntry = Paginated<ConversationDTO> | { pages?: Paginated<ConversationDTO>[] }
+
+/** Auto-generate a conversation title the first time a fresh chat
+ *  produces an assistant response. Guards:
+ *  - hasStreamedRef: must have observed a stream complete this mount
+ *    (prevents firing on simple reopen of an already-loaded chat)
+ *  - cached title check: skip if the sidebar list already shows a
+ *    non-default title for this conversation (prevents bumping
+ *    updated_at on subsequent sends to an existing conversation). */
 export function useTitleGeneration({
-    tabId,
     conversationId,
     messages,
     isLoading,
-    getModelIds
+    getModelIds,
 }: UseTitleGenerationOptions): void {
     const invalidateConversations = conversations.useInvalidate()
     const { data: userPrefs } = preferences.useGet()
     const defaultSummaryModel = userPrefs?.default_summary_model ?? ""
     const defaultModel = userPrefs?.default_model ?? ""
-    const updateTabTitle = usePlaygroundStore((state) => state.updateTabTitle)
-    const tabTitle = usePlaygroundStore(
-        (state) => state.tabs.find(t => t.id === tabId)?.title
-    )
+    const queryClient = useQueryClient()
 
-    // Track if we've generated a title for this conversation
-    const titleGeneratedRef = React.useRef<Set<string>>(new Set())
+    const generatedRef = React.useRef<Set<string>>(new Set())
+    const hasStreamedRef = React.useRef(false)
+    const prevLoadingRef = React.useRef(isLoading)
 
     React.useEffect(() => {
+        if (isLoading) hasStreamedRef.current = true
+        const justFinished = prevLoadingRef.current && !isLoading
+        prevLoadingRef.current = isLoading
+
+        if (!justFinished) return
         if (!conversationId) return
+        if (generatedRef.current.has(conversationId)) return
+        if (!hasStreamedRef.current) return
+        if (messages.length < 2) return
 
-        // Only generate title once per conversation
-        if (titleGeneratedRef.current.has(conversationId)) return
+        const userMsg = messages.find((m) => m.role === "user")
+        const assistantMsg = messages.find(
+            (m) => m.role === "assistant" && m.content && m.content.length > 10
+        )
+        if (!userMsg || !assistantMsg) return
 
-        // Skip if conversation already has a meaningful title (not default)
-        const defaultTitles = ['Chat', 'New Tab', 'New Chat', '']
-        if (tabTitle && !defaultTitles.includes(tabTitle)) {
-            titleGeneratedRef.current.add(conversationId)
+        const cachedTitle = readCachedTitle(queryClient, conversationId)
+        if (cachedTitle != null && !DEFAULT_TITLES.has(cachedTitle)) {
+            generatedRef.current.add(conversationId)
             return
         }
 
-        // Need at least one user message and one assistant response
-        if (messages.length < 2) return
-
-        const userMsg = messages.find(m => m.role === 'user')
-        const assistantMsg = messages.find(m => m.role === 'assistant' && m.content && m.content.length > 10)
-
-        if (!userMsg || !assistantMsg) return
-
-        // Don't generate if still loading (assistant might not be done)
-        if (isLoading) return
-
-        // Mark as generated to prevent duplicate calls
-        titleGeneratedRef.current.add(conversationId)
-
-        // Pick summary model: explicit preference > general default > first selected
-        const currentModelIds = getModelIds()
-        const summaryModel = defaultSummaryModel || defaultModel || currentModelIds[0]
+        generatedRef.current.add(conversationId)
+        const summaryModel = defaultSummaryModel || defaultModel || getModelIds()[0]
         if (!summaryModel) return
 
-        // Generate title in background
-        gateway.generateTitle({ model: summaryModel, user: userMsg.content, assistant: assistantMsg.content })
-            .then(title => {
-                updateTabTitle(tabId, title)
-                // Also update on backend
+        gateway
+            .generateTitle({
+                model: summaryModel,
+                user: userMsg.content,
+                assistant: assistantMsg.content,
+            })
+            .then((title) => {
                 conversations.updateTitle(conversationId, title).catch(() => {
-                    // Ignore backend errors, local title is sufficient
+                    /* sidebar still shows existing title; ignore */
                 })
-                // Refresh sidebar history
                 invalidateConversations()
             })
-            .catch(err => {
-                console.error('Failed to generate title:', err)
-            })
-    }, [messages, isLoading, conversationId, tabTitle, getModelIds, defaultSummaryModel, defaultModel, tabId, updateTabTitle, invalidateConversations])
+            .catch((err) => console.error("Failed to generate title:", err))
+    }, [
+        messages,
+        isLoading,
+        conversationId,
+        getModelIds,
+        defaultSummaryModel,
+        defaultModel,
+        invalidateConversations,
+        queryClient,
+    ])
+}
+
+/** Look up a conversation's title from any cached list/infinite query
+ *  for the conversations resource. Returns null if not in cache (which
+ *  is the case for brand-new conversations until the sidebar refreshes). */
+function readCachedTitle(
+    queryClient: ReturnType<typeof useQueryClient>,
+    conversationId: string
+): string | null {
+    const entries = queryClient.getQueriesData<ConvCacheEntry>({
+        queryKey: conversations.keys.all(),
+    })
+    for (const [, data] of entries) {
+        if (!data) continue
+        const pages = (data as { pages?: Paginated<ConversationDTO>[] }).pages
+        const items: ConversationDTO[] = pages
+            ? pages.flatMap((p) => p?.items ?? [])
+            : ((data as Paginated<ConversationDTO>).items ?? [])
+        const match = items.find((c) => c.id === conversationId)
+        if (match) return match.title
+    }
+    return null
 }

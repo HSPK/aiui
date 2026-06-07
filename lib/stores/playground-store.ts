@@ -1,12 +1,6 @@
-import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
-import type { Message } from "@/components/playground/chat/types";
+import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
 
-export type TabType = "chat" | "prompt" | "embedding" | "rerank" | "new";
-
-// Per-model configuration — all fields optional (undefined = use API default).
-// SHARED via the popover component so the form and the store agree on
-// the shape.
 export interface ModelConfig {
     temperature?: number;
     maxTokens?: number;
@@ -16,10 +10,8 @@ export interface ModelConfig {
     reasoningEffort?: "low" | "medium" | "high";
 }
 
-// Empty config — all undefined means use API defaults.
 export const DEFAULT_MODEL_CONFIG: ModelConfig = {};
 
-// Check if config is empty (all undefined).
 export function isEmptyConfig(config: ModelConfig): boolean {
     return (
         config.temperature === undefined &&
@@ -31,125 +23,66 @@ export function isEmptyConfig(config: ModelConfig): boolean {
     );
 }
 
-export interface PlaygroundTab {
-    id: string;
-    type: TabType;
-    title: string;
-    conversationId?: string;
-    modelId?: string; // Kept for legacy
-    modelIds?: string[]; // Use this for Multi-Model Support
-    modelConfigs?: Record<string, ModelConfig>; // Per-model configs
+export interface ChatSettings {
+    modelIds?: string[];
+    modelConfigs?: Record<string, ModelConfig>;
     systemPrompt?: string;
-    temperature?: number; // Global fallback
-    maxTokens?: number;
     historyLimit?: number;
-    messages: Message[];
-    scrollPosition?: number;
 }
 
-interface PlaygroundState {
-    tabs: PlaygroundTab[];
-    activeTabId: string | null;
-    isSidebarOpen: boolean;
+export const EMPTY_SETTINGS: ChatSettings = Object.freeze({});
 
-    addTab: (type?: TabType | (Partial<PlaygroundTab> & { type: TabType })) => void;
-    removeTab: (id: string) => void;
-    setActiveTab: (id: string) => void;
-    updateTab: (id: string, updates: Partial<PlaygroundTab>) => void;
-    updateTabTitle: (id: string, title: string) => void;
-    closeOtherTabs: (id: string) => void;
-    closeAllTabs: () => void;
-    reorderTabs: (fromIndex: number, toIndex: number) => void;
-    toggleSidebar: () => void;
-    setSidebarOpen: (open: boolean) => void;
+interface PlaygroundState {
+    // Per-conversation settings, keyed by conversationId. Persisted to
+    // localStorage so reopening a chat retains its model / config.
+    settings: Record<string, ChatSettings>;
+
+    // History sidebar collapsed state (device-local).
+    isHistorySidebarOpen: boolean;
+
+    getSettings: (conversationId: string) => ChatSettings;
+    updateSettings: (conversationId: string, patch: Partial<ChatSettings>) => void;
+    removeSettings: (conversationId: string) => void;
+
+    toggleHistorySidebar: () => void;
+    setHistorySidebarOpen: (open: boolean) => void;
 }
 
 export const usePlaygroundStore = create<PlaygroundState>()(
     persist(
-        (set) => ({
-            tabs: [],
-            activeTabId: null,
-            isSidebarOpen: true,
+        (set, get) => ({
+            settings: {},
+            isHistorySidebarOpen: true,
 
-            addTab: (input) => set((state) => {
-                let tabConfig: Partial<PlaygroundTab> & { type: TabType };
+            getSettings: (id) => get().settings[id] ?? EMPTY_SETTINGS,
 
-                if (typeof input === "string") {
-                    tabConfig = { type: input };
-                } else if (!input) {
-                    tabConfig = { type: "new", title: "New Tab" };
-                } else {
-                    tabConfig = input;
-                }
+            updateSettings: (id, patch) =>
+                set((state) => ({
+                    settings: {
+                        ...state.settings,
+                        [id]: { ...(state.settings[id] ?? {}), ...patch },
+                    },
+                })),
 
-                const id = tabConfig.id || crypto.randomUUID();
-                const newTab: PlaygroundTab = {
-                    conversationId: crypto.randomUUID(),
-                    id,
-                    title: tabConfig.title || "New Tab",
-                    messages: [],
-                    ...tabConfig,
-                };
-                // Ensure there's always one tab? Maybe not.
-                return {
-                    tabs: [...state.tabs, newTab],
-                    activeTabId: id,
-                };
-            }),
+            removeSettings: (id) =>
+                set((state) => {
+                    if (!(id in state.settings)) return state;
+                    const next = { ...state.settings };
+                    delete next[id];
+                    return { settings: next };
+                }),
 
-            removeTab: (id) => set((state) => {
-                const newTabs = state.tabs.filter((t) => t.id !== id);
-                let newActiveId = state.activeTabId;
+            toggleHistorySidebar: () =>
+                set((state) => ({ isHistorySidebarOpen: !state.isHistorySidebarOpen })),
 
-                if (state.activeTabId === id) {
-                    newActiveId = newTabs.length > 0 ? newTabs[newTabs.length - 1].id : null;
-                }
-
-                return {
-                    tabs: newTabs,
-                    activeTabId: newActiveId,
-                };
-            }),
-
-            setActiveTab: (id) => set({ activeTabId: id }),
-
-            updateTab: (id, updates) => set((state) => ({
-                tabs: state.tabs.map((t) => (t.id === id ? { ...t, ...updates } : t)),
-            })),
-
-            updateTabTitle: (id, title) => set((state) => ({
-                tabs: state.tabs.map((t) => (t.id === id ? { ...t, title } : t)),
-            })),
-
-            closeOtherTabs: (id) => set((state) => ({
-                tabs: state.tabs.filter((t) => t.id === id),
-                activeTabId: id,
-            })),
-
-            closeAllTabs: () => set({
-                tabs: [],
-                activeTabId: null,
-            }),
-
-            reorderTabs: (fromIndex, toIndex) => set((state) => {
-                const newTabs = [...state.tabs];
-                const [movedTab] = newTabs.splice(fromIndex, 1);
-                newTabs.splice(toIndex, 0, movedTab);
-                return { tabs: newTabs };
-            }),
-
-            toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
-            setSidebarOpen: (open) => set({ isSidebarOpen: open }),
+            setHistorySidebarOpen: (open) => set({ isHistorySidebarOpen: open }),
         }),
         {
-            name: 'playground-storage',
+            name: "playground-storage",
             storage: createJSONStorage(() => localStorage),
             partialize: (state) => ({
-                ...state,
-                tabs: state.tabs.map(tab => ({
-                    ...tab,
-                    messages: [] // Don't persist messages to localStorage for performance
-                }))
+                settings: state.settings,
+                isHistorySidebarOpen: state.isHistorySidebarOpen,
             }),
         }
     )

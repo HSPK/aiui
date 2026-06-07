@@ -1,113 +1,94 @@
 "use client"
 
-import { models } from "@/lib/api";
 import * as React from "react"
-import { Plus, Settings2 } from "lucide-react"
+import { Settings2 } from "lucide-react"
+import { useShallow } from "zustand/react/shallow"
+
+import { models } from "@/lib/api"
+import { usePlaygroundStore, type ModelConfig } from "@/lib/stores/playground-store"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { usePlaygroundStore, ModelConfig } from "@/lib/stores/playground-store"
-import { useShallow } from "zustand/react/shallow"
-
-import { ModelConfigPopover, DEFAULT_MODEL_CONFIG } from "./model-config-popover"
 import {
     Popover,
     PopoverContent,
     PopoverTrigger,
 } from "@/components/ui/popover"
-import { cn } from "@/lib/utils"
+
+import { ModelConfigPopover, DEFAULT_MODEL_CONFIG } from "./model-config-popover"
 
 interface ModelChipsWithConfigProps {
-    tabId: string
+    conversationId: string
     historyLimit: number
     onHistoryLimitChange: (value: number) => void
 }
 
-// Empty constants to avoid creating new references
 const EMPTY_MODEL_IDS: string[] = []
 const EMPTY_CONFIGS: Record<string, ModelConfig> = {}
 
-/**
- * Displays selected models as chips with per-model config popovers
- * Also includes a global history limit setting
- */
+/** Selected models row — each chip opens a per-model config popover.
+ *  Global settings popover holds history limit. */
 export const ModelChipsWithConfig = React.memo(function ModelChipsWithConfig({
-    tabId,
+    conversationId,
     historyLimit,
     onHistoryLimitChange,
 }: ModelChipsWithConfigProps) {
-    // Get models data for provider info — 5min staleTime, the catalog is
-    // small and refreshes via discovery cache on its own cadence.
     const { data: modelsData } = models.useList(undefined, { staleTime: 5 * 60 * 1000 })
 
     const modelsMap = React.useMemo(() => {
         const map = new Map<string, { provider?: string }>()
         if (Array.isArray(modelsData)) {
-            modelsData.forEach(m => map.set(m.name, { provider: m.provider ?? undefined }))
+            modelsData.forEach((m) => map.set(m.name, { provider: m.provider ?? undefined }))
         }
         return map
     }, [modelsData])
 
-    // Subscribe to selected models with shallow comparison
     const selectedModelIds = usePlaygroundStore(
-        useShallow((state) => {
-            const tab = state.tabs.find(t => t.id === tabId)
-            return tab?.modelIds || EMPTY_MODEL_IDS
-        })
+        useShallow((state) => state.settings[conversationId]?.modelIds ?? EMPTY_MODEL_IDS)
     )
 
-    // Subscribe to model configs with shallow comparison
     const modelConfigs = usePlaygroundStore(
-        useShallow((state) => {
-            const tab = state.tabs.find(t => t.id === tabId)
-            return tab?.modelConfigs || EMPTY_CONFIGS
-        })
+        useShallow((state) => state.settings[conversationId]?.modelConfigs ?? EMPTY_CONFIGS)
     )
 
-    const updateTab = usePlaygroundStore((state) => state.updateTab)
+    const updateSettings = usePlaygroundStore((s) => s.updateSettings)
 
-    // Update config for a model
-    const handleConfigChange = React.useCallback((modelId: string, config: ModelConfig) => {
-        const currentConfigs = usePlaygroundStore.getState().tabs.find(t => t.id === tabId)?.modelConfigs || {}
-        updateTab(tabId, {
-            modelConfigs: {
-                ...currentConfigs,
-                [modelId]: config
-            }
-        })
-    }, [tabId, updateTab])
+    const handleConfigChange = React.useCallback(
+        (modelId: string, config: ModelConfig) => {
+            const current =
+                usePlaygroundStore.getState().getSettings(conversationId).modelConfigs ?? {}
+            updateSettings(conversationId, {
+                modelConfigs: { ...current, [modelId]: config },
+            })
+        },
+        [conversationId, updateSettings]
+    )
 
-    // Remove a model
-    const handleRemoveModel = React.useCallback((modelId: string) => {
-        const tab = usePlaygroundStore.getState().tabs.find(t => t.id === tabId)
-        if (!tab) return
+    const handleRemoveModel = React.useCallback(
+        (modelId: string) => {
+            const settings = usePlaygroundStore.getState().getSettings(conversationId)
+            const newModelIds = (settings.modelIds ?? []).filter((id) => id !== modelId)
+            const restConfigs = { ...(settings.modelConfigs ?? {}) }
+            delete restConfigs[modelId]
+            updateSettings(conversationId, {
+                modelIds: newModelIds,
+                modelConfigs: restConfigs,
+            })
+        },
+        [conversationId, updateSettings]
+    )
 
-        const newModelIds = (tab.modelIds || []).filter(id => id !== modelId)
-        const { [modelId]: _, ...restConfigs } = tab.modelConfigs || {}
-
-        updateTab(tabId, {
-            modelIds: newModelIds,
-            modelConfigs: restConfigs
-        })
-    }, [tabId, updateTab])
-
-    // Local state for history popover
     const [localHistory, setLocalHistory] = React.useState(historyLimit)
     const [historyOpen, setHistoryOpen] = React.useState(false)
 
     React.useEffect(() => {
-        if (historyOpen) {
-            setLocalHistory(historyLimit)
-        }
+        if (historyOpen) setLocalHistory(historyLimit)
     }, [historyOpen, historyLimit])
 
-    if (selectedModelIds.length === 0) {
-        return null
-    }
+    if (selectedModelIds.length === 0) return null
 
     return (
         <div className="flex items-center gap-1.5 flex-wrap">
-            {/* Model chips with config popovers */}
             {selectedModelIds.map((modelId) => (
                 <ModelConfigPopover
                     key={modelId}
@@ -120,7 +101,6 @@ export const ModelChipsWithConfig = React.memo(function ModelChipsWithConfig({
                 />
             ))}
 
-            {/* Global settings button */}
             <Popover open={historyOpen} onOpenChange={setHistoryOpen}>
                 <PopoverTrigger asChild>
                     <Button

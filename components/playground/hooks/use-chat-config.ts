@@ -19,42 +19,27 @@ export interface UseChatConfigReturn {
     historyLimit: number
 }
 
-/**
- * Hook to manage global chat configuration (historyLimit)
- * Per-model configs (temperature, etc.) are now handled by useModelConfigs
- */
-export function useChatConfig(tabId: string): UseChatConfigReturn {
-    const updateTab = usePlaygroundStore((state) => state.updateTab)
+/** Global chat config — currently just history limit. Per-model params
+ *  live in `useModelConfigs`. */
+export function useChatConfig(conversationId: string): UseChatConfigReturn {
+    const updateSettings = usePlaygroundStore((s) => s.updateSettings)
     const { data: userPrefs } = preferences.useGet()
     const defaultHistoryLimit = userPrefs?.default_history_limit ?? 10
 
-    // Get initial values from tab or settings
-    const getInitialTab = React.useCallback(() => {
-        return usePlaygroundStore.getState().tabs.find(t => t.id === tabId)
-    }, [tabId])
-
-    const initialTab = getInitialTab()
-
+    const initial = usePlaygroundStore.getState().getSettings(conversationId)
     const [historyLimit, setHistoryLimit] = React.useState(
-        initialTab?.historyLimit ?? defaultHistoryLimit
+        initial.historyLimit ?? defaultHistoryLimit
     )
 
-    // Config ref for ChatInput - prevents re-renders
     const configRef = React.useRef<ChatConfig>({ historyLimit })
     configRef.current = { historyLimit }
 
-    // Callbacks ref for ChatInput - stable reference
     const callbacksRef = React.useRef<ChatConfigCallbacks>({
         onHistoryLimitChange: (val: number) => {
             setHistoryLimit(val)
-            updateTab(tabId, { historyLimit: val })
-        }
+            updateSettings(conversationId, { historyLimit: val })
+        },
     })
 
-    return {
-        config: { historyLimit },
-        configRef,
-        callbacksRef,
-        historyLimit
-    }
+    return { config: { historyLimit }, configRef, callbacksRef, historyLimit }
 }

@@ -1,5 +1,7 @@
-import { ApiError, conversations } from "@/lib/api";
 import * as React from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+
+import { ApiError, conversations } from "@/lib/api"
 import type { Message } from "@/components/playground/chat/types"
 import type { MessageDTO } from "@/lib/schemas/conversation"
 
@@ -10,10 +12,9 @@ interface UsePaginatedMessagesOptions {
     pageSize?: number
 }
 
-/** Convert a server `MessageDTO` to the FE-canonical `Message`.
- *  This is the single conversion point between wire-format (where
- *  `content` is the OpenAI-style `[{type:"text", text:"..."}]` array)
- *  and the hook/store shape (where `content` is a plain string). */
+/** Convert a server `MessageDTO` to the FE-canonical `Message`. Single
+ *  conversion point — wire format `content` is OpenAI-style
+ *  `[{type:"text", text:"…"}]` array; hook/store shape is plain string. */
 export function transformMessage(m: MessageDTO): Message {
     const raw = m.content
     let content: string
@@ -41,62 +42,81 @@ export function transformMessage(m: MessageDTO): Message {
     }
 }
 
+/** Read the cached initial-page `Message[]` for a conversation, if any.
+ *  Synchronous — safe to call during render to seed component state and
+ *  avoid the loading flash when switching to a recently-viewed chat. */
+export function readCachedMessages(
+    queryClient: ReturnType<typeof useQueryClient>,
+    conversationId: string | undefined,
+    pageSize = 20
+): Message[] | null {
+    if (!conversationId) return null
+    return (
+        queryClient.getQueryData<Message[]>(
+            conversations.messagesCacheKey(conversationId, pageSize)
+        ) ?? null
+    )
+}
+
+/** Fetches + caches the first page of messages for a conversation, then
+ *  paginates older messages on demand. The initial page lives in
+ *  TanStack Query (staleTime 5min, gcTime 10min) so revisiting a chat
+ *  within that window is instant. */
 export function usePaginatedMessages({
     conversationId,
     initialMessages,
     setMessages,
     pageSize = 20,
 }: UsePaginatedMessagesOptions) {
+    const queryClient = useQueryClient()
     const [isLoadingMore, setIsLoadingMore] = React.useState(false)
     const [hasMore, setHasMore] = React.useState(true)
     const pageRef = React.useRef(2)
-    const isFirstLoadRef = React.useRef(true)
+    const hydratedRef = React.useRef<string | null>(null)
 
-    // Initial load
-    React.useEffect(() => {
-        // Sync pageRef based on loaded messages
-        if (isFirstLoadRef.current && initialMessages.length > 0) {
-            isFirstLoadRef.current = false
-            const p = Math.floor(initialMessages.length / pageSize) + 1
-            pageRef.current = p
-        }
-
-        // Fetch initial messages if needed
-        if (conversationId && initialMessages.length === 0 && isFirstLoadRef.current) {
-            isFirstLoadRef.current = false
-
-            const fetchInitial = async () => {
-                try {
-                    const res = await conversations.listMessages(conversationId, {
-                        page: 1,
-                        page_size: pageSize,
-                        sort: "-created_at"
-                    })
-
-                    if (res.items.length > 0) {
-                        const newMsgs = res.items.reverse().map(transformMessage)
-                        setMessages(newMsgs)
-                        setHasMore(res.items.length >= pageSize)
-                        pageRef.current = 2
-                    } else {
-                        setHasMore(false)
-                    }
-                } catch (e) {
-                    // 404 = no server-side conversation row yet (the FE
-                    // generates the id up-front and the server creates the
-                    // row on first message). Treat as "no messages".
-                    if (e instanceof ApiError && e.status === 404) {
-                        setHasMore(false)
-                        return
-                    }
-                    console.error("Failed to load initial messages", e)
-                }
+    const query = useQuery({
+        queryKey: conversationId
+            ? conversations.messagesCacheKey(conversationId, pageSize)
+            : ["conversations", "no-id", "messages-cache", pageSize],
+        queryFn: async (): Promise<Message[]> => {
+            if (!conversationId) return []
+            try {
+                const res = await conversations.listMessages(conversationId, {
+                    page: 1,
+                    page_size: pageSize,
+                    sort: "-created_at",
+                })
+                return res.items.slice().reverse().map(transformMessage)
+            } catch (e) {
+                // 404 = no server-side conversation row yet (FE generates the
+                // id up-front; the server creates the row on first message).
+                if (e instanceof ApiError && e.status === 404) return []
+                throw e
             }
-            fetchInitial()
-        }
-    }, [conversationId, initialMessages.length, setMessages, pageSize])
+        },
+        enabled: !!conversationId,
+        staleTime: 5 * 60 * 1000,
+        gcTime: 10 * 60 * 1000,
+    })
 
-    // Load more function
+    // Hydrate local message state from the query (once per conversation).
+    // Skips overwriting if the parent already has messages (e.g. mid-stream).
+    React.useEffect(() => {
+        if (!conversationId) return
+        if (hydratedRef.current === conversationId) return
+        const data = query.data
+        if (!data) return
+        hydratedRef.current = conversationId
+
+        if (initialMessages.length === 0) {
+            setMessages(data)
+            setHasMore(data.length >= pageSize)
+            pageRef.current = data.length > 0 ? 2 : 1
+        } else {
+            pageRef.current = Math.floor(initialMessages.length / pageSize) + 1
+        }
+    }, [conversationId, query.data, initialMessages.length, setMessages, pageSize])
+
     const loadMore = React.useCallback(async () => {
         if (!hasMore || isLoadingMore || !conversationId) return null
 
@@ -106,29 +126,32 @@ export function usePaginatedMessages({
             const res = await conversations.listMessages(conversationId, {
                 page: pageRef.current,
                 page_size: pageSize,
-                sort: '-created_at'
+                sort: "-created_at",
             })
 
             if (res.items.length < pageSize) setHasMore(false)
 
             if (res.items.length > 0) {
                 pageRef.current += 1
-                const newMessages = res.items.reverse().map(transformMessage)
+                const newMessages = res.items.slice().reverse().map(transformMessage)
 
-                // Prepend messages with deduplication
-                setMessages(prev => {
-                    const existingIds = new Set(prev.map(m => m.id))
-                    const uniqueNewMessages = newMessages.filter(m => !existingIds.has(m.id))
-                    if (uniqueNewMessages.length === 0) return prev
-                    return [...uniqueNewMessages, ...prev]
+                setMessages((prev) => {
+                    const existingIds = new Set(prev.map((m) => m.id))
+                    const unique = newMessages.filter((m) => !existingIds.has(m.id))
+                    if (unique.length === 0) return prev
+                    const merged = [...unique, ...prev]
+                    // Keep the cache in sync with the visible head of the list.
+                    queryClient.setQueryData<Message[]>(
+                        conversations.messagesCacheKey(conversationId, pageSize),
+                        merged.slice(0, pageSize)
+                    )
+                    return merged
                 })
 
                 return newMessages
             }
             return null
         } catch (e) {
-            // Same as initial load: a 404 means the conversation never made
-            // it to the server (no messages sent yet) — treat as "no more".
             if (e instanceof ApiError && e.status === 404) {
                 setHasMore(false)
                 return null
@@ -138,11 +161,16 @@ export function usePaginatedMessages({
         } finally {
             setIsLoadingMore(false)
         }
-    }, [hasMore, isLoadingMore, conversationId, setMessages, pageSize])
+    }, [hasMore, isLoadingMore, conversationId, setMessages, pageSize, queryClient])
+
+    // True only when we have no data yet and a fetch is in flight. False on
+    // cache hit so the chat surface shows messages immediately on switch.
+    const isInitialLoading = query.isLoading && !query.data
 
     return {
         isLoadingMore,
         hasMore,
         loadMore,
+        isInitialLoading,
     }
 }

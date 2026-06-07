@@ -13,7 +13,9 @@ import rehypeKatex from 'rehype-katex'
 import { ProviderIcon } from "@/components/ProviderIcon"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { preferences } from "@/lib/api"
+import { defaultUserPreferences } from "@/lib/schemas/preferences"
 import type { Message } from "@/components/playground/chat/types"
+import { useTypewriter } from "@/components/playground/chat/use-typewriter"
 
 import { toast } from "sonner"
 import { CodeBlock, InlineCode } from "./code-block"
@@ -171,9 +173,13 @@ export const ChatMessage = React.memo(({
         (initialRating as "up" | "down" | "none") || "none"
     )
     const [isRating, setIsRating] = React.useState(false)
-    const { data: userPrefs } = preferences.useGet()
-    const userName = userPrefs?.user_name ?? "User"
-    const userAvatar = userPrefs?.user_avatar ?? "👤"
+    const { data: userPrefsServer } = preferences.useGet()
+    const userPrefs = userPrefsServer ?? defaultUserPreferences
+    const userName = userPrefs.user_name?.trim() || "User"
+    const userAvatar = userPrefs.user_avatar || "👤"
+    const bubbleStyle = userPrefs.chat_bubble_style
+    const renderMode = userPrefs.chat_render_mode
+    const typewriterCps = userPrefs.typewriter_cps
 
     // Sync rating state when initialRating changes (e.g., from server)
     React.useEffect(() => {
@@ -186,6 +192,17 @@ export const ChatMessage = React.memo(({
     // conversion happens once at the server boundary in
     // `usePaginatedMessages.transformMessage`, never round-tripped.
     const displayContent = content ?? ""
+
+    const typewriterEnabled = renderMode === "typewriter" && role === "assistant"
+    const animatedContent = useTypewriter(displayContent, {
+        enabled: typewriterEnabled,
+        cps: typewriterCps,
+    })
+    const visibleContent = typewriterEnabled ? animatedContent : displayContent
+    const typewriterAnimating = typewriterEnabled && animatedContent.length < displayContent.length
+    const showCursor = role === "assistant"
+        && renderMode !== "instant"
+        && (isTyping || typewriterAnimating)
 
     const onCopy = React.useCallback(() => {
         navigator.clipboard.writeText(displayContent)
@@ -225,12 +242,23 @@ export const ChatMessage = React.memo(({
         )
     }, [isSibling])
 
+    // Layout knobs derived from chat_bubble_style. Siblings keep the existing
+    // card treatment regardless — they're a separate UX surface.
+    const isPlain = isSibling || bubbleStyle === "plain"
+    const isBubble = !isSibling && bubbleStyle === "bubble"
+    const isMinimal = !isSibling && bubbleStyle === "minimal"
+    const showHeader = isPlain
+    const isUserBubble = isBubble && role === "user"
+
     return (
         <div
             onClick={onSelect}
             className={cn(
                 "group relative transition-all m-0.5",
-                !isSibling && "flex gap-3 sm:gap-4 px-4 sm:px-6 md:px-6 lg:px-6 w-full py-4 sm:py-6 hover:bg-muted/30",
+                !isSibling && "flex w-full",
+                !isSibling && isPlain && "gap-3 sm:gap-4 px-4 sm:px-6 md:px-6 lg:px-6 py-4 sm:py-6 hover:bg-muted/30",
+                !isSibling && isBubble && "px-4 sm:px-6 py-3 sm:py-4",
+                !isSibling && isMinimal && "px-4 sm:px-6 py-2 sm:py-2.5 hover:bg-muted/20",
                 isSibling && "flex flex-col gap-3 border rounded-xl shadow-sm bg-card flex-shrink-0 px-4 py-4",
                 isSibling && siblingWidthClass,
                 isSibling && isSelected && "ring-0 ring-primary/20 border-primary/30 bg-card",
@@ -239,7 +267,15 @@ export const ChatMessage = React.memo(({
                 isSibling && !onSelect && "cursor-default"
             )}
         >
-            <div className="flex flex-col gap-3 w-full">
+            <div
+                className={cn(
+                    "flex flex-col w-full min-w-0",
+                    isPlain && "gap-3",
+                    isBubble && (isUserBubble ? "items-end gap-1.5" : "items-start gap-1.5"),
+                    isMinimal && "gap-1"
+                )}
+            >
+                {showHeader && (
                 <div className="flex items-center gap-3 sm:gap-4 w-full">
                     <Avatar className="h-7 w-7 sm:h-8 sm:w-8 shrink-0 bg-background border shadow-sm">
                         {role === "assistant" ? (
@@ -277,6 +313,7 @@ export const ChatMessage = React.memo(({
                         )}
                     </div>
                 </div>
+                )}
 
                 {/* Reasoning Block */}
                 {reasoning_content && (
@@ -311,7 +348,14 @@ export const ChatMessage = React.memo(({
                     </Collapsible>
                 )}
 
-                <div className="w-full min-w-0">
+                <div
+                    className={cn(
+                        "min-w-0",
+                        isPlain && "w-full",
+                        isBubble && "max-w-[85%] sm:max-w-[75%]",
+                        isMinimal && "w-full"
+                    )}
+                >
                     {messageError ? (
                         <div className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
                             <AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-destructive" />
@@ -342,16 +386,19 @@ export const ChatMessage = React.memo(({
                         <div className={cn(
                             "prose prose-sm dark:prose-invert max-w-none break-words relative leading-relaxed",
                             "[&_pre]:m-0 [&_pre]:p-0 [&_pre]:bg-transparent",
-                            isTyping && displayContent && "typing-active"
+                            isBubble && "rounded-2xl px-4 py-2.5",
+                            isBubble && !isUserBubble && "bg-muted/50",
+                            isUserBubble && "bg-primary text-primary-foreground [&_strong]:text-primary-foreground [&_a]:text-primary-foreground [&_a]:underline",
+                            showCursor && visibleContent && "typing-active"
                         )}>
                             <ReactMarkdown
                                 remarkPlugins={[remarkMath, remarkGfm]}
                                 rehypePlugins={[rehypeKatex]}
                                 components={markdownComponents}
                             >
-                                {displayContent}
+                                {visibleContent}
                             </ReactMarkdown>
-                            {isTyping && !displayContent && (
+                            {showCursor && !visibleContent && (
                                 <span className="typing-cursor text-primary">▋</span>
                             )}
                         </div>
@@ -359,10 +406,15 @@ export const ChatMessage = React.memo(({
                 </div>
             </div>
 
-            {/* Message Actions - Always at bottom border */}
+            {/* Message Actions - position depends on layout variant. Hidden for
+                empty user bubbles (no rating/regenerate to surface). */}
             <div className={cn(
                 "absolute bottom-0 translate-y-1/2 flex items-center gap-1.5 z-10",
-                isSibling ? "left-4" : "left-[4.5rem]"
+                isSibling && "left-4",
+                !isSibling && isPlain && "left-[4.5rem]",
+                !isSibling && isMinimal && "left-4",
+                !isSibling && isBubble && !isUserBubble && "left-4",
+                !isSibling && isUserBubble && "right-4"
             )}>
                 {/* Copy button - always visible on mobile, hover on desktop */}
                 <Button

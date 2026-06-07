@@ -1,134 +1,158 @@
 "use client"
 
-import { models, preferences } from "@/lib/api";
 import * as React from "react"
 import * as ReactDOM from "react-dom"
-import { ChevronsUpDown, Search, X, Bot } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { Search, Bot } from "lucide-react"
 
+import { models, preferences } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { ProviderIcon } from "@/components/ProviderIcon"
 
-// Simple model item - minimal DOM
-const ModelItem = React.memo(({
-    name,
-    provider,
-    isSelected,
-    onToggle
-}: {
-    name: string
-    provider: string
-    isSelected: boolean
-    onToggle: (name: string) => void
-}) => (
-    <button
-        type="button"
-        onClick={() => onToggle(name)}
-        className={cn(
-            "w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-sm text-left transition-colors",
-            isSelected ? "bg-accent text-accent-foreground" : "hover:bg-muted/50"
-        )}
-    >
-        <span className={cn(
-            "h-3.5 w-3.5 rounded-sm border flex items-center justify-center flex-shrink-0",
-            isSelected ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground/30"
-        )}>
-            {isSelected && <span className="text-[10px]">✓</span>}
-        </span>
-        <ProviderIcon providerName={provider} />
-        <span className="truncate flex-1">{name}</span>
-    </button>
-), (prev, next) => {
-    // Custom comparison - only re-render if these specific props change
-    return prev.name === next.name &&
+const ModelItem = React.memo(
+    ({
+        name,
+        provider,
+        isSelected,
+        onToggle,
+    }: {
+        name: string
+        provider: string
+        isSelected: boolean
+        onToggle: (name: string) => void
+    }) => (
+        <button
+            type="button"
+            onClick={() => onToggle(name)}
+            className={cn(
+                "w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-sm text-left transition-colors",
+                isSelected ? "bg-accent text-accent-foreground" : "hover:bg-muted/50"
+            )}
+        >
+            <span
+                className={cn(
+                    "h-3.5 w-3.5 rounded-sm border flex items-center justify-center flex-shrink-0",
+                    isSelected
+                        ? "bg-primary border-primary text-primary-foreground"
+                        : "border-muted-foreground/30"
+                )}
+            >
+                {isSelected && <span className="text-[10px]">✓</span>}
+            </span>
+            <ProviderIcon providerName={provider} />
+            <span className="truncate flex-1">{name}</span>
+        </button>
+    ),
+    (prev, next) =>
+        prev.name === next.name &&
         prev.provider === next.provider &&
         prev.isSelected === next.isSelected &&
         prev.onToggle === next.onToggle
-})
+)
 ModelItem.displayName = "ModelItem"
 
+const ModelList = React.memo(function ModelList({
+    models,
+    selectedSet,
+    isLoading,
+    onToggle,
+}: {
+    models: Array<{ name: string; provider?: string | null }>
+    selectedSet: Set<string>
+    isLoading: boolean
+    onToggle: (name: string) => void
+}) {
+    return (
+        <div className="max-h-[280px] overflow-y-auto scrollbar-thin p-1">
+            {isLoading ? (
+                <div className="p-2 text-sm text-muted-foreground">Loading...</div>
+            ) : models.length === 0 ? (
+                <div className="p-2 text-sm text-muted-foreground">No models found</div>
+            ) : (
+                models.map((model) => (
+                    <ModelItem
+                        key={model.name}
+                        name={model.name}
+                        provider={model.provider || "unknown"}
+                        isSelected={selectedSet.has(model.name)}
+                        onToggle={onToggle}
+                    />
+                ))
+            )}
+        </div>
+    )
+})
 
-// Connected version that directly subscribes to store - prevents prop drilling
-export function ConnectedModelSelector({ tabId }: { tabId: string }) {
+export function ConnectedModelSelector({ conversationId }: { conversationId: string }) {
     const [open, setOpen] = React.useState(false)
     const [searchQuery, setSearchQuery] = React.useState("")
     const triggerRef = React.useRef<HTMLButtonElement>(null)
     const dropdownRef = React.useRef<HTMLDivElement>(null)
     const [dropdownStyle, setDropdownStyle] = React.useState<React.CSSProperties>({})
+
     const { data: userPrefs } = preferences.useGet()
     const defaultModel = userPrefs?.default_model ?? ""
 
-    // Direct store access - stable refs
-    const storeRef = React.useRef(usePlaygroundStore)
-    const updateTab = usePlaygroundStore((state) => state.updateTab)
-
-    // Only subscribe to modelIds for badge count
+    const updateSettings = usePlaygroundStore((s) => s.updateSettings)
     const modelCount = usePlaygroundStore(
-        (state) => state.tabs.find(t => t.id === tabId)?.modelIds?.length || 0
+        (s) => s.settings[conversationId]?.modelIds?.length ?? 0
     )
 
-    const { data: modelsData, isLoading } = models.useList(undefined, { staleTime: 5 * 60 * 1000, gcTime: 10 * 60 * 1000 })
+    const { data: modelsData, isLoading } = models.useList(undefined, {
+        staleTime: 5 * 60 * 1000,
+        gcTime: 10 * 60 * 1000,
+    })
 
     const chatModels = React.useMemo(() => {
-        const allModels = Array.isArray(modelsData) ? modelsData : []
-        return allModels.filter(m => m.type === "chat")
+        const all = Array.isArray(modelsData) ? modelsData : []
+        return all.filter((m) => m.type === "chat")
     }, [modelsData])
 
-    // Auto-select default model
+    // Auto-select default model when none selected yet.
     React.useEffect(() => {
-        if (!isLoading && chatModels.length > 0) {
-            const currentIds = storeRef.current.getState().tabs.find(t => t.id === tabId)?.modelIds || []
-            if (currentIds.length === 0) {
-                const userDefault = defaultModel || "gpt-3.5-turbo"
-                const hasDefault = chatModels.some(m => m.name === userDefault)
-                updateTab(tabId, { modelIds: [hasDefault ? userDefault : chatModels[0].name] })
-            }
-        }
-    }, [isLoading, chatModels, defaultModel, tabId, updateTab])
+        if (isLoading || chatModels.length === 0) return
+        const currentIds =
+            usePlaygroundStore.getState().getSettings(conversationId).modelIds ?? []
+        if (currentIds.length > 0) return
+        const userDefault = defaultModel || "gpt-3.5-turbo"
+        const hasDefault = chatModels.some((m) => m.name === userDefault)
+        updateSettings(conversationId, {
+            modelIds: [hasDefault ? userDefault : chatModels[0].name],
+        })
+    }, [isLoading, chatModels, defaultModel, conversationId, updateSettings])
 
     const filteredModels = React.useMemo(() => {
         if (!searchQuery) return chatModels
         const q = searchQuery.toLowerCase()
-        return chatModels.filter(m => m.name.toLowerCase().includes(q))
+        return chatModels.filter((m) => m.name.toLowerCase().includes(q))
     }, [chatModels, searchQuery])
 
-    // Calculate dropdown position - returns style object
     const calculatePosition = React.useCallback((): React.CSSProperties => {
         if (!triggerRef.current) return {}
-
         const rect = triggerRef.current.getBoundingClientRect()
         const dropdownWidth = 320
-        const dropdownHeight = 380 // Approximate max height
+        const dropdownHeight = 380
         const padding = 8
 
-        // Calculate available space
         const spaceAbove = rect.top
         const spaceBelow = window.innerHeight - rect.bottom
-
-        // Prefer opening upward (above the input)
         const openAbove = spaceAbove >= dropdownHeight || spaceAbove > spaceBelow
 
-        // Determine horizontal position - prefer left alignment, adjust if not enough space
         let left = rect.left
         if (left + dropdownWidth > window.innerWidth - padding) {
             left = Math.max(padding, rect.right - dropdownWidth)
         }
 
         const style: React.CSSProperties = {
-            position: 'fixed',
+            position: "fixed",
             width: dropdownWidth,
             left,
-            zIndex: 9999, // Very high z-index to ensure it's above everything
+            zIndex: 9999,
         }
-
-        if (openAbove) {
-            style.bottom = window.innerHeight - rect.top + padding
-        } else {
-            style.top = rect.bottom + padding
-        }
-
+        if (openAbove) style.bottom = window.innerHeight - rect.top + padding
+        else style.top = rect.bottom + padding
         return style
     }, [])
 
@@ -136,21 +160,14 @@ export function ConnectedModelSelector({ tabId }: { tabId: string }) {
         setDropdownStyle(calculatePosition())
     }, [calculatePosition])
 
-    // Handle open state change - calculate position before rendering
     const handleOpen = React.useCallback(() => {
-        if (!open) {
-            // Calculate position BEFORE setting open to avoid jitter
-            setDropdownStyle(calculatePosition())
-        }
+        if (!open) setDropdownStyle(calculatePosition())
         setOpen(!open)
     }, [open, calculatePosition])
 
-    // Close on click outside
     React.useEffect(() => {
         if (!open) return
-
         updatePosition()
-
         const handleClickOutside = (e: MouseEvent) => {
             if (
                 triggerRef.current && !triggerRef.current.contains(e.target as Node) &&
@@ -159,18 +176,15 @@ export function ConnectedModelSelector({ tabId }: { tabId: string }) {
                 setOpen(false)
             }
         }
-
         const handleScroll = () => updatePosition()
         const handleResize = () => updatePosition()
-
-        document.addEventListener('mousedown', handleClickOutside)
-        window.addEventListener('scroll', handleScroll, true)
-        window.addEventListener('resize', handleResize)
-
+        document.addEventListener("mousedown", handleClickOutside)
+        window.addEventListener("scroll", handleScroll, true)
+        window.addEventListener("resize", handleResize)
         return () => {
-            document.removeEventListener('mousedown', handleClickOutside)
-            window.removeEventListener('scroll', handleScroll, true)
-            window.removeEventListener('resize', handleResize)
+            document.removeEventListener("mousedown", handleClickOutside)
+            window.removeEventListener("scroll", handleScroll, true)
+            window.removeEventListener("resize", handleResize)
         }
     }, [open, updatePosition])
 
@@ -178,24 +192,27 @@ export function ConnectedModelSelector({ tabId }: { tabId: string }) {
         if (!open) setSearchQuery("")
     }, [open])
 
-    // Stable toggle - reads from store directly
-    const handleToggle = React.useCallback((name: string) => {
-        const currentIds = storeRef.current.getState().tabs.find(t => t.id === tabId)?.modelIds || []
-        const isSelected = currentIds.includes(name)
-        if (isSelected) {
-            if (currentIds.length > 1) {
-                updateTab(tabId, { modelIds: currentIds.filter(id => id !== name) })
+    const handleToggle = React.useCallback(
+        (name: string) => {
+            const current =
+                usePlaygroundStore.getState().getSettings(conversationId).modelIds ?? []
+            const isSelected = current.includes(name)
+            if (isSelected) {
+                if (current.length > 1) {
+                    updateSettings(conversationId, { modelIds: current.filter((id) => id !== name) })
+                }
+            } else {
+                updateSettings(conversationId, { modelIds: [...current, name] })
             }
-        } else {
-            updateTab(tabId, { modelIds: [...currentIds, name] })
-        }
-    }, [tabId, updateTab])
+        },
+        [conversationId, updateSettings]
+    )
 
-    // Get selected for rendering - only when dropdown is open
-    const selectedIds = open ? (storeRef.current.getState().tabs.find(t => t.id === tabId)?.modelIds || []) : []
+    const selectedIds = open
+        ? usePlaygroundStore.getState().getSettings(conversationId).modelIds ?? []
+        : []
     const selectedSet = React.useMemo(() => new Set(selectedIds), [selectedIds])
 
-    // Render dropdown via Portal to avoid z-index/overflow issues
     const dropdownContent = open && (
         <div
             ref={dropdownRef}
@@ -210,7 +227,6 @@ export function ConnectedModelSelector({ tabId }: { tabId: string }) {
                         className="pl-8 h-8 text-sm"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                    // Do not auto-focus to avoid page flicker / scroll jump
                     />
                 </div>
             </div>
@@ -241,53 +257,7 @@ export function ConnectedModelSelector({ tabId }: { tabId: string }) {
                     </span>
                 )}
             </Button>
-            {typeof document !== 'undefined' && ReactDOM.createPortal(dropdownContent, document.body)}
+            {typeof document !== "undefined" && ReactDOM.createPortal(dropdownContent, document.body)}
         </>
     )
 }
-
-// Separate component to avoid re-rendering the whole dropdown
-const SelectedModelTags = React.memo(({ ids, onRemove }: { ids: string[], onRemove: (id: string) => void }) => (
-    <div className="flex flex-wrap gap-1 mt-2">
-        {ids.map((id) => (
-            <button
-                key={id}
-                onClick={() => onRemove(id)}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs hover:bg-primary/20"
-            >
-                <span className="truncate max-w-[100px]">{id}</span>
-                <X className="h-3 w-3" />
-            </button>
-        ))}
-    </div>
-))
-SelectedModelTags.displayName = "SelectedModelTags"
-
-// Memoized model list
-const ModelList = React.memo(({ models, selectedSet, isLoading, onToggle }: {
-    models: any[]
-    selectedSet: Set<string>
-    isLoading: boolean
-    onToggle: (name: string) => void
-}) => (
-    <div className="max-h-[280px] overflow-y-auto scrollbar-thin p-1">
-        {isLoading ? (
-            <div className="p-2 text-sm text-muted-foreground">Loading...</div>
-        ) : models.length === 0 ? (
-            <div className="p-2 text-sm text-muted-foreground">No models found</div>
-        ) : (
-            models.map((model) => (
-                <ModelItem
-                    key={model.name}
-                    name={model.name}
-                    provider={model.provider || "unknown"}
-                    isSelected={selectedSet.has(model.name)}
-                    onToggle={onToggle}
-                />
-            ))
-        )}
-    </div>
-))
-ModelList.displayName = "ModelList"
-
-
