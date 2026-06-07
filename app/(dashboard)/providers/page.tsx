@@ -5,10 +5,9 @@ import type { ProviderDTO } from "@/lib/schemas/provider";
 import type { ModelDTO } from "@/lib/schemas/model";
 
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "sonner"
-import { RefreshCcw, Search, ArrowUpDown, Plus, Pencil, Trash2 } from "lucide-react"
+import { Search, ArrowUpDown, Plus, Pencil, Trash2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
@@ -21,6 +20,7 @@ import {
 } from "@/components/ui/select"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { LoadingState } from "@/components/ui/loading-state"
+import { RefreshButton } from "@/components/ui/refresh-button"
 import { ProviderCard } from "@/components/providers/provider-card"
 import { ModelsTable } from "@/components/providers/models-table"
 import { ProviderFormDialog } from "@/components/providers/provider-form-dialog"
@@ -106,90 +106,106 @@ export default function ProvidersPage() {
     })
 
     return (
-        <div className="h-full overflow-y-auto scrollbar-thin p-4 space-y-6">
-            <h2 className="text-3xl font-bold tracking-tight">Providers & Models</h2>
+        <div className="h-full flex flex-col p-4 overflow-y-hidden">
+            <Tabs
+                defaultValue="providers"
+                className="flex-1 flex flex-col min-h-0 w-full gap-4"
+                onValueChange={setActiveTab}
+            >
+                {/* Toolbar — mirrors the design pattern used on /logs:
+                    compact single row, h-8 controls, text-xs, mid-row dividers,
+                    refresh button isolated on the trailing edge. */}
+                <div className="flex items-center gap-2 px-1 flex-wrap md:flex-nowrap">
+                    <TabsList className="h-8 p-0.5">
+                        <TabsTrigger value="providers" className="h-7 px-3 text-xs">
+                            Providers
+                        </TabsTrigger>
+                        <TabsTrigger value="models" className="h-7 px-3 text-xs">
+                            Models
+                        </TabsTrigger>
+                    </TabsList>
 
-            <Tabs defaultValue="providers" className="w-full" onValueChange={setActiveTab}>
-                <div className="flex flex-col md:flex-row md:items-center justify-between pb-4 gap-4">
-                    <div className="flex items-center gap-2">
-                        <TabsList>
-                            <TabsTrigger value="providers">Providers</TabsTrigger>
-                            <TabsTrigger value="models">Models</TabsTrigger>
-                        </TabsList>
-                        <Button
-                            variant="outline"
-                            size="icon-sm"
-                            onClick={() => reloadMutation.mutate()}
-                            disabled={reloadMutation.isPending}
-                        >
-                            <RefreshCcw className={`h-2 w-2 ${reloadMutation.isPending ? "animate-spin" : ""}`} />
-                        </Button>
-                        {isAdmin && activeTab === "providers" && (
-                            <Button
-                                size="icon-sm"
-                                onClick={() => setProviderDialog({ open: true, mode: "create" })}
-                                title="Add provider"
-                                aria-label="Add provider"
-                            >
-                                <Plus className="h-4 w-4" />
-                            </Button>
-                        )}
-                        {isAdmin && activeTab === "models" && (
-                            <Button
-                                size="icon-sm"
-                                onClick={() => setModelDialog({ open: true, mode: "create" })}
-                                title="Add model"
-                                aria-label="Add model"
-                            >
-                                <Plus className="h-4 w-4" />
-                            </Button>
-                        )}
+                    <div className="h-4 w-px bg-border mx-1 hidden md:block shrink-0" />
+
+                    <div className="relative w-[160px] md:w-[220px] shrink-0">
+                        <Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" />
+                        <Input
+                            placeholder="Search..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="pl-7 h-8 text-xs"
+                        />
                     </div>
-                    <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto md:items-center">
-                        <div className="relative w-full md:w-64 md:order-2">
-                            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                            <Input
-                                placeholder="Search..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-8 h-9"
+
+                    <Select value={sortOrder} onValueChange={setSortOrder}>
+                        <SelectTrigger className="w-[140px] h-8 text-xs shrink-0">
+                            <ArrowUpDown className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
+                            <SelectValue placeholder="Sort" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="default">Default</SelectItem>
+                            {activeTab === "providers" ? (
+                                <>
+                                    <SelectItem value="name">Name</SelectItem>
+                                    <SelectItem value="models">Total Models</SelectItem>
+                                </>
+                            ) : (
+                                <>
+                                    <SelectItem value="name">Name</SelectItem>
+                                    <SelectItem value="type">Type</SelectItem>
+                                    <SelectItem value="provider">Provider</SelectItem>
+                                    <SelectItem value="context">Context Window</SelectItem>
+                                </>
+                            )}
+                        </SelectContent>
+                    </Select>
+
+                    {isAdmin && activeTab === "providers" && (
+                        <Button
+                            size="icon"
+                            variant="secondary"
+                            className="h-8 w-8 shrink-0"
+                            onClick={() => setProviderDialog({ open: true, mode: "create" })}
+                            title="Add provider"
+                            aria-label="Add provider"
+                        >
+                            <Plus className="h-3.5 w-3.5" />
+                        </Button>
+                    )}
+                    {isAdmin && activeTab === "models" && (
+                        <Button
+                            size="icon"
+                            variant="secondary"
+                            className="h-8 w-8 shrink-0"
+                            onClick={() => setModelDialog({ open: true, mode: "create" })}
+                            title="Add model"
+                            aria-label="Add model"
+                        >
+                            <Plus className="h-3.5 w-3.5" />
+                        </Button>
+                    )}
+
+                    <div className="ml-auto flex items-center gap-2 shrink-0">
+                        <span className="text-xs text-muted-foreground tabular-nums hidden sm:inline">
+                            {activeTab === "providers"
+                                ? `${filteredProviders.length} providers`
+                                : `${filteredModels.length} models`}
+                        </span>
+                        <div className="shrink-0 pl-2 border-l border-border/50">
+                            <RefreshButton
+                                onClick={() => reloadMutation.mutate()}
+                                isLoading={reloadMutation.isPending}
+                                tooltip="Reload providers and models"
                             />
-                        </div>
-                        <div className="flex items-center justify-between md:justify-end gap-2 md:order-1">
-                            <div className="text-sm text-muted-foreground whitespace-nowrap">
-                                {activeTab === "providers"
-                                    ? `Showing ${filteredProviders.length} providers`
-                                    : `Showing ${filteredModels.length} models`
-                                }
-                            </div>
-                            <Select value={sortOrder} onValueChange={setSortOrder}>
-                                <SelectTrigger className="w-auto min-w-[130px] h-9">
-                                    <ArrowUpDown className="mr-2 h-4 w-4 text-muted-foreground" />
-                                    <SelectValue placeholder="Sort by" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="default">Default</SelectItem>
-                                    {activeTab === "providers" ? (
-                                        <>
-                                            <SelectItem value="name">Name</SelectItem>
-                                            <SelectItem value="models">Total Models</SelectItem>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <SelectItem value="name">Name</SelectItem>
-                                            <SelectItem value="type">Type</SelectItem>
-                                            <SelectItem value="provider">Provider</SelectItem>
-                                            <SelectItem value="context">Context Window</SelectItem>
-                                        </>
-                                    )}
-                                </SelectContent>
-                            </Select>
                         </div>
                     </div>
                 </div>
 
-                <TabsContent value="providers" className="mt-0">
-                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <TabsContent
+                    value="providers"
+                    className="flex-1 min-h-0 overflow-y-auto scrollbar-thin"
+                >
+                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 p-1">
                         {isLoadingProviders ? (
                             <div className="col-span-full">
                                 <LoadingState label="Loading providers…" />
@@ -212,7 +228,7 @@ export default function ProvidersPage() {
                             />
                         ))}
                         {!isLoadingProviders && filteredProviders.length === 0 && (
-                            <div className="col-span-full flex flex-col items-center justify-center border-2 border-dashed rounded-lg h-[calc(100vh-220px)] text-muted-foreground">
+                            <div className="col-span-full flex flex-col items-center justify-center border-2 border-dashed rounded-lg min-h-[300px] text-muted-foreground">
                                 <Search className="h-8 w-8 mb-4 opacity-50" />
                                 <p className="text-lg font-medium">No providers found.</p>
                                 {isAdmin && (
@@ -225,26 +241,30 @@ export default function ProvidersPage() {
                     </div>
                 </TabsContent>
 
-                <TabsContent value="models" className="mt-0">
-                    <Card>
-                        <CardContent className="p-0 pt-0 pl-4 pr-4">
-                            {isLoadingModels ? (
+                <TabsContent
+                    value="models"
+                    className="flex-1 min-h-0 flex flex-col"
+                >
+                    <div className="flex-1 border rounded-xl bg-card shadow-sm flex flex-col overflow-hidden relative">
+                        {isLoadingModels && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
                                 <LoadingState label="Loading models…" />
-                            ) : (
-                                <ModelsTable
-                                    models={filteredModels}
-                                    onEdit={isAdmin ? (m) => {
-                                        // Discovered rows have no DB row yet — opening the
-                                        // dialog in "create" mode lets the admin save it as
-                                        // an override, with all discovered defaults pre-filled.
-                                        const mode = m.is_discovered ? "create" : "edit"
-                                        setModelDialog({ open: true, mode, model: m })
-                                    } : undefined}
-                                    onDelete={isAdmin ? (m) => setDeleteModel(m) : undefined}
-                                />
-                            )}
-                        </CardContent>
-                    </Card>
+                            </div>
+                        )}
+                        <div className="flex-1 overflow-auto">
+                            <ModelsTable
+                                models={filteredModels}
+                                onEdit={isAdmin ? (m) => {
+                                    // Discovered rows have no DB row yet — opening the
+                                    // dialog in "create" mode lets the admin save it as
+                                    // an override, with all discovered defaults pre-filled.
+                                    const mode = m.is_discovered ? "create" : "edit"
+                                    setModelDialog({ open: true, mode, model: m })
+                                } : undefined}
+                                onDelete={isAdmin ? (m) => setDeleteModel(m) : undefined}
+                            />
+                        </div>
+                    </div>
                 </TabsContent>
             </Tabs>
 

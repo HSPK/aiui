@@ -1,18 +1,12 @@
-import type { ModelDTO } from "@/lib/schemas/model";
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/components/ui/table"
-import {
-    Tooltip,
-    TooltipContent,
-    TooltipProvider,
-    TooltipTrigger,
-} from "@/components/ui/tooltip"
+"use client"
+
+import * as React from "react"
+import { useRouter } from "next/navigation"
+import { toast } from "sonner"
+import { Copy, MoreHorizontal, Pencil, Trash2 } from "lucide-react"
+
+import type { ModelDTO } from "@/lib/schemas/model"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
     DropdownMenu,
@@ -21,123 +15,190 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Copy, MoreHorizontal, Pencil, Trash2 } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
-import { toast } from "sonner"
+import {
+    DataTableBody,
+    DataTableCell,
+    DataTableEmpty,
+    DataTableHead,
+    DataTableHeader,
+    DataTableHeaderRow,
+    DataTableRow,
+    DataTableShell,
+} from "@/components/ui/data-table"
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from "@/components/ui/tooltip"
+
 import { capabilityLabel } from "./capability-label"
-import { cn } from "@/lib/utils"
 
 interface Props {
     models: ModelDTO[]
+    /** Admin: opens edit dialog (or "register override" for discovered rows). */
     onEdit?: (model: ModelDTO) => void
+    /** Admin: opens delete confirmation. */
     onDelete?: (model: ModelDTO) => void
 }
 
+/** Table of models. Row click navigates to the per-model dashboard;
+ *  admin Edit / Delete live in the row dropdown so a stray click never
+ *  triggers them. Built on the shared DataTable primitives so it inherits
+ *  the same look as /logs (sticky muted header, uppercase head text,
+ *  zebra rows, hover highlight). */
 export function ModelsTable({ models, onEdit, onDelete }: Props) {
-    const interactive = !!onEdit
+    const router = useRouter()
+    const showActions = !!onEdit || !!onDelete
+    const columnCount = showActions ? 7 : 6
+
     return (
-        <Table>
-            <TableHeader>
-                <TableRow>
-                    <TableHead>Model Name</TableHead>
-                    <TableHead>ID</TableHead>
-                    <TableHead>Provider</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Context</TableHead>
-                    <TableHead>Source</TableHead>
-                    {onDelete && <TableHead className="w-[40px]" />}
-                </TableRow>
-            </TableHeader>
-            <TableBody>
-                {models.map((model) => (
-                    <TableRow
-                        key={model.id || model.name}
-                        onClick={interactive ? () => onEdit?.(model) : undefined}
-                        className={cn(interactive && "cursor-pointer")}
-                        title={interactive ? (model.is_discovered ? "Click to register override" : "Click to edit") : undefined}
-                    >
-                        <TableCell className="font-mono max-w-[300px]">
-                            <div className="flex items-center justify-between gap-2 group w-full">
+        <DataTableShell>
+            <DataTableHeader>
+                <DataTableHeaderRow>
+                    <DataTableHead>Model Name</DataTableHead>
+                    <DataTableHead>ID</DataTableHead>
+                    <DataTableHead>Provider</DataTableHead>
+                    <DataTableHead>Type</DataTableHead>
+                    <DataTableHead>Context</DataTableHead>
+                    <DataTableHead>Source</DataTableHead>
+                    {showActions && <DataTableHead className="w-[40px]" />}
+                </DataTableHeaderRow>
+            </DataTableHeader>
+            <DataTableBody>
+                {models.length === 0 ? (
+                    <DataTableEmpty colSpan={columnCount}>No models found.</DataTableEmpty>
+                ) : (
+                    models.map((model) => (
+                        <DataTableRow
+                            key={model.id || model.name}
+                            onClick={() =>
+                                router.push(`/models/${encodeURIComponent(model.name)}`)
+                            }
+                            title="Open model dashboard"
+                        >
+                            <DataTableCell className="font-mono max-w-[300px]">
+                                <div className="flex items-center justify-between gap-2 w-full">
+                                    <span className="truncate text-xs" title={model.name}>
+                                        {model.name}
+                                    </span>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            navigator.clipboard.writeText(model.name)
+                                            toast.success("Model name copied to clipboard")
+                                        }}
+                                    >
+                                        <Copy className="h-3 w-3 text-muted-foreground" />
+                                    </Button>
+                                </div>
+                            </DataTableCell>
+                            <DataTableCell className="font-mono text-xs text-muted-foreground max-w-[260px]">
                                 <TooltipProvider>
                                     <Tooltip>
                                         <TooltipTrigger asChild>
-                                            <span className="truncate cursor-default">{model.name}</span>
+                                            <span className="truncate block cursor-default">
+                                                {model.model_id}
+                                            </span>
                                         </TooltipTrigger>
-                                        <TooltipContent side="right" className="break-all">
-                                            <p className="font-mono text-xs">{model.name}</p>
+                                        <TooltipContent side="top">
+                                            <p className="font-mono text-xs">{model.model_id}</p>
                                         </TooltipContent>
                                     </Tooltip>
                                 </TooltipProvider>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                                    onClick={(e) => {
-                                        e.stopPropagation()
-                                        navigator.clipboard.writeText(model.name)
-                                        toast.success("Model name copied to clipboard")
-                                    }}
+                            </DataTableCell>
+                            <DataTableCell>
+                                <Badge variant="outline" className="font-normal text-[10px]">
+                                    {model.provider}
+                                </Badge>
+                            </DataTableCell>
+                            <DataTableCell>
+                                <Badge variant="secondary" className="font-normal text-[10px]">
+                                    {capabilityLabel(model.type)}
+                                </Badge>
+                            </DataTableCell>
+                            <DataTableCell>
+                                <span className="font-mono text-xs text-muted-foreground">
+                                    {model.context_window
+                                        ? model.context_window >= 1000
+                                            ? `${Math.round(model.context_window / 1000)}k`
+                                            : model.context_window.toLocaleString()
+                                        : "—"}
+                                </span>
+                            </DataTableCell>
+                            <DataTableCell>
+                                <Badge
+                                    variant={model.is_discovered ? "secondary" : "default"}
+                                    className="text-[10px] uppercase"
                                 >
-                                    <Copy className="h-3 w-3 text-muted-foreground" />
-                                </Button>
-                            </div>
-                        </TableCell>
-                        <TableCell className="font-mono text-xs text-muted-foreground">{model.model_id}</TableCell>
-                        <TableCell>
-                            <Badge variant="outline">{model.provider}</Badge>
-                        </TableCell>
-                        <TableCell>
-                            <Badge variant="outline">{capabilityLabel(model.type)}</Badge>
-                        </TableCell>
-                        <TableCell>
-                            <Badge variant="outline">
-                                {model.context_window
-                                    ? (model.context_window >= 1000
-                                        ? `${Math.round(model.context_window / 1000)}k`
-                                        : model.context_window.toLocaleString())
-                                    : '-'}
-                            </Badge>
-                        </TableCell>
-                        <TableCell>
-                            {model.is_discovered ? (
-                                <Badge variant="secondary" className="text-[10px] uppercase font-semibold">discovered</Badge>
-                            ) : (
-                                <Badge variant="outline" className="text-[10px] uppercase font-semibold">override</Badge>
+                                    {model.is_discovered ? "discovered" : "override"}
+                                </Badge>
+                            </DataTableCell>
+                            {showActions && (
+                                <DataTableCell
+                                    className="w-[40px] text-right"
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <RowActions
+                                        model={model}
+                                        onEdit={onEdit}
+                                        onDelete={onDelete}
+                                    />
+                                </DataTableCell>
                             )}
-                        </TableCell>
-                        {/* Compact menu — only shows the actions that aren't covered by the
-                            row click. Delete is destructive so we keep it explicit (and
-                            require the menu so a stray row click doesn't trigger it). */}
-                        {onDelete && (
-                            <TableCell className="w-[40px] text-right" onClick={(e) => e.stopPropagation()}>
-                                {!model.is_discovered && (
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <Button variant="ghost" size="icon" className="h-7 w-7">
-                                                <MoreHorizontal className="h-4 w-4" />
-                                            </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end" className="w-32">
-                                            {onEdit && (
-                                                <DropdownMenuItem onSelect={() => onEdit(model)}>
-                                                    <Pencil className="mr-2 h-3.5 w-3.5" /> Edit
-                                                </DropdownMenuItem>
-                                            )}
-                                            {onEdit && <DropdownMenuSeparator />}
-                                            <DropdownMenuItem
-                                                className="text-destructive focus:text-destructive"
-                                                onSelect={() => onDelete(model)}
-                                            >
-                                                <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete
-                                            </DropdownMenuItem>
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
-                                )}
-                            </TableCell>
-                        )}
-                    </TableRow>
-                ))}
-            </TableBody>
-        </Table>
+                        </DataTableRow>
+                    ))
+                )}
+            </DataTableBody>
+        </DataTableShell>
+    )
+}
+
+function RowActions({
+    model,
+    onEdit,
+    onDelete,
+}: {
+    model: ModelDTO
+    onEdit?: (model: ModelDTO) => void
+    onDelete?: (model: ModelDTO) => void
+}) {
+    const canDelete = !!onDelete && !model.is_discovered
+    if (!onEdit && !canDelete) return null
+
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <MoreHorizontal className="h-4 w-4" />
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+                {onEdit && (
+                    <DropdownMenuItem onSelect={() => onEdit(model)}>
+                        <Pencil className="mr-2 h-3.5 w-3.5" />
+                        Edit
+                    </DropdownMenuItem>
+                )}
+                {onEdit && canDelete && <DropdownMenuSeparator />}
+                {canDelete && (
+                    <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onSelect={() => onDelete?.(model)}
+                    >
+                        <Trash2 className="mr-2 h-3.5 w-3.5" />
+                        Delete
+                    </DropdownMenuItem>
+                )}
+            </DropdownMenuContent>
+        </DropdownMenu>
     )
 }

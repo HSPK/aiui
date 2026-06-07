@@ -72,9 +72,9 @@ export default function LogsPage() {
 
     return (
         <div className="h-full flex flex-col p-4 overflow-y-hidden">
-            <div className="flex-1 flex flex-col min-h-0 space-y-2">
+            <div className="flex-1 flex flex-col min-h-0 space-y-4">
                 {/* Filters Bar */}
-                <div className="flex items-center gap-2 py-1 px-1">
+                <div className="flex items-center gap-2 px-1">
                     <div className="flex flex-1 items-center gap-2 overflow-x-auto no-scrollbar">
                         <Input
                             placeholder="User ID"

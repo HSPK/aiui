@@ -12,13 +12,15 @@ import {
 } from "@tanstack/react-table"
 
 import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/components/ui/table"
+    DataTableBody,
+    DataTableCell,
+    DataTableEmpty,
+    DataTableHead,
+    DataTableHeader,
+    DataTableHeaderRow,
+    DataTableRow,
+    DataTableShell,
+} from "@/components/ui/data-table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ArrowUpDown, Files, Zap, Clock } from "lucide-react"
@@ -207,51 +209,44 @@ export function LogsTable({ data, sorting, onSortingChange, onViewDetail }: Logs
     })
 
     return (
-        <div className="overflow-hidden">
-            <Table>
-                <TableHeader className="bg-muted/40 sticky top-0 z-10">
-                    {table.getHeaderGroups().map((headerGroup) => (
-                        <TableRow key={headerGroup.id} className="hover:bg-transparent border-b-muted/60 shadow-sm">
-                            {headerGroup.headers.map((header) => {
-                                return (
-                                    <TableHead key={header.id} className="h-10 text-xs font-semibold tracking-wide uppercase text-muted-foreground/80 last:text-right first:pl-4 last:pr-4">
-                                        {header.isPlaceholder
-                                            ? null
-                                            : flexRender(
-                                                header.column.columnDef.header,
-                                                header.getContext()
-                                            )}
-                                    </TableHead>
-                                )
-                            })}
-                        </TableRow>
-                    ))}
-                </TableHeader>
-                <TableBody>
-                    {table.getRowModel().rows?.length ? (
-                        table.getRowModel().rows.map((row) => (
-                            <TableRow
-                                key={row.id}
-                                data-state={row.getIsSelected() && "selected"}
-                                className="cursor-pointer hover:bg-muted/90 even:bg-muted/50 border-b-muted/20 h-10 group"
-                                onClick={() => onViewDetail(row.original.id)}
-                            >
-                                {row.getVisibleCells().map((cell) => (
-                                    <TableCell key={cell.id} className="py-2 first:pl-4 last:pr-4">
-                                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                                    </TableCell>
-                                ))}
-                            </TableRow>
-                        ))
-                    ) : (
-                        <TableRow>
-                            <TableCell colSpan={columns.length} className="h-full min-h-[200px] text-center text-muted-foreground align-middle">
-                                No logs found.
-                            </TableCell>
-                        </TableRow>
-                    )}
-                </TableBody>
-            </Table>
-        </div>
+        <DataTableShell>
+            <DataTableHeader>
+                {table.getHeaderGroups().map((headerGroup) => (
+                    <DataTableHeaderRow key={headerGroup.id}>
+                        {headerGroup.headers.map((header) => (
+                            <DataTableHead key={header.id} className="last:text-right">
+                                {header.isPlaceholder
+                                    ? null
+                                    : flexRender(
+                                        header.column.columnDef.header,
+                                        header.getContext()
+                                    )}
+                            </DataTableHead>
+                        ))}
+                    </DataTableHeaderRow>
+                ))}
+            </DataTableHeader>
+            <DataTableBody>
+                {table.getRowModel().rows?.length ? (
+                    table.getRowModel().rows.map((row) => (
+                        <DataTableRow
+                            key={row.id}
+                            data-state={row.getIsSelected() && "selected"}
+                            onClick={() => onViewDetail(row.original.id)}
+                        >
+                            {row.getVisibleCells().map((cell) => (
+                                <DataTableCell key={cell.id}>
+                                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                </DataTableCell>
+                            ))}
+                        </DataTableRow>
+                    ))
+                ) : (
+                    <DataTableEmpty colSpan={columns.length}>
+                        No logs found.
+                    </DataTableEmpty>
+                )}
+            </DataTableBody>
+        </DataTableShell>
     )
 }
