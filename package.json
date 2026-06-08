@@ -1,7 +1,7 @@
 {
   "name": "@hspk/loom",
   "version": "0.1.0",
-  "description": "A self-hosted dev portal that weaves LLM providers, MCP tools, and a playground into one OpenAI-compatible surface.",
+  "description": "Self-hosted AI testing platform — try models and MCP servers, log every request, and front your apps through an OpenAI-compatible gateway.",
   "keywords": [
     "ai",
     "ai-gateway",

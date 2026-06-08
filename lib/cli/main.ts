@@ -12,7 +12,7 @@ export const main = defineCommand({
     meta: {
         name: "loom",
         version: "0.1.0",
-        description: "Weave LLM providers, MCP tools, and a playground into one OpenAI-compatible surface.",
+        description: "Self-hosted AI testing platform — playground, MCP runtime, request logs, and an OpenAI-compatible gateway.",
     },
     subCommands: {
         start: startCommand,

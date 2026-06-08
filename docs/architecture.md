@@ -108,11 +108,10 @@ upstream SSE bytes ─┬─▶ tee to client (verbatim, byte-for-byte)
 
 The log writer never blocks the client tee — if logging fails, the response still streams correctly.
 
-## Why this matters
+## Single-process trade-off
 
-Most "AI gateway" products today fall in one of two camps:
+Loom keeps the playground, the gateway, the MCP runtime, and the request log in one Node process backed by one SQLite file. This is a deliberate trade-off:
 
-- **Reverse proxies** (LiteLLM, One API) — gateway only, no UI, no built-in logging
-- **Pretty playgrounds** (LobeChat, LibreChat) — UI only, no gateway protocol for your apps
-
-Loom sits in both. Same auth model, same provider registry, same logs, same MCP servers — your apps and your humans see the exact same world.
+- **Operational simplicity** — no separate observability service, no Redis, no Postgres, no worker fleet. Back up `data/loom.db` and you back up the entire installation.
+- **Auth consistency** — the same API keys apply across the gateway and the playground; the same log row records both.
+- **Scale ceiling** — single-process means single-host. Loom targets teams and self-hosted deployments rather than multi-region SaaS workloads. When you outgrow it, your gateway-side traffic is already speaking the OpenAI protocol, so swapping in a horizontal proxy in front is a config change, not a rewrite.

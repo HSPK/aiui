@@ -1,5 +1,5 @@
 site_name: Loom
-site_description: A self-hosted AI portal — gateway, playground, MCP, and forensic-grade request logs in a single binary.
+site_description: A self-hosted AI testing platform for trying out models and MCP servers, with full request logs and an OpenAI-compatible gateway.
 site_author: HSPK and contributors
 site_url: https://hspk.github.io/loom
 

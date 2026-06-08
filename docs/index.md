@@ -1,16 +1,21 @@
 # Loom
 
-> A self-hosted AI portal — gateway, playground, MCP, and forensic-grade request logs in a single binary.
+> A self-hosted AI testing platform for trying out models and MCP servers,
+> recording every request, and fronting your applications through the same
+> OpenAI-compatible gateway.
 
-Loom is what you reach for when you want every LLM call your team makes to flow through one self-hosted process you can inspect, cap, replay, and own.
+Loom gives you, in a single process backed by one SQLite file, three things
+that usually live in three separate tools:
 
-## At a glance
+- A **playground** for exercising models and MCP tool flows
+- A **request log** that captures the full prompt and full response of every
+  call, with search, replay, and direct SQLite access
+- An **OpenAI-compatible gateway** at `/api/v1/*` for your applications, with
+  the same auth model and the same log table as the playground
 
-- **One binary, one SQLite file.** No external services to deploy or maintain.
-- **Every request, recorded.** Prompts, token counts, TTFT, total latency, error class — searchable and replayable.
-- **Modality parity.** Chat, embeddings, rerank, images, speech, transcription — all behind the same auth, the same logs, the same dashboard.
-- **MCP everywhere.** Register Model Context Protocol servers once; tool calls flow through both the gateway and the playground.
-- **Playground that uses real providers.** Iterate against your live providers and per-key access controls, not a mocked sandbox.
+The same auth applies across playground and gateway. The same MCP servers
+serve both. The same log table records both. There is no separate
+observability service to deploy.
 
 ## Documentation map
 
@@ -28,7 +33,9 @@ Loom is what you reach for when you want every LLM call your team makes to flow 
 
 ## Project status
 
-Loom is under active development. The public surface (HTTP API, CLI flags, config file shape) is stabilising but may still change before `1.0`. Pin a specific version in production until `1.0.0` ships.
+Loom is under active development. The public surface (HTTP API, CLI flags,
+config file shape) is stabilising but may still change before `1.0`. Pin a
+specific version in production until `1.0.0` ships.
 
 ## License
 
