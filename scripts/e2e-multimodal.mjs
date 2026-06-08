@@ -210,6 +210,42 @@ try {
     );
 
     // -------------------------------------------------------------------
+    // 2b. log persists the multimodal upstream body verbatim
+    // -------------------------------------------------------------------
+    const logsRes = await fetch(`${BASE}/api/logs/generations?page=1&page_size=5&sort=-created_at`, {
+        headers: { Cookie: cookie },
+    });
+    const recentLog = (await logsRes.json()).data?.items?.[0];
+    expect("log captured for multimodal turn", !!recentLog);
+
+    const logDetailRes = await fetch(`${BASE}/api/logs/generations/${recentLog.id}`, {
+        headers: { Cookie: cookie },
+    });
+    const detail = (await logDetailRes.json()).data;
+    expect(
+        "log.input is an object (multimodal body, not flattened string)",
+        detail?.input && typeof detail.input === "object" && Array.isArray(detail.input.messages),
+        `type=${typeof detail?.input}`,
+    );
+    const loggedFirstMsg = detail?.input?.messages?.[0];
+    expect(
+        "log.input.messages[0].content is the multimodal array",
+        Array.isArray(loggedFirstMsg?.content) && loggedFirstMsg.content.length === 3,
+        `len=${loggedFirstMsg?.content?.length}`,
+    );
+    expect(
+        "log preserves image dataURL verbatim (for download)",
+        loggedFirstMsg?.content?.[1]?.image_url?.url === TINY_PNG,
+    );
+    expect(
+        "log.input_summary is text-only (attachments excluded from summary)",
+        typeof detail?.input_summary === "string" &&
+            detail.input_summary.includes("describe this image") &&
+            !detail.input_summary.includes("base64"),
+        `summary=${detail?.input_summary}`,
+    );
+
+    // -------------------------------------------------------------------
     // 3. bare-string content still works
     // -------------------------------------------------------------------
     lastChatBody = null;

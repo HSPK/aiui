@@ -3,6 +3,7 @@
 import { logs } from "@/lib/api";
 import { useMemo, useState } from "react"
 import { capabilityLabel } from "@/components/providers/capability-label"
+import { extractText, type ContentPart, type MessageContent } from "@/lib/schemas/content"
 
 import {
     Sheet,
@@ -20,7 +21,7 @@ import {
     AccordionTrigger,
 } from "@/components/ui/accordion"
 import dynamic from 'next/dynamic'
-import { Loader2, Copy, Check, FileText, Terminal, AlignLeft, Code, Download } from "lucide-react"
+import { Loader2, Copy, Check, FileText, Terminal, AlignLeft, Code, Download, Image as ImageIcon, Paperclip } from "lucide-react"
 import { formatToLocal, cn } from "@/lib/utils"
 // @ts-ignore
 import ReactMarkdown from 'react-markdown'
@@ -390,9 +391,10 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
 
                         {/* Input & Output Section */}
                         <div className="flex flex-col lg:flex-row gap-6">
-                            <ContentViewer
+                            <RequestPreview
                                 title="Prompt"
-                                content={log.input_summary ?? (typeof log.input === "string" ? log.input : null)}
+                                input={log.input}
+                                fallback={log.input_summary ?? (typeof log.input === "string" ? log.input : null)}
                                 colorClass="bg-blue-500"
                             />
                             <ContentViewer
@@ -419,7 +421,7 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                                 <AccordionContent className="pb-4">
                                     <div className="p-4 bg-muted/30 rounded-md border text-sm">
                                         <ReactJson
-                                            src={log.generation_kwargs || {}}
+                                            src={sanitizeForJsonView(log.generation_kwargs || {}) as object}
                                             name={false}
                                             collapsed={false}
                                             displayDataTypes={false}
@@ -446,7 +448,7 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                                 <AccordionContent className="pb-4">
                                     <div className="p-4 bg-muted/30 rounded-md border text-sm">
                                         <ReactJson
-                                            src={log?.generation || {}}
+                                            src={sanitizeForJsonView(log?.generation || {}) as object}
                                             name={false}
                                             displayDataTypes={false}
                                             enableClipboard={false}
@@ -473,5 +475,202 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                 )}
             </SheetContent>
         </Sheet>
+    )
+}
+
+// =============================================================================
+// Multimodal helpers
+// =============================================================================
+
+interface ChatMessage {
+    role?: string
+    content?: MessageContent
+}
+
+/** Try to read a chat-completion-shaped messages array out of the log
+ *  input. Returns null for non-chat shapes (embedding/image/etc.). */
+function extractMessages(input: unknown): ChatMessage[] | null {
+    if (!input || typeof input !== "object") return null
+    const msgs = (input as { messages?: unknown }).messages
+    if (!Array.isArray(msgs)) return null
+    return msgs as ChatMessage[]
+}
+
+/** Deep-walk a value and replace `data:<mime>;base64,…` strings longer
+ *  than `limit` with a placeholder `[base64 image|file, N KB]`. Keeps
+ *  the JSON viewer usable when the request body is multimodal. */
+function sanitizeForJsonView(value: unknown, limit = 200): unknown {
+    if (typeof value === "string") {
+        if (value.startsWith("data:") && value.length > limit) {
+            const mime = value.slice(5, value.indexOf(";")) || "binary"
+            const kb = Math.round(value.length / 1024)
+            const kind = mime.startsWith("image/") ? "image" : "file"
+            return `[base64 ${kind} ${mime}, ~${kb} KB]`
+        }
+        return value
+    }
+    if (Array.isArray(value)) return value.map((v) => sanitizeForJsonView(v, limit))
+    if (value && typeof value === "object") {
+        const out: Record<string, unknown> = {}
+        for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+            out[k] = sanitizeForJsonView(v, limit)
+        }
+        return out
+    }
+    return value
+}
+
+// =============================================================================
+// RequestPreview — replaces the plain ContentViewer for the prompt
+// panel. Walks the messages[] array, renders text + image previews +
+// file chips per role. Falls back to summary text when the input isn't
+// chat-shaped (embeddings, audio, etc.).
+// =============================================================================
+
+function RequestPreview({
+    title,
+    input,
+    fallback,
+    colorClass,
+}: {
+    title: string
+    input: unknown
+    fallback: string | null
+    colorClass: string
+}) {
+    const [viewMode, setViewMode] = useState<"preview" | "raw">("preview")
+    const messages = useMemo(() => extractMessages(input), [input])
+    const sanitizedRaw = useMemo(
+        () => (messages ? JSON.stringify(sanitizeForJsonView(input), null, 2) : ""),
+        [input, messages],
+    )
+    const copyText = useMemo(
+        () =>
+            messages
+                ? messages.map((m) => `${m.role ?? "user"}: ${extractText(m.content ?? "")}`).join("\n\n")
+                : "",
+        [messages],
+    )
+
+    if (!messages || messages.length === 0) {
+        return <ContentViewer title={title} content={fallback} colorClass={colorClass} />
+    }
+
+    return (
+        <div className="space-y-2 flex-1 min-w-[300px]">
+            <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold flex items-center gap-2">
+                    <span className={cn("w-2 h-2 rounded-full", colorClass)} />
+                    {title}
+                </h3>
+                <div className="flex items-center gap-2">
+                    <div className="flex bg-muted rounded-md p-0.5 border">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className={cn("h-6 px-2 text-[10px] hover:bg-background/80", viewMode === "preview" && "bg-background shadow-sm")}
+                            onClick={() => setViewMode("preview")}
+                        >
+                            <AlignLeft className="h-3 w-3 mr-1" /> Preview
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className={cn("h-6 px-2 text-[10px] hover:bg-background/80", viewMode === "raw" && "bg-background shadow-sm")}
+                            onClick={() => setViewMode("raw")}
+                        >
+                            <Code className="h-3 w-3 mr-1" /> Raw
+                        </Button>
+                    </div>
+                    <CopyButton text={copyText} />
+                </div>
+            </div>
+
+            <div className="border rounded-md overflow-hidden bg-muted/20">
+                <div className="text-sm min-h-[100px] max-h-[500px] overflow-y-auto scrollbar-thin">
+                    {viewMode === "preview" ? (
+                        <div className="divide-y">
+                            {messages.map((m, i) => (
+                                <MessageRow key={i} message={m} />
+                            ))}
+                        </div>
+                    ) : (
+                        <pre className="p-3 text-xs font-mono whitespace-pre-wrap break-all text-muted-foreground">
+                            {sanitizedRaw}
+                        </pre>
+                    )}
+                </div>
+            </div>
+        </div>
+    )
+}
+
+function MessageRow({ message }: { message: ChatMessage }) {
+    const text = extractText(message.content ?? "")
+    const parts = Array.isArray(message.content)
+        ? (message.content.filter((p) => p.type !== "text") as ContentPart[])
+        : []
+
+    return (
+        <div className="p-3 space-y-2">
+            <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-semibold">
+                    {message.role ?? "user"}
+                </Badge>
+                {parts.length > 0 && (
+                    <span className="text-[10px] text-muted-foreground font-mono">
+                        +{parts.length} attachment{parts.length === 1 ? "" : "s"}
+                    </span>
+                )}
+            </div>
+            {parts.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                    {parts.map((p, i) => {
+                        if (p.type === "image_url") return <ImagePreview key={i} url={p.image_url.url} />
+                        if (p.type === "file") return <FilePreview key={i} filename={p.file.filename} mime={p.file.mime_type} />
+                        return null
+                    })}
+                </div>
+            )}
+            {text && (
+                <div className="prose prose-sm dark:prose-invert max-w-none break-words leading-relaxed">
+                    <ReactMarkdown
+                        remarkPlugins={[remarkMath, remarkGfm]}
+                        rehypePlugins={[rehypeKatex]}
+                        components={logMarkdownComponents}
+                    >
+                        {text}
+                    </ReactMarkdown>
+                </div>
+            )}
+            {!text && parts.length === 0 && (
+                <p className="text-xs text-muted-foreground italic">(empty)</p>
+            )}
+        </div>
+    )
+}
+
+function ImagePreview({ url }: { url: string }) {
+    return (
+        <a href={url} target="_blank" rel="noreferrer" className="inline-block group">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+                src={url}
+                alt="image attachment"
+                className="max-h-32 max-w-[12rem] rounded border bg-muted/30 object-contain group-hover:opacity-80 transition"
+            />
+        </a>
+    )
+}
+
+function FilePreview({ filename, mime }: { filename: string; mime?: string }) {
+    return (
+        <span
+            className="inline-flex items-center gap-2 rounded border bg-muted/30 px-2 py-1.5 text-xs max-w-[260px]"
+            title={mime ? `${filename} (${mime})` : filename}
+        >
+            <Paperclip className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <span className="truncate">{filename}</span>
+        </span>
     )
 }
