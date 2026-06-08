@@ -231,12 +231,15 @@ export const mcpServers = sqliteTable("mcp_servers", {
     }> | null>(),
     /** Server-provided identity from the initialize handshake:
      *  `{ name, version }` from `serverInfo`, plus the optional
-     *  `instructions` field — server's own usage description. Saves
-     *  the admin from typing a description we could discover. */
+     *  `instructions` field — server's own usage description, and
+     *  the negotiated `capabilities` map so the details sheet can
+     *  show what the server supports beyond tools (resources,
+     *  prompts, logging, …). Saves the admin from typing this. */
     serverInfo: text("server_info", { mode: "json" }).$type<{
         name?: string;
         version?: string;
         instructions?: string;
+        capabilities?: Record<string, unknown>;
     } | null>(),
     createdAt: text("created_at").notNull().default(now),
     updatedAt: text("updated_at").notNull().default(now),

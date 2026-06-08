@@ -193,17 +193,24 @@ export async function disposeMcpClient(serverId: string): Promise<void> {
 
 /** Read the server-reported identity from the initialize handshake
  *  (already completed when `connect()` resolved). Returns `null` for
- *  servers that supply no `serverInfo` / `instructions`. */
-export function readServerInfo(serverId: string): { name?: string; version?: string; instructions?: string } | null {
+ *  servers that supply no `serverInfo` / `instructions` / capabilities. */
+export function readServerInfo(serverId: string): {
+    name?: string;
+    version?: string;
+    instructions?: string;
+    capabilities?: Record<string, unknown>;
+} | null {
     const entry = cache.get(serverId);
     if (!entry) return null;
     const ver = entry.client.getServerVersion();
     const instructions = entry.client.getInstructions();
-    if (!ver && !instructions) return null;
+    const capabilities = entry.client.getServerCapabilities() as Record<string, unknown> | undefined;
+    if (!ver && !instructions && !capabilities) return null;
     return {
         name: ver?.name,
         version: ver?.version,
         instructions,
+        capabilities,
     };
 }
 

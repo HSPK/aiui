@@ -28,6 +28,11 @@ export const mcpServerInfoSchema = z.object({
     name: z.string().optional(),
     version: z.string().optional(),
     instructions: z.string().optional(),
+    /** Negotiated capabilities map from the initialize handshake —
+     *  free-form per the MCP spec (`tools`, `resources`, `prompts`,
+     *  `logging`, `completions`, etc., each typically `{}` or a
+     *  feature flag object). */
+    capabilities: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const mcpServerDTOSchema = z.object({

@@ -40,6 +40,20 @@ export function McpServerDetailsSheet({ server, open, onOpenChange, isAdmin }: P
         check.mutate(server.id)
     }, [server, check])
 
+    // Silent backfill: rows created before the server_info column
+    // existed have it null even when the server is healthy. Trigger
+    // a re-check on first open so the section populates without
+    // forcing the user to hunt for the button.
+    const backfillIdRef = React.useRef<string | null>(null)
+    React.useEffect(() => {
+        if (!open || !server) return
+        if (server.server_info) return
+        if (server.last_check_status !== "ok") return
+        if (backfillIdRef.current === server.id) return
+        backfillIdRef.current = server.id
+        check.mutate(server.id)
+    }, [open, server, check])
+
     if (!server) return null
 
     return (
@@ -128,7 +142,8 @@ function StatusDot({ status }: { status: "ok" | "error" | null }) {
 function ServerInfoSection({ info }: { info: McpServerInfo }) {
     const hasIdentity = !!(info.name || info.version)
     const hasInstructions = !!info.instructions?.trim()
-    if (!hasIdentity && !hasInstructions) return null
+    const caps = info.capabilities ? Object.keys(info.capabilities) : []
+    if (!hasIdentity && !hasInstructions && caps.length === 0) return null
     return (
         <section className="space-y-2">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -141,10 +156,28 @@ function ServerInfoSection({ info }: { info: McpServerInfo }) {
                         {info.version && <span className="text-muted-foreground"> @ {info.version}</span>}
                     </div>
                 )}
+                {caps.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                        {caps.map((cap) => (
+                            <span
+                                key={cap}
+                                className="inline-flex items-center rounded border border-border bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground"
+                                title={`Server advertises the "${cap}" capability`}
+                            >
+                                {cap}
+                            </span>
+                        ))}
+                    </div>
+                )}
                 {hasInstructions && (
-                    <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">
-                        {info.instructions}
-                    </p>
+                    <div>
+                        <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">
+                            Instructions
+                        </div>
+                        <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                            {info.instructions}
+                        </p>
+                    </div>
                 )}
             </div>
         </section>
