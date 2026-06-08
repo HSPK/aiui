@@ -2,13 +2,19 @@
 
 import * as React from "react"
 import * as ReactDOM from "react-dom"
-import { Search, Bot } from "lucide-react"
+import { Layers, Search, Bot } from "lucide-react"
 
 import { models, preferences } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { ProviderIcon } from "@/components/ProviderIcon"
 
 const ModelItem = React.memo(
@@ -223,6 +229,18 @@ export function ConnectedModelSelector({ conversationId }: { conversationId: str
         : []
     const selectedSet = React.useMemo(() => new Set(selectedIds), [selectedIds])
 
+    const handleToggleSingleMode = React.useCallback(() => {
+        const next = !singleModelMode
+        const patch: Parameters<typeof updateSettings>[1] = { singleModelMode: next }
+        // Flipping into single-mode collapses any extra picks down to
+        // the first so the next send doesn't fan out unexpectedly.
+        if (next) {
+            const current = usePlaygroundStore.getState().getSettings(conversationId).modelIds ?? []
+            if (current.length > 1) patch.modelIds = [current[0]]
+        }
+        updateSettings(conversationId, patch)
+    }, [conversationId, singleModelMode, updateSettings])
+
     const dropdownContent = open && (
         <div
             ref={dropdownRef}
@@ -230,14 +248,35 @@ export function ConnectedModelSelector({ conversationId }: { conversationId: str
             className="rounded-lg border bg-popover text-popover-foreground shadow-xl animate-in fade-in-0 duration-100"
         >
             <div className="p-3 border-b">
-                <div className="relative">
-                    <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                        placeholder="Search models..."
-                        className="pl-8 h-8 text-sm"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                    />
+                <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                            placeholder="Search models..."
+                            className="pl-8 h-8 text-sm"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                    </div>
+                    <TooltipProvider delayDuration={300}>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    type="button"
+                                    variant={singleModelMode ? "default" : "ghost"}
+                                    size="icon"
+                                    className="h-8 w-8 shrink-0"
+                                    onClick={handleToggleSingleMode}
+                                    aria-pressed={singleModelMode}
+                                >
+                                    <Layers className="h-4 w-4" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">
+                                {singleModelMode ? "Single model" : "Multi-model"}
+                            </TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
                 </div>
             </div>
             <ModelList

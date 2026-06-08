@@ -4,12 +4,12 @@ import * as React from "react"
 import { Settings2 } from "lucide-react"
 import { useShallow } from "zustand/react/shallow"
 
-import { models } from "@/lib/api"
+import { models, preferences } from "@/lib/api"
+import { defaultUserPreferences } from "@/lib/schemas/preferences"
 import { usePlaygroundStore, type ModelConfig } from "@/lib/stores/playground-store"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import {
     Popover,
@@ -21,29 +21,22 @@ import { ModelConfigPopover, DEFAULT_MODEL_CONFIG } from "./model-config-popover
 
 interface ModelChipsWithConfigProps {
     conversationId: string
-    historyLimit: number
-    systemPrompt: string
-    singleModelMode: boolean
-    onHistoryLimitChange: (value: number) => void
-    onSystemPromptChange: (value: string) => void
-    onSingleModelModeChange: (value: boolean) => void
 }
 
 const EMPTY_MODEL_IDS: string[] = []
 const EMPTY_CONFIGS: Record<string, ModelConfig> = {}
 
-/** Selected model chips + global settings popover (history limit,
- *  system prompt, single-model toggle). */
+/** Selected model chips + per-conversation settings popover
+ *  (history limit, system prompt). Both fields fall through to user
+ *  preferences when this conversation hasn't overridden them; the
+ *  popover seeds its editor with the resolved value so users see what's
+ *  actually in effect. */
 export const ModelChipsWithConfig = React.memo(function ModelChipsWithConfig({
     conversationId,
-    historyLimit,
-    systemPrompt,
-    singleModelMode,
-    onHistoryLimitChange,
-    onSystemPromptChange,
-    onSingleModelModeChange,
 }: ModelChipsWithConfigProps) {
     const { data: modelsData } = models.useList(undefined, { staleTime: 5 * 60 * 1000 })
+    const { data: userPrefs } = preferences.useGet()
+    const prefs = userPrefs ?? defaultUserPreferences
 
     const modelsMap = React.useMemo(() => {
         const map = new Map<string, { provider?: string }>()
@@ -60,6 +53,17 @@ export const ModelChipsWithConfig = React.memo(function ModelChipsWithConfig({
     const modelConfigs = usePlaygroundStore(
         useShallow((state) => state.settings[conversationId]?.modelConfigs ?? EMPTY_CONFIGS)
     )
+
+    // Read the per-conv overrides directly so the popover always reflects
+    // current state; resolved values fall through to prefs.
+    const convHistoryLimit = usePlaygroundStore(
+        (s) => s.settings[conversationId]?.historyLimit,
+    )
+    const convSystemPrompt = usePlaygroundStore(
+        (s) => s.settings[conversationId]?.systemPrompt,
+    )
+    const historyLimit = convHistoryLimit ?? prefs.default_history_limit
+    const systemPrompt = convSystemPrompt ?? prefs.default_system_prompt
 
     const updateSettings = usePlaygroundStore((s) => s.updateSettings)
 
@@ -88,8 +92,8 @@ export const ModelChipsWithConfig = React.memo(function ModelChipsWithConfig({
         [conversationId, updateSettings]
     )
 
-    // Local state for the popover inputs so typing doesn't trigger a
-    // store write on every keystroke. Flushed on blur / close.
+    // Buffered popover state — flushes to the store on blur so each
+    // keystroke isn't a persist-write.
     const [localHistory, setLocalHistory] = React.useState(historyLimit)
     const [localSystem, setLocalSystem] = React.useState(systemPrompt)
     const [popoverOpen, setPopoverOpen] = React.useState(false)
@@ -131,15 +135,6 @@ export const ModelChipsWithConfig = React.memo(function ModelChipsWithConfig({
                 </PopoverTrigger>
                 <PopoverContent className="w-80 p-3" align="start" side="top">
                     <div className="space-y-4">
-                        <div className="flex items-center justify-between gap-2">
-                            <Label htmlFor="cs-single" className="text-xs">Single model</Label>
-                            <Switch
-                                id="cs-single"
-                                checked={singleModelMode}
-                                onCheckedChange={onSingleModelModeChange}
-                            />
-                        </div>
-
                         <div className="space-y-1.5">
                             <Label htmlFor="cs-history" className="text-xs">History limit</Label>
                             <Input
@@ -149,7 +144,7 @@ export const ModelChipsWithConfig = React.memo(function ModelChipsWithConfig({
                                 max={100}
                                 value={localHistory}
                                 onChange={(e) => setLocalHistory(parseInt(e.target.value) || 1)}
-                                onBlur={() => onHistoryLimitChange(localHistory)}
+                                onBlur={() => updateSettings(conversationId, { historyLimit: localHistory })}
                                 className="h-8 text-xs"
                             />
                         </div>
@@ -160,10 +155,9 @@ export const ModelChipsWithConfig = React.memo(function ModelChipsWithConfig({
                                 id="cs-system"
                                 value={localSystem}
                                 onChange={(e) => setLocalSystem(e.target.value)}
-                                onBlur={() => onSystemPromptChange(localSystem)}
+                                onBlur={() => updateSettings(conversationId, { systemPrompt: localSystem })}
                                 rows={5}
                                 className="text-xs font-mono"
-                                placeholder="(empty = use account default)"
                             />
                         </div>
                     </div>

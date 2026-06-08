@@ -11,18 +11,6 @@ import { ModelChipsWithConfig } from "@/components/playground/model-chips-with-c
 import type { ContentPart, MessageContent } from "@/lib/schemas/content"
 import { cn } from "@/lib/utils"
 
-export interface ChatInputConfig {
-    historyLimit: number
-    systemPrompt: string
-    singleModelMode: boolean
-}
-
-export interface ChatInputCallbacks {
-    onHistoryLimitChange: (value: number) => void
-    onSystemPromptChange: (value: string) => void
-    onSingleModelModeChange: (value: boolean) => void
-}
-
 interface ChatInputProps {
     conversationId: string
     /** Receives multimodal content — plain string for text-only turns,
@@ -30,8 +18,6 @@ interface ChatInputProps {
     onSubmit: (content: MessageContent) => void
     isLoading: boolean
     onStop: () => void
-    configRef: React.RefObject<ChatInputConfig>
-    callbacksRef: React.RefObject<ChatInputCallbacks>
 }
 
 export interface ChatInputRef {
@@ -96,8 +82,6 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     onSubmit,
     isLoading,
     onStop,
-    configRef,
-    callbacksRef,
 }, ref) {
     const [text, setText] = React.useState("")
     const [attachments, setAttachments] = React.useState<Attachment[]>([])
@@ -282,15 +266,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
         >
             <div className="flex items-center gap-2 px-2">
                 <ConnectedModelSelector conversationId={conversationId} />
-                <ModelChipsWithConfig
-                    conversationId={conversationId}
-                    historyLimit={configRef.current?.historyLimit ?? 20}
-                    systemPrompt={configRef.current?.systemPrompt ?? ""}
-                    singleModelMode={configRef.current?.singleModelMode ?? false}
-                    onHistoryLimitChange={callbacksRef.current?.onHistoryLimitChange ?? (() => { })}
-                    onSystemPromptChange={callbacksRef.current?.onSystemPromptChange ?? (() => { })}
-                    onSingleModelModeChange={callbacksRef.current?.onSingleModelModeChange ?? (() => { })}
-                />
+                <ModelChipsWithConfig conversationId={conversationId} />
             </div>
 
             <div
@@ -335,7 +311,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
                         ref={textareaRef}
                         value={text}
                         onChange={(e) => setText(e.target.value)}
-                        placeholder={isDragging ? "Drop files to attach" : "Message AI… (paste / drag-drop files)"}
+                        placeholder={isDragging ? "Drop files to attach" : "Message AI…"}
                         className="min-h-[32px] max-h-[240px] border-0 focus-visible:outline-none resize-none p-0 py-[6px] bg-transparent flex-1 text-sm leading-[20px]"
                         onKeyDown={handleKeyDown}
                         onPaste={handlePaste}
