@@ -249,7 +249,16 @@ export const MessageList = React.memo(({
     }, [messages, isLoading, modelProviderMap, onViewGeneration, siblingGroups, getSelectedIndex, onSelectSibling, lastAssistantIndex, onRegenerate, onRetryFailed])
 
     return (
-        <div className={cn("pb-36 pt-4 max-w-full overflow-hidden", messages.length === 0 && "min-h-[calc(100vh-200px)] flex flex-col")}>
+        <div
+            className={cn(
+                "pb-36 pt-4 max-w-full overflow-hidden",
+                // When empty, match the bottom padding so the centered icon
+                // sits visually mid-way between the top of the chat surface
+                // and the top of the floating ChatInput (which lives in the
+                // pb-36 buffer).
+                messages.length === 0 && "min-h-[calc(100vh-200px)] flex flex-col pt-36",
+            )}
+        >
             {messages.length === 0 && (
                 <div className="flex-1 flex flex-col items-center justify-center p-8 text-muted-foreground opacity-50 space-y-4">
                     <Bot className="h-12 w-12" />
