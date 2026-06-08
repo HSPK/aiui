@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils"
 /**
  * Shared visual contract for dashboard data tables (currently used by
  * /logs and /providers#models). Pages compose these primitives so the
- * "AIUI dashboard table" look — sticky muted header, uppercase head text,
+ * "Loom dashboard table" look — sticky muted header, uppercase head text,
  * zebra rows, hover highlight, consistent padding — lives in exactly one
  * place. Future style tweaks touch this file only.
  *

@@ -23,7 +23,7 @@ const expect = (name, ok, detail = "") => {
 };
 
 // ---- temp config ----
-const tmp = mkdtempSync(path.join(tmpdir(), "aiui-e2e-prefs-"));
+const tmp = mkdtempSync(path.join(tmpdir(), "loom-e2e-prefs-"));
 mkdirSync(path.join(tmp, ".config"), { recursive: true });
 const MASTER_KEY = randomBytes(32).toString("hex");
 const config = `
@@ -32,12 +32,12 @@ admin:
   username: admin
   password: adminpass
 `;
-writeFileSync(path.join(tmp, ".config", "aiui.yaml"), config);
+writeFileSync(path.join(tmp, ".config", "loom.yaml"), config);
 
 // ---- spawn server ----
 const server = spawn("bun", ["run", "next", "start", "-p", String(SERVER_PORT)], {
     cwd: process.cwd(),
-    env: { ...process.env, AIUI_USER_CWD: tmp },
+    env: { ...process.env, LOOM_USER_CWD: tmp },
     stdio: ["ignore", "pipe", "pipe"],
 });
 
@@ -77,7 +77,7 @@ try {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_name: "admin", user_password: "adminpass" }),
     });
-    const cookie = loginRes.headers.getSetCookie?.()?.find((c) => c.startsWith("aiui_session="))?.split(";")[0];
+    const cookie = loginRes.headers.getSetCookie?.()?.find((c) => c.startsWith("loom_session="))?.split(";")[0];
     expect("login succeeded", loginRes.ok && !!cookie);
 
     // GET — should return defaults for a brand-new user

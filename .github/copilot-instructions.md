@@ -1,6 +1,6 @@
-# AIUI – Copilot Instructions
+# Loom – Copilot Instructions
 
-工业级 AI Gateway，单仓全栈：**Next.js 16 App Router + React 19 + TypeScript strict + SQLite (Drizzle + better-sqlite3)**。Route Handlers 同时承担 OpenAI 兼容网关、Playground 后端、CRUD API。**没有独立后端**。详细背景见 `README.md`。
+自托管 AI 开发门户，单仓全栈：**Next.js 16 App Router + React 19 + TypeScript strict + SQLite (Drizzle + better-sqlite3)**。Route Handlers 同时承担 OpenAI 兼容网关、Playground 后端、CRUD API、MCP 路由。**没有独立后端**。详细背景见 `README.md`。
 
 ## 设计准则（修改前必读）
 
@@ -11,7 +11,7 @@
    - 新上游 wire shape（同一 modality 的另一种 API 形态，如 chat 的 `/responses`）= 1 个 `api-variants/<id>.ts` + 1 行 `api-variants/register.ts` import；capability 加一个 `variantPreference` 条目（可选）
    - 新上游协议变体（Anthropic / Bedrock / 严格 schema 的厂家…）= 1 个 `adapters/<id>.ts` + 1 行 `adapters/register.ts` import；gateway 主体永远不动
    - 新 FE domain = 1 个 `defineResource(...)` 调用（5 行；api + hooks + keys 自动派生）
-   - 新 CLI 子命令 = 1 个 `defineCommand({ meta, args, run })` 挂到 `bin/aiui.ts` 的 `subCommands`
+   - 新 CLI 子命令 = 1 个 `defineCommand({ meta, args, run })` 挂到 `bin/loom.ts` 的 `subCommands`
 2. **功能原子性**：一个 domain 一个文件夹/文件，不起 thin re-export 中间层
 3. **单一真相**：`lib/schemas/<domain>.ts`（zod）是 wire 类型唯一来源，`lib/server/db/schema.ts`（Drizzle）是 DB 唯一来源。**所有** TS 类型通过 `z.infer` 派生，绝不手写并行 interface
 4. **开发期不保后向兼容**：thin wrapper / 过渡 alias / dead code 发现就删
@@ -98,7 +98,7 @@ export const providers = {
 - **零隐式注入**：gateway 不会主动往请求里加任何字段。`stream_options.include_usage`、`temperature`、`max_tokens` 这些都通过 caller body / `model.default_params` / `provider.default_params` 三层逐级覆盖（caller 优先，`mergeParams` 实现 `provider → model → body` 的继承）。model 默认继承自 provider，可被按 key 覆盖
 - **Discovered metadata 持久化**：从 discovered 模型提升为 override 时，FE 会把 `meta.raw` 当作 `discovered_metadata` 写回 DB。`metaForDbModel`/`resolveModel` 优先读 DB 快照，否则回退到 in-memory discovery cache，最后才退化为 `{id}`。模型详情页 (`/models/[name]`) 渲染原始 JSON
 - **Provider 字段** `adapter_id`（默认 `"openai"`，空 = auto-detect）+ `health_check_url`（可选，GET 必须返 `{"status":"ok"}`，否则 fallback 走 `discoverModels` 探活）+ `last_health_{status,checked_at,error}`（`checkProvider` 写入；FE `<ProviderHealthPill>` 仅在 `health_check_url` 存在时渲染——**永远不要**无脑显示绿色 "Operational"）
-- **模型不进配置文件**——provider 的 `/models` 动态发现，按 `AIUI_MODELS_CACHE_TTL` 缓存；provider 增改删时自动 `clearDiscoveryCache()`
+- **模型不进配置文件**——provider 的 `/models` 动态发现，按 `LOOM_MODELS_CACHE_TTL` 缓存；provider 增改删时自动 `clearDiscoveryCache()`
 - **HTTP** `lib/api/client.ts:fetcher<T>` 拆 `{code,msg,data}` envelope；**认证靠 httpOnly cookie**，全部请求 `credentials: "include"`；401 自动跳 `/login?from=…`；登录端点传 `skipAuthRedirect: true`
 - **Drizzle** schema 改完必须 `bunx drizzle-kit generate`，重启时 `db/index.ts` 自动跑 migration。`sqliteTable` extraConfig 用**数组**形式 `(t) => [index(...).on(t.x)]`（object 形式已废弃）
 
@@ -108,7 +108,7 @@ export const providers = {
 |---|---|
 | 服务端态 | TanStack Query，键走 `<resource>.keys.*` 自动派生 |
 | 跨设备用户偏好 | DB `user_preferences` 表，`lib/api/preferences.ts` singleton 形态 |
-| 设备本地 UI 偏好 | `lib/stores/device-settings-store.ts`（localStorage `aiui-device-settings`，只放 `sendOnEnter/showTimestamps/compactMode`） |
+| 设备本地 UI 偏好 | `lib/stores/device-settings-store.ts`（localStorage `loom-device-settings`，只放 `sendOnEnter/showTimestamps/compactMode`） |
 | 设备本地 UI 状态 | `lib/stores/playground-store.ts`（`partialize` 故意清空 `messages[]`，重开从后端拉） |
 
 新增 per-user 缓存域时，`context/auth-context.tsx` 的 `login`/`logout` 里都要 `removeQueries({ queryKey: [...] })`，防止共享浏览器账号串数据。
@@ -129,4 +129,4 @@ export const providers = {
 
 - **Namespace shadowing**：`import { providers } from "@/lib/api"` 后不要 `const providers = ...`——TS 推断会回退 `any`。命名 `providerList / modelOptions / convList`
 - **新 `user_preferences` 字段**：加 zod field + 加默认值即可，`getPreferences` 自动 merge 旧行；JSON 列**不需要** migration
-- **CLI**：`bin/aiui.ts` 用 [citty](https://github.com/unjs/citty) 的 `defineCommand` 描述符（Click 风格，与 `defineRoute`/`defineResource` 同构）；`scripts/build-cli.mjs` 用 esbuild 打包成 `bin/aiui.mjs`（compiled artifact 已 gitignore；`prepare` 钩子在 `bun install` 时自动重建，`bun run build` 也会先跑 `build:cli`）。源里只做参数解析 + `preflight` + spawn next；共享解析逻辑住 `lib/preflight.ts`（CLI 与服务端 `config.ts` 都用，类型来自 `lib/schemas/config.ts`）。CLI 自动注入 `AIUI_USER_CWD=process.cwd()`，服务端始终 `process.env.AIUI_USER_CWD || process.cwd()` 解析路径。新增子命令：再写一个 `defineCommand({ meta, args, run })` 挂到 `main` 的 `subCommands` 即可，`--help` 自动派生
+- **CLI**：`bin/loom.ts` 用 [citty](https://github.com/unjs/citty) 的 `defineCommand` 描述符（Click 风格，与 `defineRoute`/`defineResource` 同构）；`scripts/build-cli.mjs` 用 esbuild 打包成 `bin/loom.mjs`（compiled artifact 已 gitignore；`prepare` 钩子在 `bun install` 时自动重建，`bun run build` 也会先跑 `build:cli`）。源里只做参数解析 + `preflight` + spawn next；共享解析逻辑住 `lib/preflight.ts`（CLI 与服务端 `config.ts` 都用，类型来自 `lib/schemas/config.ts`）。CLI 自动注入 `LOOM_USER_CWD=process.cwd()`，服务端始终 `process.env.LOOM_USER_CWD || process.cwd()` 解析路径。新增子命令：再写一个 `defineCommand({ meta, args, run })` 挂到 `main` 的 `subCommands` 即可，`--help` 自动派生

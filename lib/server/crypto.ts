@@ -2,17 +2,17 @@ import "server-only";
 import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
 // AES-256-GCM for upstream provider API keys.
-// Master key derived from AIUI_MASTER_KEY via SHA-256 to guarantee 32 bytes.
+// Master key derived from LOOM_MASTER_KEY via SHA-256 to guarantee 32 bytes.
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
 const TAG_LENGTH = 16;
 
 function getKey(): Buffer {
-    const raw = process.env.AIUI_MASTER_KEY;
+    const raw = process.env.LOOM_MASTER_KEY;
     if (!raw) {
         throw new Error(
-            "AIUI_MASTER_KEY environment variable is required to encrypt/decrypt provider API keys."
+            "LOOM_MASTER_KEY environment variable is required to encrypt/decrypt provider API keys."
         );
     }
     return createHash("sha256").update(raw).digest();

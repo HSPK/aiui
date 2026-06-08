@@ -51,11 +51,11 @@ export class SSEParser {
             if (!trimmed.startsWith("data: ") && !trimmed.startsWith("data:")) continue
             const dataStr = trimmed.startsWith("data: ") ? trimmed.slice(6) : trimmed.slice(5)
 
-            // Synthetic AIUI events surfaced by the playground service
+            // Synthetic Loom events surfaced by the playground service
             // for MCP tool execution. These ride on the same SSE channel
             // as the chat-completion chunks so the FE can render result
             // bubbles in real time.
-            if (this.currentEvent === "aiui_message_meta") {
+            if (this.currentEvent === "loom_message_meta") {
                 this.currentEvent = null
                 try {
                     const data = JSON.parse(dataStr)
@@ -67,7 +67,7 @@ export class SSEParser {
                 } catch { /* ignore */ }
                 continue
             }
-            if (this.currentEvent === "aiui_tool_result") {
+            if (this.currentEvent === "loom_tool_result") {
                 this.currentEvent = null
                 try {
                     const data = JSON.parse(dataStr)
@@ -84,7 +84,7 @@ export class SSEParser {
                 } catch { /* ignore */ }
                 continue
             }
-            if (this.currentEvent === "aiui_tool_error") {
+            if (this.currentEvent === "loom_tool_error") {
                 this.currentEvent = null
                 try {
                     const data = JSON.parse(dataStr)
@@ -96,7 +96,7 @@ export class SSEParser {
                 } catch { /* ignore */ }
                 continue
             }
-            if (this.currentEvent === "aiui_error" || this.currentEvent === "error") {
+            if (this.currentEvent === "loom_error" || this.currentEvent === "error") {
                 this.currentEvent = null
                 try {
                     const data = JSON.parse(dataStr)

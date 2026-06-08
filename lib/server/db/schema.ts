@@ -177,7 +177,7 @@ export const userPreferences = sqliteTable("user_preferences", {
 // expects a JSON `{content}` response (or any JSON, stringified for the
 // upstream tool message). When webhook_url is null, the tool is
 // declaration-only — the user is responsible for handling the call
-// outside aiui (or it gets fed back as an empty result).
+// outside loom (or it gets fed back as an empty result).
 // =============================================================================
 export const tools = sqliteTable("tools", {
     id: text("id").primaryKey(),
@@ -200,7 +200,7 @@ export const tools = sqliteTable("tools", {
 });
 
 // =============================================================================
-// MCP servers — Model Context Protocol server registrations. The aiui
+// MCP servers — Model Context Protocol server registrations. The loom
 // server manages each server's lifecycle (stdio child process or HTTP
 // client) and bridges the model's tool_calls to the right server.
 // =============================================================================

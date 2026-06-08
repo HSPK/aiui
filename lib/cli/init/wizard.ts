@@ -1,6 +1,6 @@
-// The interactive `aiui init` flow. Drives a sequence of clack
+// The interactive `loom init` flow. Drives a sequence of clack
 // prompts, renders the result via `template.ts`, optionally chains
-// into `aiui start`. The matching defineCommand wrapper (with arg
+// into `loom start`. The matching defineCommand wrapper (with arg
 // descriptors) lives in `lib/cli/commands/init.ts`.
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -40,7 +40,7 @@ export async function runInteractiveInit(opts: InitFlowOptions): Promise<void> {
         return;
     }
 
-    intro("AIUI setup");
+    intro("Loom setup");
 
     const outPath = await promptOutPath();
     await promptOverwrite(outPath);
@@ -95,7 +95,7 @@ export async function runInteractiveInit(opts: InitFlowOptions): Promise<void> {
     if (providerSpec && providerSpec.apiKeyRef.startsWith("${")) {
         nextSteps.push(`export ${providerSpec.apiKeyRef.slice(2, -1)}='<your-key>'`);
     }
-    nextSteps.push("aiui start");
+    nextSteps.push("loom start");
     note(nextSteps.join("\n"), "Next steps");
 
     const startNow = await ask(
@@ -123,24 +123,24 @@ async function promptOutPath(): Promise<string> {
         select({
             message: "Where should the config live?",
             options: [
-                { value: "project", label: "Project (./aiui.config.yaml)" },
-                { value: "user", label: "User (~/.config/aiui.yaml)" },
+                { value: "project", label: "Project (./loom.config.yaml)" },
+                { value: "user", label: "User (~/.config/loom.yaml)" },
                 { value: "custom", label: "Pick a custom path" },
             ],
             initialValue: "project" as const,
         }),
     );
 
-    if (target === "project") return resolve(USER_CWD, "aiui.config.yaml");
+    if (target === "project") return resolve(USER_CWD, "loom.config.yaml");
     if (target === "user") {
         const xdg = process.env.XDG_CONFIG_HOME || resolve(homedir(), ".config");
-        return resolve(xdg, "aiui.yaml");
+        return resolve(xdg, "loom.yaml");
     }
     const custom = await ask(
         text({
             message: "Config path",
-            placeholder: resolve(USER_CWD, "aiui.config.yaml"),
-            initialValue: resolve(USER_CWD, "aiui.config.yaml"),
+            placeholder: resolve(USER_CWD, "loom.config.yaml"),
+            initialValue: resolve(USER_CWD, "loom.config.yaml"),
         }),
     );
     return resolve(USER_CWD, custom);
@@ -162,13 +162,13 @@ async function promptAdminPassword(): Promise<string> {
         select({
             message: "Admin password handling",
             options: [
-                { value: "env", label: "Reference AIUI_ADMIN_PASSWORD env var (default)" },
+                { value: "env", label: "Reference LOOM_ADMIN_PASSWORD env var (default)" },
                 { value: "inline", label: "Set an inline password now (saved in config file)" },
             ],
             initialValue: "env" as const,
         }),
     );
-    if (mode === "env") return "${AIUI_ADMIN_PASSWORD}";
+    if (mode === "env") return "${LOOM_ADMIN_PASSWORD}";
     return ask(
         password({
             message: "Admin password",
@@ -181,9 +181,9 @@ export function resolveOutPath(opts: InitFlowOptions): string {
     if (opts.explicitOut) return resolve(USER_CWD, opts.explicitOut);
     if (opts.user) {
         const xdg = process.env.XDG_CONFIG_HOME || resolve(homedir(), ".config");
-        return resolve(xdg, "aiui.yaml");
+        return resolve(xdg, "loom.yaml");
     }
-    return resolve(USER_CWD, "aiui.config.yaml");
+    return resolve(USER_CWD, "loom.config.yaml");
 }
 
 export function writeOut(outPath: string, yaml: string): void {

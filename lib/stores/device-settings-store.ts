@@ -32,7 +32,7 @@ export const useDeviceSettingsStore = create<DeviceSettingsState>()(
             resetDeviceSettings: () => set(defaults),
         }),
         {
-            name: "aiui-device-settings",
+            name: "loom-device-settings",
             storage: createJSONStorage(() => localStorage),
         },
     ),

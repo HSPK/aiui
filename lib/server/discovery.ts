@@ -49,7 +49,7 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>();
 
 function cacheTtlMs(): number {
-    const seconds = Number(process.env.AIUI_MODELS_CACHE_TTL);
+    const seconds = Number(process.env.LOOM_MODELS_CACHE_TTL);
     if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
     return 5 * 60 * 1000;  // 5-minute default
 }

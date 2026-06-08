@@ -13,12 +13,12 @@ export async function bootstrapAdmin(): Promise<void> {
     const existing = db.select().from(users).all();
     if (existing.length > 0) return;
 
-    const username = process.env.AIUI_ADMIN_USERNAME || "admin";
-    const password = process.env.AIUI_ADMIN_PASSWORD;
+    const username = process.env.LOOM_ADMIN_USERNAME || "admin";
+    const password = process.env.LOOM_ADMIN_PASSWORD;
     if (!password) {
         console.warn(
-            "[aiui] No users in database and AIUI_ADMIN_PASSWORD is not set. " +
-            "Set AIUI_ADMIN_USERNAME / AIUI_ADMIN_PASSWORD to bootstrap the first admin."
+            "[loom] No users in database and LOOM_ADMIN_PASSWORD is not set. " +
+            "Set LOOM_ADMIN_USERNAME / LOOM_ADMIN_PASSWORD to bootstrap the first admin."
         );
         return;
     }
@@ -32,5 +32,5 @@ export async function bootstrapAdmin(): Promise<void> {
             role: "admin",
         })
         .run();
-    console.log(`[aiui] Bootstrapped admin user "${username}".`);
+    console.log(`[loom] Bootstrapped admin user "${username}".`);
 }

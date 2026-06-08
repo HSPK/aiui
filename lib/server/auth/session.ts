@@ -7,10 +7,10 @@ import { generateRandomToken, sha256 } from "../crypto";
 import { forbidden, unauthorized } from "../response";
 import { userToSession, type SessionUser } from "./types";
 
-export const SESSION_COOKIE = "aiui_session";
+export const SESSION_COOKIE = "loom_session";
 
 function sessionTtlMs(): number {
-    const days = Number(process.env.AIUI_SESSION_TTL_DAYS);
+    const days = Number(process.env.LOOM_SESSION_TTL_DAYS);
     if (Number.isFinite(days) && days > 0) return days * 86400 * 1000;
     return 30 * 86400 * 1000; // 30-day default
 }

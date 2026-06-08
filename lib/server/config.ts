@@ -12,7 +12,7 @@ import type { Provider } from "./db/schema";
  * Local config file loader (server side).
  *
  * The search order and the YAML schema are defined in lib/preflight.ts so
- * the CLI (bin/aiui.mjs) and the server can share one source of truth.
+ * the CLI (bin/loom.mjs) and the server can share one source of truth.
  *
  * Top-level fields applied as env vars (master_key, database.path, admin.*,
  * session.*, cache.*, server.*) are hoisted by `preflightFromConfig()` so they
@@ -76,11 +76,11 @@ function upsertProvider(entry: ProviderEntry): { id: string; name: string } | nu
     const name = entry.name?.trim();
     const baseUrl = entry.base_url?.trim();
     if (!name) {
-        console.warn("[aiui:config] skipping provider with no name");
+        console.warn("[loom:config] skipping provider with no name");
         return null;
     }
     if (!baseUrl) {
-        console.warn(`[aiui:config] provider "${name}" missing base_url; skipping`);
+        console.warn(`[loom:config] provider "${name}" missing base_url; skipping`);
         return null;
     }
     const adapterId = adapterIdFor({ ...entry, base_url: baseUrl });
@@ -133,14 +133,14 @@ export function loadConfigFile(): void {
     if (!path || !cfg) return;
 
     if (applied.length > 0) {
-        console.log(`[aiui:config] ${path}: applied env from config (${applied.join(", ")}).`);
+        console.log(`[loom:config] ${path}: applied env from config (${applied.join(", ")}).`);
     } else {
-        console.log(`[aiui:config] ${path} loaded.`);
+        console.log(`[loom:config] ${path} loaded.`);
     }
 
     if (Array.isArray((cfg as { models?: unknown[] }).models)) {
         console.warn(
-            `[aiui:config] ${path}: \`models:\` section is deprecated — models are now ` +
+            `[loom:config] ${path}: \`models:\` section is deprecated — models are now ` +
             `discovered live from each provider's /models endpoint. Use the admin UI ` +
             `to add per-model overrides (Azure deployments, display-name aliases, etc.).`
         );
@@ -156,9 +156,9 @@ export function loadConfigFile(): void {
         try {
             if (upsertProvider(entry)) count++;
         } catch (err) {
-            console.error(`[aiui:config] upsert provider "${entry.name}" failed:`, err);
+            console.error(`[loom:config] upsert provider "${entry.name}" failed:`, err);
         }
     }
 
-    if (count > 0) console.log(`[aiui:config] upserted ${count} provider(s).`);
+    if (count > 0) console.log(`[loom:config] upserted ${count} provider(s).`);
 }

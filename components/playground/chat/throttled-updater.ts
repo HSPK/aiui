@@ -18,7 +18,7 @@ export class ThrottledUpdater {
 
     /** Tool calls assembled from streaming deltas, keyed by index so
      *  out-of-order chunks merge cleanly. Results are filled in as
-     *  `aiui_tool_result` events arrive (keyed by id). */
+     *  `loom_tool_result` events arrive (keyed by id). */
     private toolCallsByIndex = new Map<number, AssembledToolCall & { index: number }>()
     private toolCallIndexById = new Map<string, number>()
 

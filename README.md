@@ -42,8 +42,6 @@ npx @hspk/loom <command>
 bunx @hspk/loom <command>
 ```
 
-> The CLI also installs an `aiui` alias for backwards compatibility — `loom` and `aiui` invoke the same binary.
-
 ### 2. Initialize
 
 ```bash
@@ -58,7 +56,7 @@ A guided wizard asks you:
 - Port and hostname
 - Whether to start the server immediately
 
-It writes an `aiui.config.yaml` with a freshly generated `master_key` and `chmod 600` permissions.
+It writes an `loom.config.yaml` with a freshly generated `master_key` and `chmod 600` permissions.
 
 Need a non-interactive run for CI / Docker?
 
@@ -124,22 +122,22 @@ Built-in catalog of probe-verified MCP server presets covers filesystem, git, we
 
 ## Configuration
 
-`aiui.config.yaml` is the single source of truth. Search order:
+`loom.config.yaml` is the single source of truth. Search order:
 
-1. `$AIUI_CONFIG_PATH`
-2. `./aiui.config.{yaml,yml,json}`
-3. `./.config/aiui.{yaml,yml,json}`
-4. `$XDG_CONFIG_HOME/aiui.{yaml,yml,json}` (or `~/.config/...`)
+1. `$LOOM_CONFIG_PATH`
+2. `./loom.config.{yaml,yml,json}`
+3. `./.config/loom.{yaml,yml,json}`
+4. `$XDG_CONFIG_HOME/loom.{yaml,yml,json}` (or `~/.config/...`)
 
 ```yaml
 master_key: <32-byte hex>     # AES-256-GCM key for provider secrets
 admin:
   username: admin
-  password: ${AIUI_ADMIN_PASSWORD}
+  password: ${LOOM_ADMIN_PASSWORD}
 server:
   port: 3000
 database:
-  path: ./data/aiui.db        # default: <cwd>/data/aiui.db
+  path: ./data/loom.db        # default: <cwd>/data/loom.db
 providers:
   - name: openai
     base_url: https://api.openai.com/v1
@@ -161,7 +159,7 @@ Loom is single-binary by design: **Next.js 16 (App Router) + React 19 + Drizzle 
 | Schemas          | `lib/schemas/*.ts`                    | Zod wire types — single source of truth                |
 | MCP runtime      | `lib/server/mcp/`                     | Client pool, tool routing, transport lifecycle         |
 | Storage          | `lib/server/db/`                      | SQLite + WAL + auto-migrations on boot                 |
-| CLI              | `bin/aiui.ts` + `lib/cli/`            | citty + @clack/prompts                                 |
+| CLI              | `bin/loom.ts` + `lib/cli/`            | citty + @clack/prompts                                 |
 | Web UI           | `app/(dashboard)/**` + `components/**` | shadcn/ui + TanStack Query                           |
 
 Adding a new provider protocol variant = one file under `lib/server/adapters/` + one line of registration. Adding a new modality = one file under `lib/server/capabilities/` + one Route Handler. The core gateway never branches on provider type.
@@ -175,8 +173,8 @@ Adding a new provider protocol variant = one file under `lib/server/adapters/` +
 ## Development
 
 ```bash
-git clone https://github.com/HSPK/aiui.git
-cd aiui
+git clone https://github.com/HSPK/loom.git
+cd loom
 bun install
 bun run dev      # http://localhost:3000 with hot reload
 bun run build    # production build

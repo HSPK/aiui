@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Bundles bin/aiui.ts (and its transitive lib/preflight.ts + lib/schemas/*)
-// into a single ESM file at bin/aiui.mjs. The .mjs extension forces Node to
+// Bundles bin/loom.ts (and its transitive lib/preflight.ts + lib/schemas/*)
+// into a single ESM file at bin/loom.mjs. The .mjs extension forces Node to
 // load it as an ES module without polluting package.json with
 // `"type": "module"` (which would change every other .js file in the repo).
 // esbuild preserves the entry file's `#!/usr/bin/env node` shebang
@@ -13,12 +13,12 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "..");
-const OUTFILE = resolve(ROOT, "bin/aiui.mjs");
+const OUTFILE = resolve(ROOT, "bin/loom.mjs");
 
 mkdirSync(dirname(OUTFILE), { recursive: true });
 
 await esbuild.build({
-    entryPoints: [resolve(ROOT, "bin/aiui.ts")],
+    entryPoints: [resolve(ROOT, "bin/loom.ts")],
     outfile: OUTFILE,
     bundle: true,
     platform: "node",

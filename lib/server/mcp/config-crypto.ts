@@ -8,7 +8,7 @@ import type { McpTransport } from "@/lib/schemas/mcp";
  * though MCP CRUD is admin-only, the DB row often carries upstream
  * secrets (GitHub tokens, API keys in env / Authorization headers)
  * that shouldn't sit at rest in plaintext. The master key derives
- * from AIUI_MASTER_KEY, identical to providers.
+ * from LOOM_MASTER_KEY, identical to providers.
  *
  * Strategy:
  *   - `env` (stdio) and `headers` (http) VALUES are encrypted; their

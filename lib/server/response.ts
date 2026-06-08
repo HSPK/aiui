@@ -49,6 +49,6 @@ export function handle(err: unknown): NextResponse {
         return fail(err.message, err.status, err.code);
     }
     const message = err instanceof Error ? err.message : "Internal server error";
-    console.error("[aiui] unhandled error:", err);
+    console.error("[loom] unhandled error:", err);
     return fail(message, 500, -1);
 }

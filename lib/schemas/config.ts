@@ -2,17 +2,17 @@ import { z } from "zod";
 import { providerCreateSchema } from "./provider";
 
 /**
- * Shape of the user-facing `aiui.config.yaml` (also accepted as JSON or YML).
+ * Shape of the user-facing `loom.config.yaml` (also accepted as JSON or YML).
  *
  * Used by:
  *   - lib/preflight.ts to parse & hoist infra fields into env vars
- *   - bin/aiui.ts to build the init-config template (typed against this)
+ *   - bin/loom.ts to build the init-config template (typed against this)
  *   - lib/server/config.ts to upsert providers[]
  *
  * All fields are optional — a config file with only `master_key` is valid.
  * Unknown keys are preserved (`.loose()`) so older configs still load.
  */
-export const aiuiConfigSchema = z.object({
+export const loomConfigSchema = z.object({
     master_key: z.string().optional(),
 
     database: z
@@ -54,4 +54,4 @@ export const aiuiConfigSchema = z.object({
     providers: z.array(providerCreateSchema).optional(),
 }).loose();
 
-export type AiuiConfig = z.infer<typeof aiuiConfigSchema>;
+export type LoomConfig = z.infer<typeof loomConfigSchema>;

@@ -1,4 +1,4 @@
-// `aiui.config.yaml` template builder. Pure functions over inputs —
+// `loom.config.yaml` template builder. Pure functions over inputs —
 // no I/O, no prompts — so it's trivially testable and the wizard /
 // non-interactive --yes path / --print all share the same output.
 
@@ -69,21 +69,21 @@ function renderProviders(providers: ProviderEntry[] | undefined): string {
 
 export function buildConfigTemplate(opts: ConfigTemplateOptions): string {
     const adminUsername = opts.adminUsername ?? "admin";
-    const adminPasswordRef = opts.adminPasswordRef ?? "${AIUI_ADMIN_PASSWORD}";
+    const adminPasswordRef = opts.adminPasswordRef ?? "${LOOM_ADMIN_PASSWORD}";
     const serverBlock =
         opts.port != null || opts.hostname
             ? `server:\n${opts.port != null ? `  port: ${opts.port}\n` : ""}${opts.hostname ? `  hostname: ${quoteYamlScalar(opts.hostname)}\n` : ""}`
             : `# server:\n#   port: 3000\n#   hostname: 0.0.0.0\n`;
 
-    return `# AIUI gateway configuration
+    return `# Loom gateway configuration
 # -----------------------------------------------------------------------------
 # This file is the single source of truth for everything you can configure on
 # the gateway. Strings support \${ENV_VAR} interpolation. Env vars that are
 # already set ALWAYS win over values here.
 #
-# Search order: \$AIUI_CONFIG_PATH ▸ ./aiui.config.{yaml,yml,json}
-#               ▸ ./.config/aiui.{yaml,yml,json}
-#               ▸ \$XDG_CONFIG_HOME/aiui.{yaml,yml,json}
+# Search order: \$LOOM_CONFIG_PATH ▸ ./loom.config.{yaml,yml,json}
+#               ▸ ./.config/loom.{yaml,yml,json}
+#               ▸ \$XDG_CONFIG_HOME/loom.{yaml,yml,json}
 #
 # KEEP THIS FILE SECRET — the master_key below decrypts every stored Provider
 # API key. Rotating it makes existing encrypted keys unreadable.
@@ -91,9 +91,9 @@ export function buildConfigTemplate(opts: ConfigTemplateOptions): string {
 master_key: ${quoteYamlScalar(opts.masterKey)}
 
 # ---- Storage ------------------------------------------------------------
-# Relative paths resolve against your cwd. Default: <cwd>/data/aiui.db
+# Relative paths resolve against your cwd. Default: <cwd>/data/loom.db
 # database:
-#   path: ./data/aiui.db
+#   path: ./data/loom.db
 
 # ---- Server -------------------------------------------------------------
 ${serverBlock}

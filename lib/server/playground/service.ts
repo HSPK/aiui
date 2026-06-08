@@ -31,7 +31,7 @@ const MAX_TOOL_HOPS = 8;
  * each call via the MCP runtime, persists the assistant + tool result
  * messages, and re-issues the upstream call with the extended history.
  * The single response stream interleaves rounds: chat-completion SSE
- * chunks per round, plus synthetic `event: aiui_tool_result` events so
+ * chunks per round, plus synthetic `event: loom_tool_result` events so
  * the FE can render result bubbles in real time. The terminal `[DONE]`
  * fires only after the model produces a non-tool-call answer (or the
  * hop cap is reached).
@@ -202,7 +202,7 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
             // Surface any tool-aggregation errors up front so the FE can
             // toast them before the model starts responding.
             for (const err of aggregateErrors) {
-                emitEvent("aiui_tool_error", {
+                emitEvent("loom_tool_error", {
                     server_id: err.serverId,
                     server_name: err.serverName,
                     message: err.message,
@@ -216,7 +216,7 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
 
                 while (true) {
                     if (hops >= MAX_TOOL_HOPS) {
-                        emitEvent("aiui_tool_error", {
+                        emitEvent("loom_tool_error", {
                             message: `Max tool hops (${MAX_TOOL_HOPS}) reached without final answer`,
                         });
                         break;
@@ -244,7 +244,7 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
                         const message = err instanceof Error ? err.message : String(err);
                         lastError = message;
                         upsertAssistant();
-                        emitEvent("aiui_error", { message });
+                        emitEvent("loom_error", { message });
                         break;
                     }
 
@@ -253,7 +253,7 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
                     // SSE — response headers were emitted before any
                     // forwardGeneration call, so this is the only path
                     // to tell the FE which row + log to wire actions to.
-                    emitEvent("aiui_message_meta", {
+                    emitEvent("loom_message_meta", {
                         message_id: assistantMessageId,
                         generation_id: result.logId,
                     });
@@ -266,13 +266,13 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
                         const text = await result.response.text().catch(() => "");
                         lastError = `HTTP ${result.response.status}: ${text.slice(0, 500)}`;
                         upsertAssistant();
-                        emitEvent("aiui_error", { message: lastError });
+                        emitEvent("loom_error", { message: lastError });
                         break;
                     }
                     if (!result.response.body) {
                         lastError = "Upstream returned empty stream";
                         upsertAssistant();
-                        emitEvent("aiui_error", { message: lastError });
+                        emitEvent("loom_error", { message: lastError });
                         break;
                     }
 
@@ -361,7 +361,7 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
                         // Surface to the FE as a synthetic event — the
                         // chat input doesn't poll messages mid-turn so
                         // this is how the bubble appears in real time.
-                        emitEvent("aiui_tool_result", {
+                        emitEvent("loom_tool_result", {
                             call_id: tc.id,
                             name: tc.name,
                             content: exec.content,

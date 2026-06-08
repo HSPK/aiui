@@ -59,7 +59,7 @@ const stub = http.createServer((req, res) => {
     res.end();
 });
 
-const tmp = mkdtempSync(path.join(tmpdir(), "aiui-e2e-"));
+const tmp = mkdtempSync(path.join(tmpdir(), "loom-e2e-"));
 mkdirSync(path.join(tmp, ".config"), { recursive: true });
 const MASTER_KEY = randomBytes(32).toString("hex");
 const config = `
@@ -74,7 +74,7 @@ providers:
     api_key: sk-test
     enabled: true
 `;
-writeFileSync(path.join(tmp, ".config", "aiui.yaml"), config);
+writeFileSync(path.join(tmp, ".config", "loom.yaml"), config);
 
 stub.listen(UPSTREAM_PORT);
 console.log(`stub upstream on :${UPSTREAM_PORT}`);
@@ -84,7 +84,7 @@ const server = spawn("bun", ["run", "next", "start", "-p", String(SERVER_PORT)],
     cwd: process.cwd(),
     env: {
         ...process.env,
-        AIUI_USER_CWD: tmp,
+        LOOM_USER_CWD: tmp,
     },
     stdio: ["ignore", "pipe", "pipe"],
 });
@@ -125,7 +125,7 @@ try {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_name: "admin", user_password: "adminpass" }),
     });
-    const cookie = loginRes.headers.getSetCookie?.()?.find((c) => c.startsWith("aiui_session="))?.split(";")[0];
+    const cookie = loginRes.headers.getSetCookie?.()?.find((c) => c.startsWith("loom_session="))?.split(";")[0];
     expect("login succeeded", loginRes.ok && !!cookie);
 
     const streamRes = await fetch(`${BASE}/api/v1/chat/completions`, {

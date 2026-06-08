@@ -17,11 +17,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/HSPK/aiui.git"
+    "url": "git+https://github.com/HSPK/loom.git"
   },
-  "homepage": "https://github.com/HSPK/aiui#readme",
+  "homepage": "https://github.com/HSPK/loom#readme",
   "bugs": {
-    "url": "https://github.com/HSPK/aiui/issues"
+    "url": "https://github.com/HSPK/loom/issues"
   },
   "packageManager": "bun@1.3.14",
   "engines": {
@@ -31,7 +31,7 @@
     "access": "public"
   },
   "files": [
-    "bin/aiui.mjs",
+    "bin/loom.mjs",
     ".next",
     "drizzle",
     "public",
@@ -39,8 +39,7 @@
     "LICENSE"
   ],
   "bin": {
-    "loom": "./bin/aiui.mjs",
-    "aiui": "./bin/aiui.mjs"
+    "loom": "./bin/loom.mjs"
   },
   "scripts": {
     "dev": "next dev",

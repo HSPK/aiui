@@ -153,7 +153,7 @@ export async function listModelsForProvider(providerIdOrName: string): Promise<M
 
     // Overlap discovery with the DB scan.
     const discoveredPromise = discoveredForProvider(provider).catch((err) => {
-        console.warn(`[aiui] provider "${provider.name}" discovery failed:`, err);
+        console.warn(`[loom] provider "${provider.name}" discovery failed:`, err);
         return [] as DiscoveredModel[];
     });
 
@@ -193,7 +193,7 @@ export async function getModel(idOrName: string): Promise<ModelDTO> {
             try {
                 await discoveredForProvider(provider);
             } catch (err) {
-                console.warn(`[aiui] provider "${provider.name}" discovery failed:`, err);
+                console.warn(`[loom] provider "${provider.name}" discovery failed:`, err);
             }
         }
         const raw = rawForDbModel(model, provider);

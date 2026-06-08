@@ -4,16 +4,16 @@ import { runInteractiveInit } from "../init/wizard";
 export const initCommand = defineCommand({
     meta: {
         name: "init",
-        description: "Interactive setup wizard — generates aiui.config.yaml",
+        description: "Interactive setup wizard — generates loom.config.yaml",
     },
     args: {
         out: {
             type: "string",
-            description: "Write to <path> instead of ./aiui.config.yaml",
+            description: "Write to <path> instead of ./loom.config.yaml",
         },
         user: {
             type: "boolean",
-            description: "Write to ~/.config/aiui.yaml (shortcut)",
+            description: "Write to ~/.config/loom.yaml (shortcut)",
         },
         force: {
             type: "boolean",

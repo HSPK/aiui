@@ -3,7 +3,7 @@ import { registerTheme } from "../registry";
 registerTheme({
     id: "default",
     label: "Default",
-    description: "Clean monochrome — the original aiui surface.",
+    description: "Clean monochrome — the original Loom surface.",
     flair: "minimal",
     tokens: { light: {}, dark: {} },
     preview: {

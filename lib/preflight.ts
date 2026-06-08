@@ -1,5 +1,5 @@
-// AIUI config preflight — pure TS, no DB or framework dependencies, so it
-// can be imported by both the CLI (bin/aiui.ts) and the Next server
+// Loom config preflight — pure TS, no DB or framework dependencies, so it
+// can be imported by both the CLI (bin/loom.ts) and the Next server
 // (lib/server/config.ts).
 //
 // Locates the YAML/JSON config file, parses it, and hoists "infrastructure"
@@ -8,24 +8,24 @@
 // deployments injecting secrets via env keep working without surprise.
 //
 // Search order (first match wins):
-//   1. $AIUI_CONFIG_PATH (resolved against userCwd)
-//   2. {userCwd}/aiui.config.{yaml,yml,json}
-//   3. {userCwd}/.config/aiui.{yaml,yml,json}
-//   4. $XDG_CONFIG_HOME (or ~/.config)/aiui.{yaml,yml,json}
+//   1. $LOOM_CONFIG_PATH (resolved against userCwd)
+//   2. {userCwd}/loom.config.{yaml,yml,json}
+//   3. {userCwd}/.config/loom.{yaml,yml,json}
+//   4. $XDG_CONFIG_HOME (or ~/.config)/loom.{yaml,yml,json}
 //
-// `userCwd` = process.env.AIUI_USER_CWD || process.cwd().
+// `userCwd` = process.env.LOOM_USER_CWD || process.cwd().
 
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import type { AiuiConfig } from "@/lib/schemas/config";
+import type { LoomConfig } from "@/lib/schemas/config";
 
-const DEFAULT_FILENAMES = ["aiui.config.yaml", "aiui.config.yml", "aiui.config.json"];
-const DOT_CONFIG_FILENAMES = ["aiui.yaml", "aiui.yml", "aiui.json"];
+const DEFAULT_FILENAMES = ["loom.config.yaml", "loom.config.yml", "loom.config.json"];
+const DOT_CONFIG_FILENAMES = ["loom.yaml", "loom.yml", "loom.json"];
 
 export function userCwd(): string {
-    return process.env.AIUI_USER_CWD || process.cwd();
+    return process.env.LOOM_USER_CWD || process.cwd();
 }
 
 export function xdgConfigHome(): string {
@@ -33,7 +33,7 @@ export function xdgConfigHome(): string {
 }
 
 export function locateConfigFile(): string | null {
-    const explicit = process.env.AIUI_CONFIG_PATH;
+    const explicit = process.env.LOOM_CONFIG_PATH;
     if (explicit) {
         const p = resolve(userCwd(), explicit);
         return existsSync(p) ? p : null;
@@ -68,10 +68,10 @@ export function interpolateEnv<T>(value: T): T {
     return value;
 }
 
-export function parseConfigFile(path: string): AiuiConfig {
+export function parseConfigFile(path: string): LoomConfig {
     const text = readFileSync(path, "utf8");
     const raw = path.endsWith(".json") ? JSON.parse(text) : parseYaml(text);
-    return interpolateEnv((raw ?? {}) as AiuiConfig);
+    return interpolateEnv((raw ?? {}) as LoomConfig);
 }
 
 function setEnvIfMissing(name: string, value: unknown): void {
@@ -87,16 +87,16 @@ function setEnvIfMissing(name: string, value: unknown): void {
  * variables. Returns the list of env vars that were set (useful for logging).
  *
  * Mapping:
- *   master_key                  -> AIUI_MASTER_KEY
- *   database.path               -> AIUI_DB_PATH
- *   admin.username              -> AIUI_ADMIN_USERNAME
- *   admin.password              -> AIUI_ADMIN_PASSWORD
- *   session.ttl_days            -> AIUI_SESSION_TTL_DAYS
- *   cache.models_ttl_seconds    -> AIUI_MODELS_CACHE_TTL
- *   server.port                 -> AIUI_SERVER_PORT     (CLI uses this)
- *   server.hostname             -> AIUI_SERVER_HOSTNAME (CLI uses this)
+ *   master_key                  -> LOOM_MASTER_KEY
+ *   database.path               -> LOOM_DB_PATH
+ *   admin.username              -> LOOM_ADMIN_USERNAME
+ *   admin.password              -> LOOM_ADMIN_PASSWORD
+ *   session.ttl_days            -> LOOM_SESSION_TTL_DAYS
+ *   cache.models_ttl_seconds    -> LOOM_MODELS_CACHE_TTL
+ *   server.port                 -> LOOM_SERVER_PORT     (CLI uses this)
+ *   server.hostname             -> LOOM_SERVER_HOSTNAME (CLI uses this)
  */
-export function applyConfigEnv(cfg: AiuiConfig | null | undefined): string[] {
+export function applyConfigEnv(cfg: LoomConfig | null | undefined): string[] {
     if (!cfg || typeof cfg !== "object") return [];
     const applied: string[] = [];
     const map = (envName: string, value: unknown) => {
@@ -104,20 +104,20 @@ export function applyConfigEnv(cfg: AiuiConfig | null | undefined): string[] {
         setEnvIfMissing(envName, value);
         if (process.env[envName] !== before) applied.push(envName);
     };
-    map("AIUI_MASTER_KEY", cfg.master_key);
-    map("AIUI_DB_PATH", cfg.database?.path);
-    map("AIUI_ADMIN_USERNAME", cfg.admin?.username);
-    map("AIUI_ADMIN_PASSWORD", cfg.admin?.password);
-    map("AIUI_SESSION_TTL_DAYS", cfg.session?.ttl_days);
-    map("AIUI_MODELS_CACHE_TTL", cfg.cache?.models_ttl_seconds);
-    map("AIUI_SERVER_PORT", cfg.server?.port);
-    map("AIUI_SERVER_HOSTNAME", cfg.server?.hostname);
+    map("LOOM_MASTER_KEY", cfg.master_key);
+    map("LOOM_DB_PATH", cfg.database?.path);
+    map("LOOM_ADMIN_USERNAME", cfg.admin?.username);
+    map("LOOM_ADMIN_PASSWORD", cfg.admin?.password);
+    map("LOOM_SESSION_TTL_DAYS", cfg.session?.ttl_days);
+    map("LOOM_MODELS_CACHE_TTL", cfg.cache?.models_ttl_seconds);
+    map("LOOM_SERVER_PORT", cfg.server?.port);
+    map("LOOM_SERVER_HOSTNAME", cfg.server?.hostname);
     return applied;
 }
 
 export interface PreflightResult {
     path: string | null;
-    cfg: AiuiConfig | null;
+    cfg: LoomConfig | null;
     applied: string[];
 }
 
@@ -127,11 +127,11 @@ export interface PreflightResult {
 export function preflightFromConfig(): PreflightResult {
     const path = locateConfigFile();
     if (!path) return { path: null, cfg: null, applied: [] };
-    let cfg: AiuiConfig;
+    let cfg: LoomConfig;
     try {
         cfg = parseConfigFile(path);
     } catch (err) {
-        console.error(`[aiui:config] failed to parse ${path}:`, err);
+        console.error(`[loom:config] failed to parse ${path}:`, err);
         return { path, cfg: null, applied: [] };
     }
     const applied = applyConfigEnv(cfg);

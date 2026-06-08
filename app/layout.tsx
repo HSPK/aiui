@@ -18,10 +18,10 @@ import { AppProviders } from "@/components/AppProviders";
 
 export const metadata: Metadata = {
   title: {
-    default: "aiui",
-    template: "%s · aiui",
+    default: "Loom",
+    template: "%s · Loom",
   },
-  description: "AI Gateway · OpenAI-compatible · Playground · Logs",
+  description: "Self-hosted AI portal · OpenAI-compatible · MCP · Playground · Logs",
 };
 
 export default function RootLayout({
@@ -36,7 +36,7 @@ export default function RootLayout({
             `:root[data-theme="<id>"]` block; whichever data-theme the
             bootstrap script sets below takes effect immediately. */}
         <style
-          id="aiui-theme-tokens"
+          id="loom-theme-tokens"
           dangerouslySetInnerHTML={{ __html: compileThemeStylesheet() }}
         />
         {/* Runs before React hydrates: reads the persisted theme id from

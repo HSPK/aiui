@@ -6,11 +6,11 @@ import { existsSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import * as schema from "./schema";
 
-const USER_CWD = process.env.AIUI_USER_CWD || process.cwd();
-const DB_PATH = process.env.AIUI_DB_PATH || resolve(USER_CWD, "data", "aiui.db");
+const USER_CWD = process.env.LOOM_USER_CWD || process.cwd();
+const DB_PATH = process.env.LOOM_DB_PATH || resolve(USER_CWD, "data", "loom.db");
 
 declare global {
-    var __aiui_db__: ReturnType<typeof createDb> | undefined;
+    var __loom_db__: ReturnType<typeof createDb> | undefined;
 }
 
 function createDb() {
@@ -24,16 +24,16 @@ function createDb() {
     const db = drizzle(sqlite, { schema });
 
     // Migrations live alongside the package source, not the user's
-    // project. `AIUI_PACKAGE_ROOT` is set by the CLI; in dev (bun run
+    // project. `LOOM_PACKAGE_ROOT` is set by the CLI; in dev (bun run
     // dev / next start from repo) it's absent and `process.cwd()`
     // happens to be the package root, so the fallback still works.
-    const packageRoot = process.env.AIUI_PACKAGE_ROOT || process.cwd();
+    const packageRoot = process.env.LOOM_PACKAGE_ROOT || process.cwd();
     const migrationsFolder = resolve(packageRoot, "drizzle");
     if (existsSync(migrationsFolder)) {
         try {
             migrate(db, { migrationsFolder });
         } catch (err) {
-            console.error("[aiui] Failed to run migrations:", err);
+            console.error("[loom] Failed to run migrations:", err);
             throw err;
         }
     }
@@ -41,9 +41,9 @@ function createDb() {
     return db;
 }
 
-export const db = globalThis.__aiui_db__ ?? createDb();
+export const db = globalThis.__loom_db__ ?? createDb();
 if (process.env.NODE_ENV !== "production") {
-    globalThis.__aiui_db__ = db;
+    globalThis.__loom_db__ = db;
 }
 
 export { schema };

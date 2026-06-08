@@ -27,10 +27,10 @@ const expect = (name, ok, detail = "") => {
     if (ok) passed++;
 };
 
-const tmp = mkdtempSync(path.join(tmpdir(), "aiui-e2e-mcpchk-"));
+const tmp = mkdtempSync(path.join(tmpdir(), "loom-e2e-mcpchk-"));
 mkdirSync(path.join(tmp, ".config"), { recursive: true });
 const MASTER_KEY = randomBytes(32).toString("hex");
-writeFileSync(path.join(tmp, ".config", "aiui.yaml"), `
+writeFileSync(path.join(tmp, ".config", "loom.yaml"), `
 master_key: ${MASTER_KEY}
 admin:
   username: chkadmin
@@ -79,7 +79,7 @@ await server.connect(new StdioServerTransport());
 
 const server = spawn("bun", ["run", "next", "start", "-p", String(SERVER_PORT)], {
     cwd: process.cwd(),
-    env: { ...process.env, AIUI_USER_CWD: tmp },
+    env: { ...process.env, LOOM_USER_CWD: tmp },
     stdio: ["ignore", "pipe", "pipe"],
 });
 let ready = false;
@@ -189,7 +189,7 @@ try {
     //          "Connection closed" so the admin sees the cause.
     const noisyChildPath = path.join(tmp, "mcp-noisy.mjs");
     writeFileSync(noisyChildPath, `
-process.stderr.write("Error: AIUI_STDERR_MARKER could not stat /home/who/mcp (ENOENT)\\n");
+process.stderr.write("Error: LOOM_STDERR_MARKER could not stat /home/who/mcp (ENOENT)\\n");
 process.exit(1);
 `);
     const noisyRes = await fetch(`${BASE}/api/mcp/servers`, {
@@ -214,7 +214,7 @@ process.exit(1);
         `status=${noisyDTO?.last_check_status}`);
     expect("noisy server: child stderr captured into last_check_error",
         typeof noisyDTO?.last_check_error === "string"
-        && noisyDTO.last_check_error.includes("AIUI_STDERR_MARKER"),
+        && noisyDTO.last_check_error.includes("LOOM_STDERR_MARKER"),
         `err=${noisyDTO?.last_check_error}`);
     expect("noisy server: error message preserves the JSON-RPC summary",
         typeof noisyDTO?.last_check_error === "string"
@@ -260,7 +260,7 @@ process.exit(1);
     // SECRET_TOKEN it was spawned with. Verify (a) the DTO surfaces
     // the plaintext env to the admin form, (b) the connection picks
     // up the value correctly (tool returns it), (c) the DB row's
-    // config blob is ciphertext for that field (the AIUI_MASTER_KEY
+    // config blob is ciphertext for that field (the LOOM_MASTER_KEY
     // hash is required to read it back).
     const secretChildPath = path.join(tmp, "mcp-secret.mjs");
     writeFileSync(secretChildPath, `
@@ -313,7 +313,7 @@ await server.connect(new StdioServerTransport());
     // Inspect DB row via better-sqlite3 — it's the only way to verify
     // the ciphertext (the API route always decrypts on serialize).
     const sqlite = await import("better-sqlite3");
-    const dbPath = path.join(tmp, "data", "aiui.db");
+    const dbPath = path.join(tmp, "data", "loom.db");
     const sdb = new sqlite.default(dbPath, { readonly: true });
     const row = sdb.prepare("SELECT config FROM mcp_servers WHERE id = ?").get(secretsId);
     sdb.close();

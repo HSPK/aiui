@@ -12,7 +12,7 @@ export function ensureInit(): Promise<void> {
             try {
                 loadConfigFile();
             } catch (err) {
-                console.error("[aiui:init] config file load failed:", err);
+                console.error("[loom] config file load failed:", err);
             }
             // Then bootstrap admin from the resulting env vars.
             await bootstrapAdmin();

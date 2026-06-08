@@ -28,10 +28,10 @@ const expect = (name, ok, detail = "") => {
     if (ok) passed++;
 };
 
-const tmp = mkdtempSync(path.join(tmpdir(), "aiui-e2e-pgn-"));
+const tmp = mkdtempSync(path.join(tmpdir(), "loom-e2e-pgn-"));
 mkdirSync(path.join(tmp, ".config"), { recursive: true });
 const MASTER_KEY = randomBytes(32).toString("hex");
-writeFileSync(path.join(tmp, ".config", "aiui.yaml"), `
+writeFileSync(path.join(tmp, ".config", "loom.yaml"), `
 master_key: ${MASTER_KEY}
 admin:
   username: pgnadmin
@@ -40,7 +40,7 @@ admin:
 
 const server = spawn("bun", ["run", "next", "start", "-p", String(SERVER_PORT)], {
     cwd: process.cwd(),
-    env: { ...process.env, AIUI_USER_CWD: tmp },
+    env: { ...process.env, LOOM_USER_CWD: tmp },
     stdio: ["ignore", "pipe", "pipe"],
 });
 let ready = false;
@@ -78,7 +78,7 @@ try {
 
     // Find the admin's user id (we need it to insert via SQLite).
     const sqlite = await import("better-sqlite3");
-    const dbPath = path.join(tmp, "data", "aiui.db");
+    const dbPath = path.join(tmp, "data", "loom.db");
     const sdb = new sqlite.default(dbPath);
     const userRow = sdb.prepare("SELECT id FROM users WHERE username = ?").get("pgnadmin");
     const userId = userRow?.id;

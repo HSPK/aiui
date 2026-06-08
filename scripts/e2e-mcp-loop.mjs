@@ -8,7 +8,7 @@
 //      in round 2 after seeing the tool result. Verify:
 //        - upstream round 1 received tools[] with mangled name
 //        - upstream round 2 received the tool result message
-//        - SSE stream surfaced an `event: aiui_tool_result`
+//        - SSE stream surfaced an `event: loom_tool_result`
 //        - persisted messages include assistant tool_call part + a
 //          role:"tool" tool_result row.
 
@@ -71,10 +71,10 @@ const stub = http.createServer((req, res) => {
     res.end();
 });
 
-const tmp = mkdtempSync(path.join(tmpdir(), "aiui-e2e-mcp-"));
+const tmp = mkdtempSync(path.join(tmpdir(), "loom-e2e-mcp-"));
 mkdirSync(path.join(tmp, ".config"), { recursive: true });
 const MASTER_KEY = randomBytes(32).toString("hex");
-writeFileSync(path.join(tmp, ".config", "aiui.yaml"), `
+writeFileSync(path.join(tmp, ".config", "loom.yaml"), `
 master_key: ${MASTER_KEY}
 admin:
   username: mcpadmin
@@ -124,7 +124,7 @@ console.log(`stub on :${UPSTREAM_PORT}`);
 
 const server = spawn("bun", ["run", "next", "start", "-p", String(SERVER_PORT)], {
     cwd: process.cwd(),
-    env: { ...process.env, AIUI_USER_CWD: tmp },
+    env: { ...process.env, LOOM_USER_CWD: tmp },
     stdio: ["ignore", "pipe", "pipe"],
 });
 
@@ -270,8 +270,8 @@ try {
         `tc=${JSON.stringify(assistantWithCalls?.tool_calls?.[0])}`);
 
     // SSE stream surfaced the synthetic tool_result event.
-    expect("SSE stream contains event: aiui_tool_result",
-        sseText.includes("event: aiui_tool_result"),
+    expect("SSE stream contains event: loom_tool_result",
+        sseText.includes("event: loom_tool_result"),
         `events=${sseText.match(/event:[^\n]+/g)?.slice(0, 3).join(", ")}`);
 
     // Persisted messages have the assistant tool_call part + role:tool row.

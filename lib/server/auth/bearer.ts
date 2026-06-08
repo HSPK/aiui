@@ -6,7 +6,7 @@ import { generateRandomToken, sha256 } from "../crypto";
 import { unauthorized } from "../response";
 import { userToSession, type SessionUser } from "./types";
 
-export const API_KEY_PREFIX = "sk-aiui-";
+export const API_KEY_PREFIX = "sk-loom-";
 
 export function generateApiKey(): { plain: string; prefix: string; hash: string } {
     const secret = generateRandomToken(32);

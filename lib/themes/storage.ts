@@ -5,7 +5,7 @@
  * keeps the no-flash contract enforceable from one place.
  */
 
-export const THEME_STORAGE_KEY = "aiui-theme";
+export const THEME_STORAGE_KEY = "loom-theme";
 
 export type StoredThemeScheme = "light" | "dark" | "system";
 

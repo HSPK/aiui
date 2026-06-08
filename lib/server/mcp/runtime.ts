@@ -72,10 +72,10 @@ const pending = new Map<string, Promise<CachedClient>>();
 // HMR re-import of this module doesn't re-register on every reload.
 
 const SHUTDOWN_TIMEOUT_MS = 1_500;
-const SHUTDOWN_KEY = Symbol.for("aiui.mcp.runtime.shutdownRegistered");
+const SHUTDOWN_KEY = Symbol.for("loom.mcp.runtime.shutdownRegistered");
 
 declare global {
-    var __aiui_mcp_shutdown_registered__: boolean | undefined;
+    var __loom_mcp_shutdown_registered__: boolean | undefined;
 }
 
 async function disposeAll(): Promise<void> {
@@ -92,8 +92,8 @@ async function disposeAll(): Promise<void> {
     );
 }
 
-if (typeof process !== "undefined" && !globalThis.__aiui_mcp_shutdown_registered__) {
-    globalThis.__aiui_mcp_shutdown_registered__ = true;
+if (typeof process !== "undefined" && !globalThis.__loom_mcp_shutdown_registered__) {
+    globalThis.__loom_mcp_shutdown_registered__ = true;
     // Avoid `process.exit()` from the handler — return so other signal
     // listeners get to run too. Node will exit naturally once handlers settle.
     const handler = () => { void disposeAll(); };
@@ -112,7 +112,7 @@ const STDERR_CAP = 4096;
 
 async function buildClient(server: McpServerDTO): Promise<CachedClient> {
     const client = new Client(
-        { name: "aiui-gateway", version: "0.1.0" },
+        { name: "loom-gateway", version: "0.1.0" },
         { capabilities: {} },
     );
     const tag = Symbol(`mcp:${server.id}:${server.updated_at}`);

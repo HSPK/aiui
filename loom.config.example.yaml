@@ -1,15 +1,15 @@
-# AIUI gateway sample configuration
+# Loom gateway sample configuration
 # -----------------------------------------------------------------------------
 # Single source of truth for everything you can configure on the gateway. Drop
-# a file named `aiui.config.yaml` (`.yml` / `.json` also work, or point at one
-# with the AIUI_CONFIG_PATH env var) anywhere in the search order below and
+# a file named `loom.config.yaml` (`.yml` / `.json` also work, or point at one
+# with the LOOM_CONFIG_PATH env var) anywhere in the search order below and
 # the gateway will pick it up on boot.
 #
 # Search order (first match wins):
-#   1. $AIUI_CONFIG_PATH
-#   2. ./aiui.config.{yaml,yml,json}
-#   3. ./.config/aiui.{yaml,yml,json}
-#   4. $XDG_CONFIG_HOME/aiui.{yaml,yml,json}     (or ~/.config/...)
+#   1. $LOOM_CONFIG_PATH
+#   2. ./loom.config.{yaml,yml,json}
+#   3. ./.config/loom.{yaml,yml,json}
+#   4. $XDG_CONFIG_HOME/loom.{yaml,yml,json}     (or ~/.config/...)
 #
 # Strings support ${ENV_VAR} interpolation, e.g. `api_key: ${OPENAI_API_KEY}`.
 # Env vars that are already set ALWAYS take precedence over this file —
@@ -18,15 +18,15 @@
 # ---- Secrets -------------------------------------------------------------
 # AES-256-GCM master key used to encrypt every stored Provider API key. KEEP
 # IT SECRET. Rotating it makes existing encrypted keys unreadable.
-master_key: ${AIUI_MASTER_KEY}
+master_key: ${LOOM_MASTER_KEY}
 
 # ---- Storage -------------------------------------------------------------
 # SQLite file location. Relative paths resolve against your current working
-# directory (the dir you invoked `aiui` from). Default: <cwd>/data/aiui.db.
-# This field only takes effect via the `aiui` CLI — set AIUI_DB_PATH if you
+# directory (the dir you invoked `loom` from). Default: <cwd>/data/loom.db.
+# This field only takes effect via the `loom` CLI — set LOOM_DB_PATH if you
 # bypass the CLI.
 # database:
-#   path: ./data/aiui.db
+#   path: ./data/loom.db
 
 # ---- Server --------------------------------------------------------------
 # Listen address. CLI flags (-p / -H) still win.
@@ -38,7 +38,7 @@ master_key: ${AIUI_MASTER_KEY}
 # Created on first boot if the users table is empty.
 admin:
   username: admin
-  password: ${AIUI_ADMIN_PASSWORD}
+  password: ${LOOM_ADMIN_PASSWORD}
 
 # ---- Session ------------------------------------------------------------
 # How long an authenticated browser session lasts. Default: 30 days.

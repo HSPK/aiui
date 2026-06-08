@@ -124,7 +124,7 @@ const stub = http.createServer((req, res) => {
     res.end();
 });
 
-const tmp = mkdtempSync(path.join(tmpdir(), "aiui-e2e-trace-"));
+const tmp = mkdtempSync(path.join(tmpdir(), "loom-e2e-trace-"));
 mkdirSync(path.join(tmp, ".config"), { recursive: true });
 const MASTER_KEY = randomBytes(32).toString("hex");
 const config = `
@@ -158,7 +158,7 @@ providers:
     health_check_url: http://127.0.0.1:${UPSTREAM_PORT}/health-bad
     enabled: true
 `;
-writeFileSync(path.join(tmp, ".config", "aiui.yaml"), config);
+writeFileSync(path.join(tmp, ".config", "loom.yaml"), config);
 
 stub.listen(UPSTREAM_PORT);
 console.log(`stub upstream on :${UPSTREAM_PORT}`);
@@ -166,7 +166,7 @@ console.log(`tmp user cwd: ${tmp}`);
 
 const server = spawn("bun", ["run", "next", "start", "-p", String(SERVER_PORT)], {
     cwd: process.cwd(),
-    env: { ...process.env, AIUI_USER_CWD: tmp },
+    env: { ...process.env, LOOM_USER_CWD: tmp },
     stdio: ["ignore", "pipe", "pipe"],
 });
 
@@ -206,7 +206,7 @@ try {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_name: "traceadmin", user_password: "tracepass" }),
     });
-    const cookie = loginRes.headers.getSetCookie?.()?.find((c) => c.startsWith("aiui_session="))?.split(";")[0];
+    const cookie = loginRes.headers.getSetCookie?.()?.find((c) => c.startsWith("loom_session="))?.split(";")[0];
     expect("login succeeded", loginRes.ok && !!cookie);
 
     // Trigger a streaming chat — caller does NOT pass stream_options,
