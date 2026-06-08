@@ -16,16 +16,21 @@ interface Props {
     conversationId: string
 }
 
+const EMPTY_IDS: readonly string[] = Object.freeze([])
+
 /** Per-conversation MCP server picker. Only globally-enabled servers
  *  are listed; the user picks which subset is exposed to the model
  *  for this conversation. */
 export function McpToolToggle({ conversationId }: Props) {
     const { data: servers } = mcpServers.useList()
-    const enabledIds = usePlaygroundStore(
-        (s) => s.settings[conversationId]?.enabledMcpServerIds ?? []
+    // Select the raw (possibly undefined) array so the selector returns
+    // a stable reference; default in a memo outside the store.
+    const enabledIdsRaw = usePlaygroundStore(
+        (s) => s.settings[conversationId]?.enabledMcpServerIds
     )
     const updateSettings = usePlaygroundStore((s) => s.updateSettings)
 
+    const enabledIds = React.useMemo(() => enabledIdsRaw ?? EMPTY_IDS, [enabledIdsRaw])
     const available = React.useMemo(
         () => (servers ?? []).filter((s) => s.enabled),
         [servers]
