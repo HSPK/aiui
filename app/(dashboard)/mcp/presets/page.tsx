@@ -30,18 +30,16 @@ import { cn } from "@/lib/utils"
 interface CategoryMeta {
     label: string
     icon: React.ElementType
-    /** Tailwind colour token used for the chip accent + card tint. */
-    tone: string
 }
 
 const CATEGORIES: Record<McpPresetCategory, CategoryMeta> = {
-    official: { label: "Official", icon: Sparkles, tone: "amber" },
-    system: { label: "System", icon: Terminal, tone: "blue" },
-    dev: { label: "Developer", icon: Code, tone: "violet" },
-    academic: { label: "Academic", icon: Beaker, tone: "emerald" },
-    data: { label: "Data", icon: Database, tone: "rose" },
-    productivity: { label: "Productivity", icon: Boxes, tone: "cyan" },
-    community: { label: "Community", icon: Globe, tone: "slate" },
+    official: { label: "Official", icon: Sparkles },
+    system: { label: "System", icon: Terminal },
+    dev: { label: "Developer", icon: Code },
+    academic: { label: "Academic", icon: Beaker },
+    data: { label: "Data", icon: Database },
+    productivity: { label: "Productivity", icon: Boxes },
+    community: { label: "Community", icon: Globe },
 }
 
 const CATEGORY_ORDER: McpPresetCategory[] = [
@@ -128,19 +126,14 @@ export default function McpPresetsPage() {
                         <span>/</span>
                         <span className="text-foreground">Catalogue</span>
                     </div>
-                    <div>
-                        <h1 className="text-lg font-semibold leading-none">Preset catalogue</h1>
-                        <p className="mt-1.5 text-sm text-muted-foreground">
-                            Probe-verified MCP servers. Pick one to pre-fill the create form, then top up the secret / path slots.
-                        </p>
-                    </div>
+                    <h1 className="text-lg font-semibold leading-none">Preset catalogue</h1>
 
                     <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                         <Input
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
-                            placeholder="Search by name or description…"
+                            placeholder="Search…"
                             className="h-9 pl-8 text-sm"
                         />
                     </div>
@@ -230,7 +223,7 @@ function CategoryChips({
         })),
     ]
     return (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1">
             {items.map((it) => {
                 const count = counts[it.key] ?? 0
                 if (it.key !== "all" && count === 0) return null
@@ -242,18 +235,19 @@ function CategoryChips({
                         type="button"
                         onClick={() => onSelect(it.key)}
                         className={cn(
-                            "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition-colors",
+                            "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-colors",
+                            // Match the tabs / settings-nav active state
+                            // pattern: subtle bg-muted fill, no inverse
+                            // colours. Inactive uses the project-wide
+                            // hover:bg-muted/50 + muted text -> foreground.
                             isActive
-                                ? "border-foreground bg-foreground text-background"
-                                : "border-border bg-background hover:bg-muted/50 text-muted-foreground hover:text-foreground",
+                                ? "bg-muted font-medium text-foreground"
+                                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
                         )}
                     >
                         {Icon && <Icon className="h-3 w-3" />}
                         {it.label}
-                        <span className={cn(
-                            "font-mono text-[10px]",
-                            isActive ? "text-background/70" : "text-muted-foreground/60",
-                        )}>
+                        <span className="font-mono text-[10px] text-muted-foreground/70">
                             {count}
                         </span>
                     </button>
@@ -298,12 +292,9 @@ function PresetCard({
     const meta = CATEGORIES[preset.category]
     const Icon = meta.icon
     return (
-        <div className="group rounded-lg border bg-card p-3 flex flex-col gap-2 hover:border-foreground/30 transition-colors">
+        <div className="rounded-lg border bg-card p-3 flex flex-col gap-2 hover:bg-muted/30 transition-colors">
             <div className="flex items-start gap-2 min-w-0">
-                <span className={cn(
-                    "shrink-0 mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-md",
-                    "bg-muted/50 text-muted-foreground group-hover:text-foreground transition-colors",
-                )}>
+                <span className="shrink-0 mt-0.5 inline-flex h-7 w-7 items-center justify-center rounded-md bg-muted/50 text-muted-foreground">
                     <Icon className="h-3.5 w-3.5" />
                 </span>
                 <div className="flex-1 min-w-0">
@@ -326,7 +317,7 @@ function PresetCard({
                         href={preset.homepage}
                         target="_blank"
                         rel="noreferrer"
-                        className="shrink-0 inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                        className="shrink-0 inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
                         title="Open homepage"
                         onClick={(e) => e.stopPropagation()}
                     >
