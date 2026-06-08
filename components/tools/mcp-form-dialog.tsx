@@ -40,6 +40,14 @@ interface Props {
     onOpenChange: (open: boolean) => void
     mode: "create" | "edit"
     server?: McpServerDTO | null
+    /** When provided in create mode, the form is pre-filled from the
+     *  preset on open and the in-dialog preset Select is hidden — the
+     *  catalogue page already chose. */
+    preset?: McpPreset
+    /** Called after a successful create / update with the persisted
+     *  DTO. Lets callers (e.g. the catalogue page) route back to the
+     *  list with the new row pre-selected. */
+    onSaved?: (server: McpServerDTO) => void
 }
 
 type Transport = "stdio" | "http"
@@ -87,7 +95,7 @@ function jsonError(value: string): string | null {
     }
 }
 
-export function McpFormDialog({ open, onOpenChange, mode, server }: Props) {
+export function McpFormDialog({ open, onOpenChange, mode, server, preset, onSaved }: Props) {
     const [name, setName] = React.useState("")
     const [description, setDescription] = React.useState("")
     const [transport, setTransport] = React.useState<Transport>("stdio")
@@ -97,32 +105,9 @@ export function McpFormDialog({ open, onOpenChange, mode, server }: Props) {
     const [presetId, setPresetId] = React.useState<string>("")
 
     const { data: presets } = mcpServers.usePresets()
-    const showPresets = mode === "create" && !server
-
-    React.useEffect(() => {
-        if (!open) return
-        if (server) {
-            setName(server.name)
-            setDescription(server.description ?? "")
-            setTransport(server.transport)
-            setEnabled(server.enabled !== false)
-            if (server.transport === "stdio") {
-                setStdio(parseStdioConfig(server.config ?? {}))
-                setHttp(DEFAULT_HTTP)
-            } else {
-                setHttp(parseHttpConfig(server.config ?? {}))
-                setStdio(DEFAULT_STDIO)
-            }
-        } else {
-            setName("")
-            setDescription("")
-            setTransport("stdio")
-            setStdio(DEFAULT_STDIO)
-            setHttp(DEFAULT_HTTP)
-            setEnabled(true)
-        }
-        setPresetId("")
-    }, [open, server])
+    // Hide the in-dialog preset Select when the catalogue page already
+    // chose one (preset prop). Edits never show it either.
+    const showPresets = mode === "create" && !server && !preset
 
     const applyPreset = React.useCallback((p: McpPreset) => {
         setName(p.name)
@@ -138,12 +123,39 @@ export function McpFormDialog({ open, onOpenChange, mode, server }: Props) {
         }
     }, [])
 
+    React.useEffect(() => {
+        if (!open) return
+        if (server) {
+            setName(server.name)
+            setDescription(server.description ?? "")
+            setTransport(server.transport)
+            setEnabled(server.enabled !== false)
+            if (server.transport === "stdio") {
+                setStdio(parseStdioConfig(server.config ?? {}))
+                setHttp(DEFAULT_HTTP)
+            } else {
+                setHttp(parseHttpConfig(server.config ?? {}))
+                setStdio(DEFAULT_STDIO)
+            }
+        } else if (preset) {
+            applyPreset(preset)
+        } else {
+            setName("")
+            setDescription("")
+            setTransport("stdio")
+            setStdio(DEFAULT_STDIO)
+            setHttp(DEFAULT_HTTP)
+            setEnabled(true)
+        }
+        setPresetId("")
+    }, [open, server, preset, applyPreset])
+
     const createMutation = mcpServers.useCreate({
-        onSuccess: () => { toast.success("Saved"); onOpenChange(false) },
+        onSuccess: (s) => { toast.success("Saved"); onOpenChange(false); if (s) onSaved?.(s) },
         onError: (e) => toast.error(e.message || "Save failed"),
     })
     const updateMutation = mcpServers.useUpdate({
-        onSuccess: () => { toast.success("Saved"); onOpenChange(false) },
+        onSuccess: (s) => { toast.success("Saved"); onOpenChange(false); if (s) onSaved?.(s) },
         onError: (e) => toast.error(e.message || "Save failed"),
     })
 

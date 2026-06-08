@@ -168,6 +168,16 @@ export type McpServerUpdateInput = z.infer<typeof mcpServerUpdateSchema>;
  *  in any required secrets / paths and saves. `slots` lists fields the
  *  preset can't pre-fill (API keys, allowed paths) so the FE can hint at
  *  them. */
+export const mcpPresetCategorySchema = z.enum([
+    "official",
+    "system",
+    "dev",
+    "academic",
+    "data",
+    "productivity",
+    "community",
+]);
+
 export const mcpPresetSchema = z.object({
     id: z.string(),
     name: z.string(),
@@ -192,6 +202,10 @@ export const mcpPresetSchema = z.object({
         .default([]),
     /** Source URL (npm / GitHub repo) for documentation. */
     homepage: z.string().optional(),
+    /** Grouping for the catalogue gallery — single category per preset
+     *  keeps the filter UX simple. */
+    category: mcpPresetCategorySchema.default("community"),
 });
 
+export type McpPresetCategory = z.infer<typeof mcpPresetCategorySchema>;
 export type McpPreset = z.infer<typeof mcpPresetSchema>;

@@ -1,7 +1,9 @@
 "use client"
 
 import * as React from "react"
-import { Plus, Sparkles } from "lucide-react"
+import Link from "next/link"
+import { useSearchParams } from "next/navigation"
+import { LayoutGrid, Plus, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 
 import { mcpServers } from "@/lib/api"
@@ -39,7 +41,15 @@ export default function McpPage() {
 
     const [mcpDialog, setMcpDialog] = React.useState<McpDialogState>({ open: false, mode: "create" })
     const [deleteServer, setDeleteServer] = React.useState<McpServerDTO | null>(null)
-    const [selectedId, setSelectedId] = React.useState<string | null>(null)
+
+    // Catalogue page links back with `?selected=<id>` after a
+    // successful create so the new row's details sheet opens right
+    // away. Read once on mount via lazy state init — no effect, no
+    // setState-during-render.
+    const searchParams = useSearchParams()
+    const [selectedId, setSelectedId] = React.useState<string | null>(
+        () => searchParams?.get("selected") ?? null,
+    )
 
     const selectedServer = React.useMemo(
         () => (mcpList ?? []).find((s) => s.id === selectedId) ?? null,
@@ -68,16 +78,26 @@ export default function McpPage() {
                         <TabsTrigger value="skills" className="h-7 px-3 text-xs">Skills</TabsTrigger>
                     </TabsList>
 
-                    {isAdmin && activeTab === "mcp" && (
-                        <Button
-                            size="icon"
-                            variant="secondary"
-                            className="h-8 w-8 shrink-0 ml-auto"
-                            onClick={() => setMcpDialog({ open: true, mode: "create" })}
-                            title="Add MCP server"
-                        >
-                            <Plus className="h-3.5 w-3.5" />
-                        </Button>
+                    {activeTab === "mcp" && (
+                        <div className="flex items-center gap-1.5 ml-auto">
+                            <Link href="/mcp/presets">
+                                <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5">
+                                    <LayoutGrid className="h-3.5 w-3.5" />
+                                    Catalogue
+                                </Button>
+                            </Link>
+                            {isAdmin && (
+                                <Button
+                                    size="icon"
+                                    variant="secondary"
+                                    className="h-8 w-8 shrink-0"
+                                    onClick={() => setMcpDialog({ open: true, mode: "create" })}
+                                    title="Add MCP server"
+                                >
+                                    <Plus className="h-3.5 w-3.5" />
+                                </Button>
+                            )}
+                        </div>
                     )}
                 </div>
 

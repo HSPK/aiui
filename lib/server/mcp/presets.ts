@@ -2,84 +2,103 @@ import "server-only";
 import type { McpPreset } from "@/lib/schemas/mcp";
 
 /**
- * Curated catalogue of known-working MCP servers. Every entry below
- * was probed end-to-end (stdio spawn → initialize → tools/list)
- * against the version of the package shown by the date stamp on its
- * id; entries that 404'd on npm, were marked deprecated upstream, or
- * couldn't complete the initialize handshake are intentionally not
- * shipped. Configure those manually if you need them.
+ * Curated catalogue of probe-verified MCP servers.
  *
- * TypeScript reference servers run via `npx -y @modelcontextprotocol/
- * server-<name>`. Python ones run via `uvx mcp-server-<name>` — you
- * need `uv` (https://docs.astral.sh/uv/) installed on the host.
+ * Every entry below was tested end-to-end (transport spawn or HTTP
+ * connect → initialize → tools/list) against the latest version of
+ * the package. Entries that 404'd on the registry, got marked
+ * deprecated upstream, or couldn't complete the handshake are not
+ * shipped — configure those manually if you need them.
  *
- * Adding a preset = one entry below + a probe in the manual checklist.
- * `slots` lists fields the admin has to fill before saving (we still
- * always run a real connection check on save, so a forgotten slot
- * surfaces in `last_check_error` rather than silently shipping a
- * broken row).
+ * TypeScript reference servers run via `npx -y @scope/server-<name>`.
+ * Python servers run via `uvx <package>` — you need `uv` installed
+ * on the host (https://docs.astral.sh/uv/).
+ *
+ * The `category` field groups presets in the gallery view. Adding a
+ * preset = one entry below + a probe; the catalogue page picks up
+ * new entries automatically.
  */
 
 export const MCP_PRESETS: McpPreset[] = [
+    // ---------------- system / filesystem / runtime ----------------
     {
         id: "filesystem",
         name: "filesystem",
-        description: "Read / write access to allowed local directories (Node).",
+        description: "Read / write access to allowed local directories.",
         transport: "stdio",
+        category: "official",
         config: {
             command: "npx",
             args: ["-y", "@modelcontextprotocol/server-filesystem", "<ALLOWED_PATH>"],
             env: {},
         },
-        slots: [
-            { path: "args[2]", label: "Allowed root path", kind: "path" },
-        ],
+        slots: [{ path: "args[2]", label: "Allowed root path", kind: "path" }],
         homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
     },
     {
         id: "memory",
         name: "memory",
-        description: "Persistent knowledge-graph memory across conversations (Node).",
+        description: "Persistent knowledge-graph memory across conversations.",
         transport: "stdio",
-        config: {
-            command: "npx",
-            args: ["-y", "@modelcontextprotocol/server-memory"],
-            env: {},
-        },
+        category: "official",
+        config: { command: "npx", args: ["-y", "@modelcontextprotocol/server-memory"], env: {} },
         slots: [],
         homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/memory",
     },
     {
         id: "sequential-thinking",
         name: "sequential-thinking",
-        description: "Step-by-step reasoning helper for complex problems (Node).",
+        description: "Step-by-step reasoning helper for complex problems.",
         transport: "stdio",
-        config: {
-            command: "npx",
-            args: ["-y", "@modelcontextprotocol/server-sequential-thinking"],
-            env: {},
-        },
+        category: "official",
+        config: { command: "npx", args: ["-y", "@modelcontextprotocol/server-sequential-thinking"], env: {} },
         slots: [],
         homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking",
     },
     {
         id: "everything",
         name: "everything",
-        description: "Reference / demo MCP server with the full surface area (Node).",
+        description: "Reference / demo server exposing the full MCP surface area.",
         transport: "stdio",
-        config: {
-            command: "npx",
-            args: ["-y", "@modelcontextprotocol/server-everything"],
-            env: {},
-        },
+        category: "official",
+        config: { command: "npx", args: ["-y", "@modelcontextprotocol/server-everything"], env: {} },
         slots: [],
         homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/everything",
     },
     {
+        id: "time",
+        name: "time",
+        description: "Time-zone-aware date / time queries.",
+        transport: "stdio",
+        category: "official",
+        config: {
+            command: "uvx",
+            args: ["mcp-server-time", "--local-timezone=UTC"],
+            env: {},
+        },
+        slots: [
+            { path: "args[1]", label: "IANA timezone flag (e.g. --local-timezone=America/Los_Angeles)", kind: "text" },
+        ],
+        homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/time",
+    },
+    {
+        id: "fetch",
+        name: "fetch",
+        description: "HTTP fetch with HTML → markdown conversion.",
+        transport: "stdio",
+        category: "official",
+        config: { command: "uvx", args: ["mcp-server-fetch"], env: {} },
+        slots: [],
+        homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/fetch",
+    },
+
+    // ---------------- dev / source control ----------------
+    {
         id: "github",
         name: "github",
-        description: "Read / search GitHub repos, issues, PRs; comment, etc. (Node).",
+        description: "Read / search GitHub repos, issues, PRs; create comments.",
         transport: "stdio",
+        category: "dev",
         config: {
             command: "npx",
             args: ["-y", "@modelcontextprotocol/server-github"],
@@ -95,6 +114,7 @@ export const MCP_PRESETS: McpPreset[] = [
         name: "github-remote",
         description: "GitHub's hosted MCP endpoint — no local install required.",
         transport: "http",
+        category: "dev",
         config: {
             url: "https://api.githubcopilot.com/mcp/",
             headers: { Authorization: "Bearer <GITHUB_TOKEN>" },
@@ -105,61 +125,93 @@ export const MCP_PRESETS: McpPreset[] = [
         homepage: "https://github.com/github/github-mcp-server",
     },
     {
-        id: "time",
-        name: "time",
-        description: "Time-zone-aware date / time queries (Python — requires uvx).",
-        transport: "stdio",
-        config: {
-            command: "uvx",
-            args: ["mcp-server-time", "--local-timezone=UTC"],
-            env: {},
-        },
-        slots: [
-            { path: "args[1]", label: "IANA timezone flag (e.g. --local-timezone=America/Los_Angeles)", kind: "text" },
-        ],
-        homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/time",
-    },
-    {
-        id: "fetch",
-        name: "fetch",
-        description: "HTTP fetch with HTML → markdown conversion (Python — requires uvx).",
-        transport: "stdio",
-        config: {
-            command: "uvx",
-            args: ["mcp-server-fetch"],
-            env: {},
-        },
-        slots: [],
-        homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/fetch",
-    },
-    {
         id: "git",
         name: "git",
-        description: "Git tools — log, diff, blame, search (Python — requires uvx).",
+        description: "Git tools — log, diff, blame, search a local repo.",
         transport: "stdio",
+        category: "dev",
         config: {
             command: "uvx",
             args: ["mcp-server-git", "--repository", "<REPO_PATH>"],
             env: {},
         },
-        slots: [
-            { path: "args[2]", label: "Git repository root path", kind: "path" },
-        ],
+        slots: [{ path: "args[2]", label: "Git repository root path", kind: "path" }],
         homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/git",
     },
+
+    // ---------------- data ----------------
     {
         id: "sqlite",
         name: "sqlite",
-        description: "Query a local SQLite database file (Python — requires uvx).",
+        description: "Query a local SQLite database file.",
         transport: "stdio",
+        category: "data",
         config: {
             command: "uvx",
             args: ["mcp-server-sqlite", "--db-path", "<DB_PATH>"],
             env: {},
         },
-        slots: [
-            { path: "args[2]", label: "SQLite database file path", kind: "path" },
-        ],
+        slots: [{ path: "args[2]", label: "SQLite database file path", kind: "path" }],
         homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/sqlite",
+    },
+
+    // ---------------- academic ----------------
+    {
+        id: "scholarly",
+        name: "scholarly",
+        description: "Search arXiv + Google Scholar in one server. No API key needed.",
+        transport: "stdio",
+        category: "academic",
+        config: { command: "uvx", args: ["mcp-scholarly"], env: {} },
+        slots: [],
+        homepage: "https://pypi.org/project/mcp-scholarly/",
+    },
+    {
+        id: "arxiv",
+        name: "arxiv",
+        description: "Search and download arXiv papers (10 tools — search, read, citations).",
+        transport: "stdio",
+        category: "academic",
+        config: { command: "uvx", args: ["arxiv-mcp-server"], env: {} },
+        slots: [],
+        homepage: "https://github.com/blazickjp/arxiv-mcp-server",
+    },
+    {
+        id: "pubmed",
+        name: "pubmed",
+        description: "Search biomedical literature abstracts on PubMed.",
+        transport: "stdio",
+        category: "academic",
+        config: { command: "uvx", args: ["pubmedmcp"], env: {} },
+        slots: [],
+        homepage: "https://pypi.org/project/pubmedmcp/",
+    },
+
+    // ---------------- system: shell / cli ----------------
+    {
+        id: "shell",
+        name: "shell",
+        description: "Execute allow-listed shell commands (curl, ls, etc.). Set ALLOW_COMMANDS to the comma-separated whitelist.",
+        transport: "stdio",
+        category: "system",
+        config: {
+            command: "uvx",
+            args: ["mcp-shell-server"],
+            env: { ALLOW_COMMANDS: "ls,pwd,cat,curl,echo,wc,head,tail,grep" },
+        },
+        slots: [
+            { path: "env.ALLOW_COMMANDS", label: "Allowed commands (comma-separated)", kind: "text" },
+        ],
+        homepage: "https://pypi.org/project/mcp-shell-server/",
+    },
+    {
+        id: "shell-node",
+        name: "shell-node",
+        description: "Node-based shell command runner (alternative to mcp-shell-server). Review allow-list carefully.",
+        transport: "stdio",
+        category: "system",
+        config: { command: "npx", args: ["-y", "shell-mcp-server"], env: {} },
+        slots: [],
+        homepage: "https://www.npmjs.com/package/shell-mcp-server",
     },
 ];
