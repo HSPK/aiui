@@ -17,16 +17,9 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from "@/components/ui/select"
+import { Label } from "@/components/ui/label"
 import {
     Tabs,
     TabsContent,
@@ -102,12 +95,6 @@ export function McpFormDialog({ open, onOpenChange, mode, server, preset, onSave
     const [stdio, setStdio] = React.useState<StdioFields>(DEFAULT_STDIO)
     const [http, setHttp] = React.useState<HttpFields>(DEFAULT_HTTP)
     const [enabled, setEnabled] = React.useState(true)
-    const [presetId, setPresetId] = React.useState<string>("")
-
-    const { data: presets } = mcpServers.usePresets()
-    // Hide the in-dialog preset Select when the catalogue page already
-    // chose one (preset prop). Edits never show it either.
-    const showPresets = mode === "create" && !server && !preset
 
     const applyPreset = React.useCallback((p: McpPreset) => {
         setName(p.name)
@@ -147,7 +134,6 @@ export function McpFormDialog({ open, onOpenChange, mode, server, preset, onSave
             setHttp(DEFAULT_HTTP)
             setEnabled(true)
         }
-        setPresetId("")
     }, [open, server, preset, applyPreset])
 
     const createMutation = mcpServers.useCreate({
@@ -218,33 +204,6 @@ export function McpFormDialog({ open, onOpenChange, mode, server, preset, onSave
                 </DialogHeader>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
-                    {showPresets && (presets ?? []).length > 0 && (
-                        <Select
-                            value={presetId}
-                            onValueChange={(id) => {
-                                setPresetId(id)
-                                const p = (presets ?? []).find((x) => x.id === id)
-                                if (p) applyPreset(p)
-                            }}
-                        >
-                            <SelectTrigger className="h-9 text-xs">
-                                <SelectValue placeholder="Import preset…" />
-                            </SelectTrigger>
-                            <SelectContent className="max-h-[360px]">
-                                {(presets ?? []).map((p) => (
-                                    <SelectItem key={p.id} value={p.id}>
-                                        <div className="flex items-baseline gap-2">
-                                            <span className="font-mono text-xs">{p.name}</span>
-                                            <span className="text-[10px] text-muted-foreground truncate">
-                                                {p.description}
-                                            </span>
-                                        </div>
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    )}
-
                     <Field label="Name" htmlFor="m-name" required>
                         <Input
                             id="m-name"
