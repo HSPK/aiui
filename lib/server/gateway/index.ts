@@ -1,5 +1,4 @@
 import "server-only";
-import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db, schema } from "../db";
 import { authenticateGateway, type SessionUser } from "../auth";
@@ -12,34 +11,36 @@ import "../capabilities/register";
 import {
     resolveAdapter,
     resolveVariantId,
-    type ProviderAdapter,
     type UpstreamCallArgs,
 } from "../adapters";
 // Side-effect import: registers every built-in adapter.
 import "../adapters/register";
 import { applyFieldFilter } from "../adapters/openai";
-import { getVariant, type UpstreamApiVariant, type VariantContext } from "../api-variants";
+import { getVariant, type VariantContext } from "../api-variants";
 // Side-effect import: registers every built-in upstream API variant.
 import "../api-variants/register";
 import { badRequest, HttpError, notFound } from "../response";
 import type { Model, Provider } from "../db/schema";
-import type { NormalizedModelMeta } from "@/lib/schemas/adapter";
 
+import { completeLog, startLog } from "./log";
+import { handleStream } from "./stream";
+import { handleNonStream } from "./non-stream";
+import type {
+    AssembledToolCall,
+    ForwardGenerationOpts,
+    ForwardResult,
+    ResolvedModel,
+} from "./types";
+
+// Re-exports keep the public API stable for callers that import from
+// `@/lib/server/gateway`. Splitting log/stream/non-stream/types into
+// sibling files is an internal refactor only.
 export { authenticateGateway };
+export type { AssembledToolCall, ForwardGenerationOpts, ForwardResult, ResolvedModel };
 
 // =============================================================================
 // Model resolution
 // =============================================================================
-
-export interface ResolvedModel {
-    model: Model;
-    provider: Provider;
-    adapter: ProviderAdapter;
-    meta: NormalizedModelMeta | null;
-    apiKey: string | null;
-    /** True when the Model row was synthesized on-the-fly from discovery, not pulled from DB. */
-    discovered: boolean;
-}
 
 function transientModel(name: string, provider: Provider, upstreamModelId: string, capability: string): Model {
     const now = new Date().toISOString();
@@ -125,97 +126,8 @@ export function mergeParams(
 }
 
 // =============================================================================
-// Logging
-// =============================================================================
-
-export interface GatewayLogPayload {
-    userId: string;
-    modelName: string;
-    capability: string;
-    requestBody: Record<string, unknown>;
-    inputSummary: string | null;
-    conversationId?: string;
-    messageId?: string;
-}
-
-function startLog(payload: GatewayLogPayload): string {
-    const id = randomUUID();
-    db.insert(schema.generationLogs).values({
-        id,
-        userId: payload.userId,
-        modelName: payload.modelName,
-        capability: payload.capability,
-        status: "pending",
-        input: payload.requestBody,
-        inputSummary: payload.inputSummary,
-        generationKwargs: payload.requestBody,
-        conversationId: payload.conversationId ?? null,
-        messageId: payload.messageId ?? null,
-    }).run();
-    return id;
-}
-
-function completeLog(
-    id: string,
-    fields: {
-        status: "completed" | "failed";
-        output?: string | null;
-        reason?: string | null;
-        content?: unknown;
-        generation?: Record<string, unknown> | null;
-        promptTokens?: number | null;
-        completionTokens?: number | null;
-        totalTokens?: number | null;
-        firstTokenLatencyMs?: number | null;
-        totalLatencyMs?: number;
-    },
-) {
-    db.update(schema.generationLogs).set({
-        status: fields.status,
-        output: fields.output ?? null,
-        reason: fields.reason ?? null,
-        content: fields.content ?? null,
-        generation: fields.generation ?? null,
-        promptTokens: fields.promptTokens ?? null,
-        completionTokens: fields.completionTokens ?? null,
-        totalTokens: fields.totalTokens ?? null,
-        firstTokenLatencyMs: fields.firstTokenLatencyMs ?? null,
-        totalLatencyMs: fields.totalLatencyMs ?? null,
-        updatedAt: new Date().toISOString(),
-    }).where(eq(schema.generationLogs.id, id)).run();
-}
-
-// =============================================================================
 // Forward
 // =============================================================================
-
-export interface ForwardResult {
-    response: Response;
-    logId: string;
-}
-
-export interface ForwardGenerationOpts {
-    conversationId?: string;
-    messageId?: string;
-    /** Called once with extracted info after a non-stream or end-of-stream completion. */
-    onComplete?: (info: {
-        content: string;
-        reasoning: string;
-        usage?: Record<string, unknown>;
-        toolCalls?: AssembledToolCall[];
-        finishReason?: string;
-    }) => void;
-    /** Called per stream chunk for callers that want incremental access. */
-    onStreamDelta?: (delta: { content: string; reasoning: string }) => void;
-}
-
-/** Tool calls in the form the playground service dispatches them by:
- *  the model has fully committed to a name + JSON args string. */
-export interface AssembledToolCall {
-    id: string;
-    name: string;
-    arguments: string;
-}
 
 /**
  * Generic capability-aware upstream forwarder.
@@ -314,292 +226,7 @@ export async function forwardGeneration(
     }
 
     if (!stream) {
-        return handleNonStream({
-            upstream,
-            variant,
-            ctx,
-            opts,
-            started,
-            logId,
-        });
+        return handleNonStream({ upstream, variant, ctx, opts, started, logId });
     }
-    return handleStream({
-        upstream,
-        variant,
-        ctx,
-        opts,
-        started,
-        logId,
-        model,
-    });
-}
-
-// =============================================================================
-// Non-stream branch
-// =============================================================================
-
-interface BranchArgs {
-    upstream: Response;
-    variant: UpstreamApiVariant;
-    ctx: VariantContext;
-    opts: ForwardGenerationOpts;
-    started: number;
-    logId: string;
-}
-
-async function handleNonStream({ upstream, variant, ctx, opts, started, logId }: BranchArgs): Promise<ForwardResult> {
-    const contentType = upstream.headers.get("Content-Type") ?? "";
-
-    if (contentType.startsWith("application/json")) {
-        const json = await upstream.json().catch(() => ({}));
-        const parsed = variant.parseResponse(json, ctx);
-        completeLog(logId, {
-            status: "completed",
-            output: parsed.output,
-            content: parsed.normalized,
-            generation: parsed.normalized,
-            promptTokens: parsed.promptTokens,
-            completionTokens: parsed.completionTokens,
-            totalTokens: parsed.totalTokens,
-            totalLatencyMs: Date.now() - started,
-        });
-        opts.onComplete?.({
-            content: parsed.output ?? "",
-            reasoning: "",
-            usage: parsed.normalized.usage as Record<string, unknown> | undefined,
-            toolCalls: parsed.toolCalls,
-            finishReason: parsed.finishReason,
-        });
-        return {
-            response: new Response(JSON.stringify(parsed.normalized), {
-                headers: { "Content-Type": "application/json" },
-            }),
-            logId,
-        };
-    }
-
-    // Binary or unknown — log size, pass through.
-    const buf = await upstream.arrayBuffer();
-    completeLog(logId, {
-        status: "completed",
-        output: `binary response (${contentType || "unknown"}, ${buf.byteLength} bytes)`,
-        totalLatencyMs: Date.now() - started,
-    });
-    return {
-        response: new Response(buf, {
-            headers: { "Content-Type": contentType || "application/octet-stream" },
-        }),
-        logId,
-    };
-}
-
-// =============================================================================
-// Stream branch — always transcodes to chat-completion SSE so the
-// user-facing API surface is uniform regardless of upstream variant.
-// =============================================================================
-
-interface StreamBranchArgs extends BranchArgs {
-    model: Model;
-}
-
-function handleStream({ upstream, variant, ctx, opts, started, logId, model }: StreamBranchArgs): ForwardResult {
-    if (!upstream.body) {
-        completeLog(logId, {
-            status: "failed",
-            reason: "Upstream returned empty stream",
-            totalLatencyMs: Date.now() - started,
-        });
-        throw new HttpError("Upstream returned empty stream", 502);
-    }
-
-    let accumContent = "";
-    let accumReasoning = "";
-    let usage: Record<string, unknown> | undefined;
-    let streamModel: string | undefined;
-    let streamId: string | undefined;
-    let systemFingerprint: string | undefined;
-    let finishReason: string | null = null;
-    let buf = "";
-    let firstTokenMs: number | null = null;
-
-    // Tool-call accumulator keyed by streaming `index`. OpenAI streams
-    // tool calls as `{index, id, function:{name, arguments(_delta)}}` —
-    // we concatenate `arguments` per-index across chunks.
-    const toolAcc = new Map<number, { id?: string; name?: string; arguments: string }>();
-
-    const decoder = new TextDecoder();
-    const encoder = new TextEncoder();
-    const createdAt = Math.floor(started / 1000);
-
-    const emitChunk = (
-        controller: TransformStreamDefaultController<Uint8Array>,
-        delta: {
-            content?: string;
-            reasoning?: string;
-            toolCalls?: NonNullable<ReturnType<UpstreamApiVariant["parseStreamChunk"]>>["toolCalls"];
-        },
-        usagePayload?: Record<string, unknown>,
-        chunkFinishReason: string | null = null,
-    ) => {
-        const messageDelta: Record<string, unknown> = {};
-        if (delta.content) messageDelta.content = delta.content;
-        if (delta.reasoning) messageDelta.reasoning_content = delta.reasoning;
-        if (delta.toolCalls && delta.toolCalls.length > 0) {
-            messageDelta.tool_calls = delta.toolCalls.map((tc) => ({
-                index: tc.index,
-                id: tc.id,
-                type: "function" as const,
-                function: {
-                    name: tc.name,
-                    arguments: tc.argumentsDelta,
-                },
-            }));
-        }
-        const chunkObj: Record<string, unknown> = {
-            id: streamId ?? logId,
-            object: "chat.completion.chunk",
-            created: createdAt,
-            model: streamModel ?? model.upstreamModelId,
-            choices: [
-                {
-                    index: 0,
-                    delta: messageDelta,
-                    finish_reason: chunkFinishReason,
-                },
-            ],
-        };
-        if (systemFingerprint) chunkObj.system_fingerprint = systemFingerprint;
-        if (usagePayload) chunkObj.usage = usagePayload;
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunkObj)}\n\n`));
-    };
-
-    const transformer = new TransformStream<Uint8Array, Uint8Array>({
-        transform(chunk, controller) {
-            buf += decoder.decode(chunk, { stream: true });
-            const lines = buf.split("\n");
-            buf = lines.pop() || "";
-
-            for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed.startsWith("data:")) continue;
-                const data = trimmed.slice(5).trim();
-                if (!data || data === "[DONE]") continue;
-
-                let json: unknown;
-                try {
-                    json = JSON.parse(data);
-                } catch {
-                    continue; // mid-stream parse error
-                }
-
-                const delta = variant.parseStreamChunk(json, ctx);
-                if (!delta) continue;
-
-                if (delta.id && !streamId) streamId = delta.id;
-                if (delta.model) streamModel = delta.model;
-                if (delta.systemFingerprint) systemFingerprint = delta.systemFingerprint;
-                if (delta.usage) usage = delta.usage;
-                if (delta.finishReason) finishReason = delta.finishReason;
-
-                if (delta.toolCalls && delta.toolCalls.length > 0) {
-                    for (const tc of delta.toolCalls) {
-                        const slot = toolAcc.get(tc.index) ?? { arguments: "" };
-                        if (tc.id) slot.id = tc.id;
-                        if (tc.name) slot.name = tc.name;
-                        if (tc.argumentsDelta) slot.arguments += tc.argumentsDelta;
-                        toolAcc.set(tc.index, slot);
-                    }
-                    if (firstTokenMs === null) firstTokenMs = Date.now() - started;
-                }
-
-                const hasText = !!(delta.content || delta.reasoning);
-                if (hasText) {
-                    if (firstTokenMs === null) firstTokenMs = Date.now() - started;
-                    if (delta.content) accumContent += delta.content;
-                    if (delta.reasoning) accumReasoning += delta.reasoning;
-                    opts.onStreamDelta?.({
-                        content: delta.content ?? "",
-                        reasoning: delta.reasoning ?? "",
-                    });
-                }
-                if (hasText || (delta.toolCalls && delta.toolCalls.length > 0)) {
-                    emitChunk(controller, {
-                        content: delta.content,
-                        reasoning: delta.reasoning,
-                        toolCalls: delta.toolCalls,
-                    });
-                }
-            }
-        },
-        flush(controller) {
-            // Assemble fully-merged tool_calls for both the log and the
-            // onComplete callback. Sorted by index to keep deterministic
-            // ordering across attempts.
-            const orderedToolCalls = Array.from(toolAcc.entries())
-                .sort(([a], [b]) => a - b)
-                .map(([, v]) => ({
-                    id: v.id ?? "",
-                    name: v.name ?? "",
-                    arguments: v.arguments,
-                }))
-                .filter((tc) => tc.name);
-
-            const closingReason = finishReason ?? (orderedToolCalls.length > 0 ? "tool_calls" : "stop");
-            // Terminal stop chunk (carries final usage if known) + [DONE].
-            emitChunk(controller, {}, usage, closingReason);
-            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-
-            // Persist the merged log entry in canonical chat-completion shape.
-            const u = usage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined;
-            const message: Record<string, unknown> = { role: "assistant", content: accumContent };
-            if (accumReasoning) message.reasoning_content = accumReasoning;
-            if (orderedToolCalls.length > 0) {
-                message.tool_calls = orderedToolCalls.map((tc) => ({
-                    id: tc.id,
-                    type: "function",
-                    function: { name: tc.name, arguments: tc.arguments },
-                }));
-            }
-            const mergedResponse: Record<string, unknown> = {
-                id: streamId ?? logId,
-                object: "chat.completion",
-                created: createdAt,
-                model: streamModel ?? model.upstreamModelId,
-                choices: [{ index: 0, message, finish_reason: closingReason }],
-            };
-            if (systemFingerprint) mergedResponse.system_fingerprint = systemFingerprint;
-            if (usage) mergedResponse.usage = usage;
-
-            completeLog(logId, {
-                status: "completed",
-                output: accumContent,
-                content: mergedResponse,
-                generation: mergedResponse,
-                promptTokens: u?.prompt_tokens ?? null,
-                completionTokens: u?.completion_tokens ?? null,
-                totalTokens: u?.total_tokens ?? null,
-                firstTokenLatencyMs: firstTokenMs,
-                totalLatencyMs: Date.now() - started,
-            });
-            opts.onComplete?.({
-                content: accumContent,
-                reasoning: accumReasoning,
-                usage,
-                toolCalls: orderedToolCalls.length > 0 ? orderedToolCalls : undefined,
-                finishReason: closingReason,
-            });
-        },
-    });
-
-    const piped = upstream.body.pipeThrough(transformer);
-    return {
-        response: new Response(piped, {
-            headers: {
-                "Content-Type": "text/event-stream",
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-            },
-        }),
-        logId,
-    };
+    return handleStream({ upstream, variant, ctx, opts, started, logId, model });
 }

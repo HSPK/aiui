@@ -7,32 +7,23 @@ import type {
     McpServerDTO,
     McpStdioConfig,
 } from "@/lib/schemas/mcp";
-import { listMcpServers } from "./service";
 
-/** OpenAI chat-completion tools[] entry shape. */
-export interface OpenAiTool {
-    type: "function";
-    function: {
-        name: string;
-        description?: string;
-        parameters: Record<string, unknown>;
-    };
-}
-
-/** A tool surfaced by the runtime, plus the originating server id so
- *  the gateway can dispatch the call back to the right MCP client. */
-export interface AggregatedTool {
-    /** Mangled name as exposed to the model: `<sanitizedServerName>__<toolName>`.
-     *  Functions called by the LLM must round-trip through this name so we can
-     *  look the server up again on tool_call. */
-    qualifiedName: string;
-    /** Original (server-local) tool name passed to `tools/call`. */
-    localName: string;
-    description?: string;
-    parameters: Record<string, unknown>;
-    serverId: string;
-    serverName: string;
-}
+// Re-export sibling modules under the historical `./runtime` import
+// path so existing callers (checks.ts, gateway, FE-facing route
+// handlers) don't need to update import sites. Splitting this file
+// into runtime / protocol / dispatch is an internal refactor only.
+export type { OpenAiTool, AggregatedTool, ToolExecutionResult } from "./dispatch";
+export {
+    aggregateTools,
+    executeTool,
+    sanitize as sanitizeServerName,
+    qualify as qualifyToolName,
+} from "./dispatch";
+export {
+    listToolsForServer,
+    listResourcesForServer,
+    listPromptsForServer,
+} from "./protocol";
 
 interface CachedClient {
     client: Client;
@@ -60,7 +51,6 @@ const CALL_TIMEOUT_MS = 60_000;
  *  hundreds of MCP servers from spawning hundreds of child processes
  *  and exhausting fds / memory. */
 const MAX_CACHED_CLIENTS = 50;
-const NAME_MANGLE_SEP = "__";
 
 const cache = new Map<string, CachedClient>();
 const pending = new Map<string, Promise<CachedClient>>();
@@ -113,23 +103,6 @@ if (typeof process !== "undefined" && !globalThis.__aiui_mcp_shutdown_registered
     // Tag prevents a re-registration after `delete` (test harness); the
     // symbol-keyed property is invisible to enumeration.
     void SHUTDOWN_KEY;
-}
-
-function sanitize(name: string): string {
-    return name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 32);
-}
-
-function qualify(serverName: string, toolName: string): string {
-    return `${sanitize(serverName)}${NAME_MANGLE_SEP}${toolName}`;
-}
-
-function unqualify(qualifiedName: string): { serverPrefix: string; toolName: string } | null {
-    const idx = qualifiedName.indexOf(NAME_MANGLE_SEP);
-    if (idx <= 0) return null;
-    return {
-        serverPrefix: qualifiedName.slice(0, idx),
-        toolName: qualifiedName.slice(idx + NAME_MANGLE_SEP.length),
-    };
 }
 
 /** Child stderr cap for the captured buffer. Anything larger than this
@@ -243,7 +216,17 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
     }
 }
 
+// Sibling-module hooks. protocol.ts + dispatch.ts need the shared
+// client cache + per-call timeout helpers — they live here because
+// they're tied to lifecycle. Keep these out of the public surface
+// (don't re-export from index.ts).
+export { getClient, withTimeout, CALL_TIMEOUT_MS };
+
 async function getClient(server: McpServerDTO): Promise<CachedClient> {
+    // Opportunistic idle eviction — was called inside the (now-moved)
+    // protocol wrappers; pulling it up here keeps the lifecycle layer
+    // self-contained.
+    sweep();
     const existing = cache.get(server.id);
     if (existing && existing.builtFor === server.updated_at) {
         existing.lastUsed = Date.now();
@@ -333,208 +316,3 @@ export function readServerInfo(serverId: string): {
     };
 }
 
-/** List tools for a single server, surfaced as OpenAI tool shape. */
-export async function listToolsForServer(server: McpServerDTO): Promise<AggregatedTool[]> {
-    sweep();
-    const cc = await getClient(server);
-    const result = await withTimeout(cc.client.listTools(), CALL_TIMEOUT_MS, "tools/list");
-    cc.lastUsed = Date.now();
-    const out: AggregatedTool[] = [];
-    for (const t of result.tools ?? []) {
-        const parameters = (t.inputSchema as Record<string, unknown>) ?? {
-            type: "object",
-            properties: {},
-        };
-        out.push({
-            qualifiedName: qualify(server.name, t.name),
-            localName: t.name,
-            description: t.description ?? undefined,
-            parameters,
-            serverId: server.id,
-            serverName: server.name,
-        });
-    }
-    return out;
-}
-
-/** List static resources + URI templates for a server. Returns null
- *  when the server doesn't advertise the `resources` capability —
- *  saves an avoidable round-trip + a noisy "Method not found" error. */
-export async function listResourcesForServer(
-    server: McpServerDTO,
-): Promise<{
-    resources: Array<{ uri: string; name?: string; description?: string; mimeType?: string }>;
-    templates: Array<{ uriTemplate: string; name?: string; description?: string; mimeType?: string }>;
-} | null> {
-    sweep();
-    const cc = await getClient(server);
-    const caps = cc.client.getServerCapabilities();
-    if (!caps?.resources) return null;
-    cc.lastUsed = Date.now();
-
-    const resources: Array<{ uri: string; name?: string; description?: string; mimeType?: string }> = [];
-    const templates: Array<{ uriTemplate: string; name?: string; description?: string; mimeType?: string }> = [];
-
-    try {
-        const r = await withTimeout(cc.client.listResources(), CALL_TIMEOUT_MS, "resources/list");
-        for (const x of r.resources ?? []) {
-            resources.push({
-                uri: x.uri,
-                name: x.name,
-                description: x.description,
-                mimeType: x.mimeType,
-            });
-        }
-    } catch { /* server may declare capability but not implement list */ }
-
-    try {
-        const r = await withTimeout(
-            cc.client.listResourceTemplates(),
-            CALL_TIMEOUT_MS,
-            "resources/templates/list",
-        );
-        for (const x of r.resourceTemplates ?? []) {
-            templates.push({
-                uriTemplate: x.uriTemplate,
-                name: x.name,
-                description: x.description,
-                mimeType: x.mimeType,
-            });
-        }
-    } catch { /* templates are optional even when resources are supported */ }
-
-    return { resources, templates };
-}
-
-/** List prompt templates for a server. Returns null when the server
- *  doesn't advertise the `prompts` capability. */
-export async function listPromptsForServer(
-    server: McpServerDTO,
-): Promise<Array<{
-    name: string;
-    description?: string;
-    arguments?: Array<{ name: string; description?: string; required?: boolean }>;
-}> | null> {
-    sweep();
-    const cc = await getClient(server);
-    const caps = cc.client.getServerCapabilities();
-    if (!caps?.prompts) return null;
-    cc.lastUsed = Date.now();
-
-    const result = await withTimeout(cc.client.listPrompts(), CALL_TIMEOUT_MS, "prompts/list");
-    return (result.prompts ?? []).map((p) => ({
-        name: p.name,
-        description: p.description,
-        arguments: p.arguments?.map((a) => ({
-            name: a.name,
-            description: a.description,
-            required: a.required,
-        })),
-    }));
-}
-
-/** Aggregate tools across the requested server ids. Failed servers are
- *  swallowed (with one toast-level message in the result) so a single
- *  flaky server doesn't break the whole turn. */
-export async function aggregateTools(serverIds: string[]): Promise<{
-    tools: AggregatedTool[];
-    errors: Array<{ serverId: string; serverName: string; message: string }>;
-}> {
-    if (serverIds.length === 0) return { tools: [], errors: [] };
-    const wanted = new Set(serverIds);
-    const servers = listMcpServers().filter((s) => wanted.has(s.id) && s.enabled);
-
-    const tools: AggregatedTool[] = [];
-    const errors: Array<{ serverId: string; serverName: string; message: string }> = [];
-    await Promise.all(
-        servers.map(async (s) => {
-            try {
-                const t = await listToolsForServer(s);
-                tools.push(...t);
-            } catch (err) {
-                errors.push({
-                    serverId: s.id,
-                    serverName: s.name,
-                    message: err instanceof Error ? err.message : String(err),
-                });
-            }
-        }),
-    );
-    return { tools, errors };
-}
-
-/** Tool invocation result — content is a flattened string. */
-export interface ToolExecutionResult {
-    content: string;
-    isError: boolean;
-    serverName: string;
-}
-
-/** Dispatch a single tool call by its qualified name. Throws when the
- *  qualified name cannot be resolved (the model hallucinated a server). */
-export async function executeTool(
-    qualifiedName: string,
-    rawArgs: string,
-): Promise<ToolExecutionResult> {
-    const split = unqualify(qualifiedName);
-    if (!split) throw new Error(`Bad qualified tool name "${qualifiedName}"`);
-    const server = listMcpServers().find((s) => sanitize(s.name) === split.serverPrefix);
-    if (!server) throw new Error(`No MCP server matches prefix "${split.serverPrefix}"`);
-
-    let args: Record<string, unknown>;
-    try {
-        args = rawArgs ? JSON.parse(rawArgs) : {};
-    } catch {
-        return {
-            content: `Invalid JSON arguments from model: ${rawArgs.slice(0, 200)}`,
-            isError: true,
-            serverName: server.name,
-        };
-    }
-
-    sweep();
-    try {
-        const cc = await getClient(server);
-        const result = await withTimeout(
-            cc.client.callTool({ name: split.toolName, arguments: args }),
-            CALL_TIMEOUT_MS,
-            `tools/call ${qualifiedName}`,
-        );
-        cc.lastUsed = Date.now();
-        const flat = flattenContent(result.content as unknown);
-        return {
-            content: flat,
-            isError: !!result.isError,
-            serverName: server.name,
-        };
-    } catch (err) {
-        return {
-            content: err instanceof Error ? err.message : String(err),
-            isError: true,
-            serverName: server.name,
-        };
-    }
-}
-
-/** Convert MCP's structured content blocks to a single string the
- *  chat-completions API can consume in a `role: "tool"` message. We
- *  preserve textual blocks verbatim and tag non-text blocks (e.g.
- *  image/resource) so the model sees something useful. */
-function flattenContent(content: unknown): string {
-    if (!Array.isArray(content)) {
-        if (typeof content === "string") return content;
-        return JSON.stringify(content ?? "");
-    }
-    const out: string[] = [];
-    for (const block of content) {
-        const b = block as { type?: string; text?: string };
-        if (b?.type === "text" && typeof b.text === "string") {
-            out.push(b.text);
-        } else {
-            out.push(`[${b?.type ?? "unknown"}] ${JSON.stringify(block).slice(0, 200)}`);
-        }
-    }
-    return out.join("\n") || "";
-}
-
-export { qualify as qualifyToolName, sanitize as sanitizeServerName };
