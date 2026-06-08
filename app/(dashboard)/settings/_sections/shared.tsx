@@ -16,7 +16,7 @@ export function SettingsSection({
 }: {
     icon: React.ElementType
     title: string
-    description: string
+    description?: string
     children: React.ReactNode
 }) {
     return (
@@ -28,7 +28,9 @@ export function SettingsSection({
                     </div>
                     <div>
                         <CardTitle className="text-base">{title}</CardTitle>
-                        <CardDescription className="text-sm">{description}</CardDescription>
+                        {description && (
+                            <CardDescription className="text-sm">{description}</CardDescription>
+                        )}
                     </div>
                 </div>
             </CardHeader>

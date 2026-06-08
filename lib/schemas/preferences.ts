@@ -11,9 +11,6 @@ export const userPreferencesDTOSchema = z.object({
     default_summary_model: z.string(),
 
     default_system_prompt: z.string(),
-    /** undefined → use upstream model default. */
-    default_temperature: z.number().nullable(),
-    default_max_tokens: z.number().int().positive(),
     default_history_limit: z.number().int().positive(),
 
     user_name: z.string(),
@@ -36,8 +33,6 @@ export const defaultUserPreferences: UserPreferencesDTO = {
     default_model: "",
     default_summary_model: "",
     default_system_prompt: "You are a helpful assistant.",
-    default_temperature: null,
-    default_max_tokens: 4096,
     default_history_limit: 10,
     user_name: "",
     user_avatar: "👤",

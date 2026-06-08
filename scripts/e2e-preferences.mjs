@@ -86,11 +86,10 @@ try {
     expect("GET ok (defaults)", get1.ok && got1.code === 0);
     expect("default_model is empty string", got1.data.default_model === "");
     expect("user_name default = 'User'", got1.data.user_name === "User");
-    expect("default_temperature default = null", got1.data.default_temperature === null);
-    expect("default_max_tokens default = 4096", got1.data.default_max_tokens === 4096);
+    expect("default_history_limit default = 10", got1.data.default_history_limit === 10);
 
     // PATCH — partial update
-    const patchBody = { default_model: "gpt-4o-mini", user_name: "Hang", default_temperature: 0.7 };
+    const patchBody = { default_model: "gpt-4o-mini", user_name: "Hang", default_history_limit: 25 };
     const patchRes = await fetch(`${BASE}/api/users/me/preferences`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Cookie: cookie },
@@ -100,20 +99,20 @@ try {
     expect("PATCH ok", patchRes.ok && patched.code === 0);
     expect("PATCH applied default_model", patched.data.default_model === "gpt-4o-mini");
     expect("PATCH preserved untouched user_avatar", patched.data.user_avatar === "👤");
-    expect("PATCH preserved untouched default_max_tokens", patched.data.default_max_tokens === 4096);
+    expect("PATCH applied default_history_limit", patched.data.default_history_limit === 25);
 
     // GET again — verify persistence
     const get2 = await fetch(`${BASE}/api/users/me/preferences`, { headers: { Cookie: cookie } });
     const got2 = await get2.json();
     expect("GET reflects PATCH (default_model)", got2.data.default_model === "gpt-4o-mini");
     expect("GET reflects PATCH (user_name)", got2.data.user_name === "Hang");
-    expect("GET reflects PATCH (default_temperature)", got2.data.default_temperature === 0.7);
+    expect("GET reflects PATCH (default_history_limit)", got2.data.default_history_limit === 25);
 
     // Validation: PATCH with bad type should 400
     const bad = await fetch(`${BASE}/api/users/me/preferences`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Cookie: cookie },
-        body: JSON.stringify({ default_max_tokens: "not a number" }),
+        body: JSON.stringify({ default_history_limit: "not a number" }),
     });
     expect("PATCH rejects invalid type", bad.status === 400);
 } catch (err) {
