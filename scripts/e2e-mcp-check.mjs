@@ -41,15 +41,39 @@ const mcpServerPath = path.join(tmp, "mcp-add.mjs");
 writeFileSync(mcpServerPath, `
 import { Server } from "${process.cwd()}/node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js";
 import { StdioServerTransport } from "${process.cwd()}/node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "${process.cwd()}/node_modules/@modelcontextprotocol/sdk/dist/esm/types.js";
+import {
+    CallToolRequestSchema,
+    ListToolsRequestSchema,
+    ListResourcesRequestSchema,
+    ListResourceTemplatesRequestSchema,
+    ListPromptsRequestSchema,
+} from "${process.cwd()}/node_modules/@modelcontextprotocol/sdk/dist/esm/types.js";
 
-const server = new Server({ name: "tiny", version: "0" }, { capabilities: { tools: {} } });
+const server = new Server(
+    { name: "tiny", version: "0" },
+    { capabilities: { tools: {}, resources: {}, prompts: {} } },
+);
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
         { name: "ping", description: "Returns pong", inputSchema: { type: "object", properties: {}, required: [] } },
     ],
 }));
 server.setRequestHandler(CallToolRequestSchema, async () => ({ content: [{ type: "text", text: "pong" }] }));
+server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+    resources: [
+        { uri: "test://readme", name: "readme", description: "Project readme", mimeType: "text/markdown" },
+    ],
+}));
+server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
+    resourceTemplates: [
+        { uriTemplate: "test://file/{path}", name: "file", description: "Read a file" },
+    ],
+}));
+server.setRequestHandler(ListPromptsRequestSchema, async () => ({
+    prompts: [
+        { name: "summarize", description: "Summarize input", arguments: [{ name: "text", required: true }] },
+    ],
+}));
 await server.connect(new StdioServerTransport());
 `);
 
@@ -120,6 +144,16 @@ try {
     expect("good server: server_info captured from initialize handshake",
         goodDTO?.server_info?.name === "tiny",
         `server_info=${JSON.stringify(goodDTO?.server_info)}`);
+    expect("good server: resources/list snapshot populated when capability advertised",
+        goodDTO?.resources_cache?.resources?.[0]?.uri === "test://readme",
+        `resources=${JSON.stringify(goodDTO?.resources_cache?.resources)}`);
+    expect("good server: resource templates populated",
+        goodDTO?.resources_cache?.templates?.[0]?.uriTemplate === "test://file/{path}",
+        `templates=${JSON.stringify(goodDTO?.resources_cache?.templates)}`);
+    expect("good server: prompts/list snapshot populated when capability advertised",
+        Array.isArray(goodDTO?.prompts_cache)
+        && goodDTO.prompts_cache.some((p) => p.name === "summarize"),
+        `prompts=${JSON.stringify(goodDTO?.prompts_cache)}`);
     expect("good server: last_check_at is set", typeof goodDTO?.last_check_at === "string");
 
     // ---- 2. failure-path create ----

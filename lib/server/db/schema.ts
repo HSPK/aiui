@@ -229,6 +229,21 @@ export const mcpServers = sqliteTable("mcp_servers", {
         description?: string;
         parameters: Record<string, unknown>;
     }> | null>(),
+    /** Snapshot of `resources/list` (static URIs) + `resources/
+     *  templates/list` (URI templates). Same lifecycle as
+     *  `toolsCache`. Only fetched when the server advertises the
+     *  `resources` capability. */
+    resourcesCache: text("resources_cache", { mode: "json" }).$type<{
+        resources: Array<{ uri: string; name?: string; description?: string; mimeType?: string }>;
+        templates: Array<{ uriTemplate: string; name?: string; description?: string; mimeType?: string }>;
+    } | null>(),
+    /** Snapshot of `prompts/list`. Only fetched when the server
+     *  advertises the `prompts` capability. */
+    promptsCache: text("prompts_cache", { mode: "json" }).$type<Array<{
+        name: string;
+        description?: string;
+        arguments?: Array<{ name: string; description?: string; required?: boolean }>;
+    }> | null>(),
     /** Server-provided identity from the initialize handshake:
      *  `{ name, version }` from `serverInfo`, plus the optional
      *  `instructions` field — server's own usage description, and

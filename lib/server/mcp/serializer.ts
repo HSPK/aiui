@@ -18,6 +18,8 @@ export function serializeMcpServer(s: McpServer): McpServerDTO {
         last_check_at: s.lastCheckAt ?? null,
         last_check_error: s.lastCheckError ?? null,
         tools_cache: s.toolsCache ?? null,
+        resources_cache: s.resourcesCache ?? null,
+        prompts_cache: s.promptsCache ?? null,
         server_info: s.serverInfo ?? null,
         created_at: s.createdAt,
         updated_at: s.updatedAt,

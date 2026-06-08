@@ -2,16 +2,28 @@ import "server-only";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { mcpServers } from "../db/schema";
-import { disposeMcpClient, listToolsForServer, readServerInfo } from "./runtime";
-import type { McpServerDTO, McpToolDescriptor } from "@/lib/schemas/mcp";
+import {
+    disposeMcpClient,
+    listPromptsForServer,
+    listResourcesForServer,
+    listToolsForServer,
+    readServerInfo,
+} from "./runtime";
+import type {
+    McpServerDTO,
+    McpPromptDescriptor,
+    McpResourcesSnapshot,
+    McpToolDescriptor,
+} from "@/lib/schemas/mcp";
 import { serializeMcpServer } from "./serializer";
 
 /**
  * Probe an MCP server: spawn / connect transport, run initialize +
- * tools/list, persist {status, error, tools_cache}, return the updated
- * DTO. Always swallows the underlying error and writes it to
- * `last_check_error` so the caller can surface health to the FE
- * without try/catching the whole world.
+ * tools/list (and resources/list + prompts/list when the server
+ * advertises those capabilities), persist {status, error, identity,
+ * snapshots}, return the updated DTO. Always swallows the underlying
+ * error and writes it to `last_check_error` so the caller can surface
+ * health to the FE without try/catching the whole world.
  *
  * Lives outside `service.ts` so the runtime (which imports the
  * service for listMcpServers) doesn't cycle back through CRUD code.
@@ -28,21 +40,38 @@ export async function checkMcpServer(serverId: string): Promise<McpServerDTO | n
 
     const now = new Date().toISOString();
     try {
+        // tools/list — load-bearing for chat, must succeed.
         const tools = await listToolsForServer(dto);
-        const snapshot: McpToolDescriptor[] = tools.map((t) => ({
+        const toolsSnapshot: McpToolDescriptor[] = tools.map((t) => ({
             name: t.localName,
             description: t.description,
             parameters: t.parameters,
         }));
+
+        // resources/list + prompts/list — best-effort. Servers may
+        // advertise the capability but fail the call (or not advertise
+        // at all). Either way we keep going; details sheet renders
+        // the section only when there's something to show.
+        let resourcesSnapshot: McpResourcesSnapshot | null = null;
+        let promptsSnapshot: McpPromptDescriptor[] | null = null;
+        try {
+            resourcesSnapshot = await listResourcesForServer(dto);
+        } catch { /* leave null, surface via missing section */ }
+        try {
+            promptsSnapshot = await listPromptsForServer(dto);
+        } catch { /* leave null, surface via missing section */ }
+
         // Capture the server-reported identity that the initialize
-        // handshake established alongside tools/list. Keeps the
-        // details sheet useful without forcing the admin to type it.
+        // handshake established alongside tools/list.
         const serverInfo = readServerInfo(serverId);
+
         db.update(mcpServers).set({
             lastCheckStatus: "ok",
             lastCheckAt: now,
             lastCheckError: null,
-            toolsCache: snapshot,
+            toolsCache: toolsSnapshot,
+            resourcesCache: resourcesSnapshot,
+            promptsCache: promptsSnapshot,
             serverInfo,
             updatedAt: now,
         }).where(eq(mcpServers.id, serverId)).run();
@@ -52,8 +81,9 @@ export async function checkMcpServer(serverId: string): Promise<McpServerDTO | n
             lastCheckStatus: "error",
             lastCheckAt: now,
             lastCheckError: message.slice(0, 2000),
-            // Preserve existing tools_cache — last-known-good is more
-            // useful in the FE than nuking on a transient failure.
+            // Preserve existing tools/resources/prompts caches —
+            // last-known-good is more useful in the FE than nuking
+            // on a transient failure.
             updatedAt: now,
         }).where(eq(mcpServers.id, serverId)).run();
     }

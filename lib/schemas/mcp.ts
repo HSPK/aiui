@@ -24,6 +24,39 @@ export const mcpToolDescriptorSchema = z.object({
     parameters: z.record(z.string(), z.unknown()),
 });
 
+export const mcpResourceDescriptorSchema = z.object({
+    uri: z.string(),
+    name: z.string().optional(),
+    description: z.string().optional(),
+    mimeType: z.string().optional(),
+});
+
+export const mcpResourceTemplateDescriptorSchema = z.object({
+    uriTemplate: z.string(),
+    name: z.string().optional(),
+    description: z.string().optional(),
+    mimeType: z.string().optional(),
+});
+
+export const mcpResourcesSnapshotSchema = z.object({
+    resources: z.array(mcpResourceDescriptorSchema),
+    templates: z.array(mcpResourceTemplateDescriptorSchema),
+});
+
+export const mcpPromptDescriptorSchema = z.object({
+    name: z.string(),
+    description: z.string().optional(),
+    arguments: z
+        .array(
+            z.object({
+                name: z.string(),
+                description: z.string().optional(),
+                required: z.boolean().optional(),
+            }),
+        )
+        .optional(),
+});
+
 export const mcpServerInfoSchema = z.object({
     name: z.string().optional(),
     version: z.string().optional(),
@@ -50,6 +83,12 @@ export const mcpServerDTOSchema = z.object({
     last_check_error: z.string().nullable(),
     /** `tools/list` snapshot from the last successful check. */
     tools_cache: z.array(mcpToolDescriptorSchema).nullable(),
+    /** `resources/list` + `resources/templates/list` snapshot. Only
+     *  populated when the server advertises the `resources` capability. */
+    resources_cache: mcpResourcesSnapshotSchema.nullable(),
+    /** `prompts/list` snapshot. Only populated when the server
+     *  advertises the `prompts` capability. */
+    prompts_cache: z.array(mcpPromptDescriptorSchema).nullable(),
     /** Server-reported identity from the initialize handshake. Useful
      *  for showing the upstream's own description / version on the
      *  details sheet without forcing the admin to type one. */
@@ -113,6 +152,10 @@ export type McpTransport = z.infer<typeof mcpTransportSchema>;
 export type McpStdioConfig = z.infer<typeof mcpStdioConfigSchema>;
 export type McpHttpConfig = z.infer<typeof mcpHttpConfigSchema>;
 export type McpToolDescriptor = z.infer<typeof mcpToolDescriptorSchema>;
+export type McpResourceDescriptor = z.infer<typeof mcpResourceDescriptorSchema>;
+export type McpResourceTemplateDescriptor = z.infer<typeof mcpResourceTemplateDescriptorSchema>;
+export type McpResourcesSnapshot = z.infer<typeof mcpResourcesSnapshotSchema>;
+export type McpPromptDescriptor = z.infer<typeof mcpPromptDescriptorSchema>;
 export type McpServerInfo = z.infer<typeof mcpServerInfoSchema>;
 export type McpServerDTO = z.infer<typeof mcpServerDTOSchema>;
 export type McpServerCreateInput = z.infer<typeof mcpServerCreateSchema>;

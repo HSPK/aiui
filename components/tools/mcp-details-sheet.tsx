@@ -5,7 +5,7 @@ import { toast } from "sonner"
 import { CheckCircle2, ExternalLink, Loader2, RefreshCcw, Wrench, XCircle } from "lucide-react"
 
 import { mcpServers } from "@/lib/api"
-import type { McpServerDTO, McpServerInfo, McpToolDescriptor } from "@/lib/schemas/mcp"
+import type { McpServerDTO, McpServerInfo, McpPromptDescriptor, McpResourcesSnapshot, McpToolDescriptor } from "@/lib/schemas/mcp"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
@@ -82,6 +82,8 @@ export function McpServerDetailsSheet({ server, open, onOpenChange, isAdmin }: P
                     {server.server_info && <ServerInfoSection info={server.server_info} />}
                     <EndpointSection server={server} isAdmin={isAdmin} />
                     <ToolsSection tools={server.tools_cache ?? []} status={server.last_check_status} />
+                    <ResourcesSection snapshot={server.resources_cache} />
+                    <PromptsSection prompts={server.prompts_cache} />
                 </div>
             </SheetContent>
         </Sheet>
@@ -318,6 +320,127 @@ function ToolRow({ tool }: { tool: McpToolDescriptor }) {
                         </ul>
                     )}
                 </div>
+            )}
+        </li>
+    )
+}
+
+function ResourcesSection({ snapshot }: { snapshot: McpResourcesSnapshot | null }) {
+    if (!snapshot) {
+        // Server didn't advertise the resources capability — hide the
+        // section entirely so we don't confuse admins with an empty
+        // block for a feature this server doesn't support.
+        return null
+    }
+    const { resources, templates } = snapshot
+    const total = resources.length + templates.length
+    return (
+        <section className="space-y-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Resources {total > 0 && <span className="ml-1 text-foreground">({total})</span>}
+            </h3>
+            {total === 0 ? (
+                <div className="rounded-md border p-3 text-xs text-muted-foreground italic">
+                    Server advertises `resources` but exposes none.
+                </div>
+            ) : (
+                <ul className="rounded-md border divide-y">
+                    {resources.map((r) => (
+                        <li key={`r-${r.uri}`} className="p-3 text-xs space-y-0.5">
+                            <div className="font-mono text-foreground break-all">{r.uri}</div>
+                            <div className="flex items-baseline gap-2">
+                                {r.name && <span className="text-foreground">{r.name}</span>}
+                                {r.mimeType && (
+                                    <span className="font-mono text-[10px] text-muted-foreground">{r.mimeType}</span>
+                                )}
+                            </div>
+                            {r.description && (
+                                <p className="text-muted-foreground leading-snug">{r.description}</p>
+                            )}
+                        </li>
+                    ))}
+                    {templates.map((t) => (
+                        <li key={`t-${t.uriTemplate}`} className="p-3 text-xs space-y-0.5 bg-muted/10">
+                            <div className="flex items-baseline gap-2">
+                                <span className="inline-flex items-center rounded border border-border bg-muted/40 px-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+                                    template
+                                </span>
+                                <span className="font-mono text-foreground break-all">{t.uriTemplate}</span>
+                            </div>
+                            {(t.name || t.mimeType) && (
+                                <div className="flex items-baseline gap-2 pl-[60px]">
+                                    {t.name && <span className="text-foreground">{t.name}</span>}
+                                    {t.mimeType && (
+                                        <span className="font-mono text-[10px] text-muted-foreground">{t.mimeType}</span>
+                                    )}
+                                </div>
+                            )}
+                            {t.description && (
+                                <p className="text-muted-foreground leading-snug pl-[60px]">{t.description}</p>
+                            )}
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </section>
+    )
+}
+
+function PromptsSection({ prompts }: { prompts: McpPromptDescriptor[] | null }) {
+    if (!prompts) return null
+    return (
+        <section className="space-y-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Prompts {prompts.length > 0 && <span className="ml-1 text-foreground">({prompts.length})</span>}
+            </h3>
+            {prompts.length === 0 ? (
+                <div className="rounded-md border p-3 text-xs text-muted-foreground italic">
+                    Server advertises `prompts` but exposes none.
+                </div>
+            ) : (
+                <ul className="rounded-md border divide-y">
+                    {prompts.map((p) => (
+                        <PromptRow key={p.name} prompt={p} />
+                    ))}
+                </ul>
+            )}
+        </section>
+    )
+}
+
+function PromptRow({ prompt }: { prompt: McpPromptDescriptor }) {
+    const [open, setOpen] = React.useState(false)
+    const args = prompt.arguments ?? []
+    return (
+        <li className={cn("p-3 text-xs space-y-1.5", open && "bg-muted/30")}>
+            <button
+                type="button"
+                onClick={() => setOpen((o) => !o)}
+                className="flex w-full items-center gap-2 text-left"
+            >
+                <ExternalLink className="h-3 w-3 text-muted-foreground rotate-90" />
+                <span className="font-mono text-foreground">{prompt.name}</span>
+                {args.length > 0 && (
+                    <span className="text-[10px] text-muted-foreground">{args.length} arg{args.length === 1 ? "" : "s"}</span>
+                )}
+            </button>
+            {prompt.description && (
+                <p className="text-muted-foreground pl-5 leading-snug">{prompt.description}</p>
+            )}
+            {open && args.length > 0 && (
+                <ul className="pl-5 pt-1 space-y-1">
+                    {args.map((a) => (
+                        <li key={a.name} className="flex gap-2">
+                            <span className="font-mono text-foreground">{a.name}</span>
+                            {a.required && (
+                                <Badge variant="outline" className="h-3.5 px-1 text-[9px]">required</Badge>
+                            )}
+                            {a.description && (
+                                <span className="text-muted-foreground text-[11px] truncate">— {a.description}</span>
+                            )}
+                        </li>
+                    ))}
+                </ul>
             )}
         </li>
     )
