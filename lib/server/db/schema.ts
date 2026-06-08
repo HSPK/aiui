@@ -171,6 +171,54 @@ export const userPreferences = sqliteTable("user_preferences", {
     updatedAt: text("updated_at").notNull().default(now),
 });
 
+// =============================================================================
+// Tools — hand-written JSON Schema function definitions. Server invokes
+// the optional webhook_url with `{tool_call_id, name, arguments}` and
+// expects a JSON `{content}` response (or any JSON, stringified for the
+// upstream tool message). When webhook_url is null, the tool is
+// declaration-only — the user is responsible for handling the call
+// outside aiui (or it gets fed back as an empty result).
+// =============================================================================
+export const tools = sqliteTable("tools", {
+    id: text("id").primaryKey(),
+    /** snake_case function name as passed upstream — must be unique. */
+    name: text("name").notNull().unique(),
+    /** Single-line user-facing description, also forwarded as the
+     *  function's `description` to the model. */
+    description: text("description").notNull().default(""),
+    /** JSON Schema for the function parameters object. Forwarded as
+     *  `function.parameters` in the upstream `tools[]` array. */
+    parameters: text("parameters", { mode: "json" }).$type<Record<string, unknown>>().notNull().default({}),
+    /** Optional HTTPS endpoint invoked by the server when the model
+     *  emits a call for this tool. POST `{tool_call_id, name, arguments}`,
+     *  expects a JSON body forwarded back to the model. Null = no
+     *  execution wiring (declaration-only). */
+    webhookUrl: text("webhook_url"),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    createdAt: text("created_at").notNull().default(now),
+    updatedAt: text("updated_at").notNull().default(now),
+});
+
+// =============================================================================
+// MCP servers — Model Context Protocol server registrations. The aiui
+// server manages each server's lifecycle (stdio child process or HTTP
+// client) and bridges the model's tool_calls to the right server.
+// =============================================================================
+export const mcpServers = sqliteTable("mcp_servers", {
+    id: text("id").primaryKey(),
+    name: text("name").notNull().unique(),
+    description: text("description").notNull().default(""),
+    /** "stdio" or "http". Discriminator for the `config` blob. */
+    transport: text("transport", { enum: ["stdio", "http"] }).notNull(),
+    /** Transport-specific config.
+     *  stdio: `{ command: string, args?: string[], env?: Record<string,string>, cwd?: string }`
+     *  http:  `{ url: string, headers?: Record<string,string> }` */
+    config: text("config", { mode: "json" }).$type<Record<string, unknown>>().notNull().default({}),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    createdAt: text("created_at").notNull().default(now),
+    updatedAt: text("updated_at").notNull().default(now),
+});
+
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Provider = typeof providers.$inferSelect;
@@ -187,3 +235,7 @@ export type Session = typeof sessions.$inferSelect;
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type UserPreferences = typeof userPreferences.$inferSelect;
 export type NewUserPreferences = typeof userPreferences.$inferInsert;
+export type Tool = typeof tools.$inferSelect;
+export type NewTool = typeof tools.$inferInsert;
+export type McpServer = typeof mcpServers.$inferSelect;
+export type NewMcpServer = typeof mcpServers.$inferInsert;
