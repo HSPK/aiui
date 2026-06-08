@@ -43,6 +43,11 @@ interface CachedClient {
      *  Bumped via service update → next getClient sees a newer DB row
      *  and rebuilds the transport. Avoids a service ↔ runtime cycle. */
     builtFor: string;
+    /** Per-entry identity sentinel used by the transport `onclose`
+     *  callback to evict ONLY this entry — not a successor that
+     *  replaced it mid-flight (config-version rebuild, manual
+     *  re-check, etc.). */
+    readonly tag: symbol;
     /** Disposer to terminate transport. */
     close: () => Promise<void>;
 }
@@ -59,6 +64,56 @@ const NAME_MANGLE_SEP = "__";
 
 const cache = new Map<string, CachedClient>();
 const pending = new Map<string, Promise<CachedClient>>();
+
+// =============================================================================
+// Process-exit cleanup
+// =============================================================================
+//
+// When the Next.js process gets SIGINT / SIGTERM (Ctrl-C, container stop, dev
+// hot-reload restart), stdio MCP children would normally be reaped via the
+// OS-level process tree cascade. That works for cleanup-on-death cases, but it
+// (a) doesn't give the children a chance to flush state / close fds gracefully,
+// and (b) leaves orphaned HTTP transport sockets dangling for a moment.
+//
+// Register a once-per-process disposer that walks the cache, calls each
+// transport's `close()` with a short timeout so a stuck child can't block
+// shutdown, and clears the cache. Idempotent — if multiple signals arrive we
+// only dispose once. Globally tracked via a globalThis sentinel so the dev
+// HMR re-import of this module doesn't re-register on every reload.
+
+const SHUTDOWN_TIMEOUT_MS = 1_500;
+const SHUTDOWN_KEY = Symbol.for("aiui.mcp.runtime.shutdownRegistered");
+
+declare global {
+    var __aiui_mcp_shutdown_registered__: boolean | undefined;
+}
+
+async function disposeAll(): Promise<void> {
+    const entries = Array.from(cache.values());
+    cache.clear();
+    pending.clear();
+    await Promise.all(
+        entries.map((e) =>
+            Promise.race([
+                e.close().catch(() => undefined),
+                new Promise((r) => setTimeout(r, SHUTDOWN_TIMEOUT_MS)),
+            ]),
+        ),
+    );
+}
+
+if (typeof process !== "undefined" && !globalThis.__aiui_mcp_shutdown_registered__) {
+    globalThis.__aiui_mcp_shutdown_registered__ = true;
+    // Avoid `process.exit()` from the handler — return so other signal
+    // listeners get to run too. Node will exit naturally once handlers settle.
+    const handler = () => { void disposeAll(); };
+    process.once("SIGINT", handler);
+    process.once("SIGTERM", handler);
+    process.once("beforeExit", handler);
+    // Tag prevents a re-registration after `delete` (test harness); the
+    // symbol-keyed property is invisible to enumeration.
+    void SHUTDOWN_KEY;
+}
 
 function sanitize(name: string): string {
     return name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 32);
@@ -87,6 +142,19 @@ async function buildClient(server: McpServerDTO): Promise<CachedClient> {
         { name: "aiui-gateway", version: "0.1.0" },
         { capabilities: {} },
     );
+    const tag = Symbol(`mcp:${server.id}:${server.updated_at}`);
+
+    /** Attach the eviction-on-close callback to a freshly-connected
+     *  transport. When the child process dies (crash, kill, network
+     *  hangup), the SDK fires onclose; we evict THIS entry only —
+     *  comparing tags so a successor that replaced us mid-flight
+     *  (config update / manual re-check) isn't accidentally removed. */
+    const attachAutoEvict = (t: { onclose?: () => void }) => {
+        t.onclose = () => {
+            const entry = cache.get(server.id);
+            if (entry && entry.tag === tag) cache.delete(server.id);
+        };
+    };
 
     let close: () => Promise<void>;
     if (server.transport === "stdio") {
@@ -129,6 +197,7 @@ async function buildClient(server: McpServerDTO): Promise<CachedClient> {
             throw enrichWithStderr(err, stderrBuffer);
         }
 
+        attachAutoEvict(transport);
         close = async () => {
             try { await transport.close(); } catch { /* ignore */ }
         };
@@ -138,12 +207,13 @@ async function buildClient(server: McpServerDTO): Promise<CachedClient> {
             requestInit: cfg.headers ? { headers: cfg.headers } : undefined,
         });
         await withTimeout(client.connect(transport), CONNECT_TIMEOUT_MS, "mcp connect");
+        attachAutoEvict(transport);
         close = async () => {
             try { await transport.close(); } catch { /* ignore */ }
         };
     }
 
-    return { client, lastUsed: Date.now(), builtFor: server.updated_at, close };
+    return { client, lastUsed: Date.now(), builtFor: server.updated_at, tag, close };
 }
 
 /** Compose the JSON-RPC error with the child's captured stderr so the

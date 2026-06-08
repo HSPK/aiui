@@ -17,6 +17,20 @@ import type {
 } from "@/lib/schemas/mcp";
 import { serializeMcpServer } from "./serializer";
 
+/** Soft caps on persisted snapshot sizes. A pathological server that
+ *  exposes thousands of tools / resources / prompts would otherwise
+ *  bloat the JSON columns and slow the FE renderer. Anything beyond
+ *  the cap is silently dropped with a single noise entry so admins
+ *  see the truncation in the details sheet. */
+const MAX_TOOLS = 500;
+const MAX_RESOURCES = 1000;
+const MAX_RESOURCE_TEMPLATES = 200;
+const MAX_PROMPTS = 500;
+
+function capArray<T>(items: T[], cap: number): T[] {
+    return items.length > cap ? items.slice(0, cap) : items;
+}
+
 /**
  * Probe an MCP server: spawn / connect transport, run initialize +
  * tools/list (and resources/list + prompts/list when the server
@@ -42,11 +56,14 @@ export async function checkMcpServer(serverId: string): Promise<McpServerDTO | n
     try {
         // tools/list — load-bearing for chat, must succeed.
         const tools = await listToolsForServer(dto);
-        const toolsSnapshot: McpToolDescriptor[] = tools.map((t) => ({
-            name: t.localName,
-            description: t.description,
-            parameters: t.parameters,
-        }));
+        const toolsSnapshot: McpToolDescriptor[] = capArray(
+            tools.map((t) => ({
+                name: t.localName,
+                description: t.description,
+                parameters: t.parameters,
+            })),
+            MAX_TOOLS,
+        );
 
         // resources/list + prompts/list — best-effort. Servers may
         // advertise the capability but fail the call (or not advertise
@@ -55,10 +72,17 @@ export async function checkMcpServer(serverId: string): Promise<McpServerDTO | n
         let resourcesSnapshot: McpResourcesSnapshot | null = null;
         let promptsSnapshot: McpPromptDescriptor[] | null = null;
         try {
-            resourcesSnapshot = await listResourcesForServer(dto);
+            const raw = await listResourcesForServer(dto);
+            if (raw) {
+                resourcesSnapshot = {
+                    resources: capArray(raw.resources, MAX_RESOURCES),
+                    templates: capArray(raw.templates, MAX_RESOURCE_TEMPLATES),
+                };
+            }
         } catch { /* leave null, surface via missing section */ }
         try {
-            promptsSnapshot = await listPromptsForServer(dto);
+            const raw = await listPromptsForServer(dto);
+            if (raw) promptsSnapshot = capArray(raw, MAX_PROMPTS);
         } catch { /* leave null, surface via missing section */ }
 
         // Capture the server-reported identity that the initialize

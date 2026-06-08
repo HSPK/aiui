@@ -326,6 +326,52 @@ await server.connect(new StdioServerTransport());
         typeof storedEnv === "string" && !storedEnv.includes(SECRET),
         `stored_len=${String(storedEnv).length}`);
 
+    // ---- 6. snapshot caps: a pathological child exposes more tools
+    //          than MAX_TOOLS; the persisted tools_cache must be
+    //          truncated. Without the cap a misbehaving server could
+    //          bloat the JSON column unbounded and slow the FE.
+    const floodChildPath = path.join(tmp, "mcp-flood.mjs");
+    const FLOOD = 1500;
+    writeFileSync(floodChildPath, `
+import { Server } from "${process.cwd()}/node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js";
+import { StdioServerTransport } from "${process.cwd()}/node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js";
+import { ListToolsRequestSchema } from "${process.cwd()}/node_modules/@modelcontextprotocol/sdk/dist/esm/types.js";
+
+const server = new Server({ name: "flood", version: "0" }, { capabilities: { tools: {} } });
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: Array.from({ length: ${FLOOD} }, (_, i) => ({
+        name: \`t_\${i}\`,
+        description: "x",
+        inputSchema: { type: "object", properties: {}, required: [] },
+    })),
+}));
+await server.connect(new StdioServerTransport());
+`);
+    const floodRes = await fetch(`${BASE}/api/mcp/servers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({
+            name: "flood", description: "", transport: "stdio",
+            config: { command: "node", args: [floodChildPath] },
+            enabled: true,
+        }),
+    });
+    const floodId = (await floodRes.json()).data?.id;
+    let floodDTO = null;
+    for (let i = 0; i < 30; i++) {
+        await sleep(300);
+        const r = await fetch(`${BASE}/api/mcp/servers/${floodId}`, { headers: { Cookie: cookie } });
+        floodDTO = (await r.json()).data;
+        if (floodDTO?.last_check_status === "ok") break;
+    }
+    expect("flood server: check completes despite 1500 tools",
+        floodDTO?.last_check_status === "ok",
+        `status=${floodDTO?.last_check_status}`);
+    expect("flood server: tools_cache is capped (MAX_TOOLS=500)",
+        Array.isArray(floodDTO?.tools_cache)
+        && floodDTO.tools_cache.length === 500,
+        `cached=${floodDTO?.tools_cache?.length}/1500`);
+
     console.log(`\n${passed}/${expectations.length} expectations passed`);
     process.exit(passed === expectations.length ? 0 : 1);
 } catch (err) {
