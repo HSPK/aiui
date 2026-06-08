@@ -80,7 +80,10 @@ export async function checkMcpServer(serverId: string): Promise<McpServerDTO | n
         db.update(mcpServers).set({
             lastCheckStatus: "error",
             lastCheckAt: now,
-            lastCheckError: message.slice(0, 2000),
+            // Wider cap so enriched stderr traces (the most useful
+            // signal for stdio failures — ENOENT, missing binary,
+            // bad arg) survive persistence.
+            lastCheckError: message.slice(0, 4000),
             // Preserve existing tools/resources/prompts caches —
             // last-known-good is more useful in the FE than nuking
             // on a transient failure.

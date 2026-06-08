@@ -7,6 +7,7 @@ import { badRequest, notFound } from "../response";
 import { serializeMcpServer } from "./serializer";
 import { checkMcpServer } from "./checks";
 import { encryptConfig } from "./config-crypto";
+import { disposeMcpClient } from "./runtime";
 import type { McpServerCreateInput, McpServerDTO, McpServerUpdateInput } from "@/lib/schemas/mcp";
 
 function findByIdOrName(idOrName: string) {
@@ -89,4 +90,7 @@ export function deleteMcpServer(idOrName: string): void {
     const s = findByIdOrName(idOrName);
     if (!s) throw notFound("MCP server not found");
     db.delete(mcpServers).where(eq(mcpServers.id, s.id)).run();
+    // Free the cached connection so we don't keep a child process
+    // alive for the IDLE_MS sweep window after the row is gone.
+    void disposeMcpClient(s.id).catch(() => { /* ignore */ });
 }

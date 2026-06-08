@@ -26,11 +26,12 @@ interface Props {
 export function McpServerDetailsSheet({ server, open, onOpenChange, isAdmin }: Props) {
     const check = mcpServers.useCheck({
         onSuccess: (s) => {
-            toast.success(
-                s.last_check_status === "ok"
-                    ? `Check passed — ${s.tools_cache?.length ?? 0} tools`
-                    : `Check failed: ${s.last_check_error ?? "unknown error"}`,
-            )
+            if (s.last_check_status === "ok") {
+                toast.success(`Check passed — ${s.tools_cache?.length ?? 0} tools`)
+            } else {
+                const first = (s.last_check_error ?? "unknown error").split("\n", 1)[0]
+                toast.error(`Check failed: ${first}`)
+            }
         },
         onError: (e) => toast.error(e.message || "Check failed"),
     })
@@ -134,7 +135,7 @@ function HealthSection({
                 </div>
                 <div className="text-[11px] text-muted-foreground">Last check: {checkedAt}</div>
                 {status === "error" && server.last_check_error && (
-                    <pre className="mt-1.5 font-mono text-[11px] leading-tight whitespace-pre-wrap break-all bg-destructive/10 text-destructive rounded p-2 max-h-40 overflow-auto">
+                    <pre className="mt-1.5 font-mono text-[11px] leading-snug whitespace-pre-wrap break-words bg-destructive/10 text-destructive rounded p-2 max-h-72 overflow-auto">
                         {server.last_check_error}
                     </pre>
                 )}

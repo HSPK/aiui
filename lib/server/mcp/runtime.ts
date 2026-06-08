@@ -77,6 +77,11 @@ function unqualify(qualifiedName: string): { serverPrefix: string; toolName: str
     };
 }
 
+/** Child stderr cap for the captured buffer. Anything larger than this
+ *  is dropped with a `…[truncated]` suffix; the persisted
+ *  `last_check_error` column gets a further slice in checks.ts. */
+const STDERR_CAP = 4096;
+
 async function buildClient(server: McpServerDTO): Promise<CachedClient> {
     const client = new Client(
         { name: "aiui-gateway", version: "0.1.0" },
@@ -86,13 +91,44 @@ async function buildClient(server: McpServerDTO): Promise<CachedClient> {
     let close: () => Promise<void>;
     if (server.transport === "stdio") {
         const cfg = server.config as unknown as McpStdioConfig;
+        // `stderr: "pipe"` so we can attach a listener and surface the
+        // child's stack trace in the connect/list error message. The
+        // default ("inherit") writes to the server process's stderr —
+        // useful in dev logs but invisible to the admin in the FE.
         const transport = new StdioClientTransport({
             command: cfg.command,
             args: cfg.args ?? [],
             env: cfg.env,
             cwd: cfg.cwd,
+            stderr: "pipe",
         });
-        await withTimeout(client.connect(transport), CONNECT_TIMEOUT_MS, "mcp connect");
+        let stderrBuffer = "";
+        const stderr = transport.stderr;
+        if (stderr) {
+            // Attach BEFORE start() so early output (the most useful
+            // kind — ENOENT, missing binary, bad arg) isn't lost. The
+            // SDK guarantees the stream exists synchronously after the
+            // ctor when stderr is "pipe".
+            stderr.on("data", (chunk: Buffer | string) => {
+                if (stderrBuffer.length >= STDERR_CAP) return;
+                const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+                const room = STDERR_CAP - stderrBuffer.length;
+                stderrBuffer += text.slice(0, room);
+                if (text.length > room) stderrBuffer += "\n…[truncated]";
+            });
+        }
+
+        try {
+            await withTimeout(client.connect(transport), CONNECT_TIMEOUT_MS, "mcp connect");
+        } catch (err) {
+            // Give the child a beat to flush late stderr (the JSON-RPC
+            // close usually fires before the OS-level error string
+            // reaches us) before tearing down the transport.
+            await new Promise((r) => setTimeout(r, 100));
+            try { await transport.close(); } catch { /* ignore */ }
+            throw enrichWithStderr(err, stderrBuffer);
+        }
+
         close = async () => {
             try { await transport.close(); } catch { /* ignore */ }
         };
@@ -108,6 +144,19 @@ async function buildClient(server: McpServerDTO): Promise<CachedClient> {
     }
 
     return { client, lastUsed: Date.now(), builtFor: server.updated_at, close };
+}
+
+/** Compose the JSON-RPC error with the child's captured stderr so the
+ *  admin sees both layers ("Connection closed" + the ENOENT trace
+ *  that explains why it closed). Returns a fresh Error to avoid
+ *  mutating the SDK's instance. */
+function enrichWithStderr(err: unknown, stderrBuffer: string): Error {
+    const baseMessage = err instanceof Error ? err.message : String(err);
+    const trimmed = stderrBuffer.trim();
+    if (!trimmed) return err instanceof Error ? err : new Error(baseMessage);
+    const out = new Error(`${baseMessage}\n\n--- child stderr ---\n${trimmed}`);
+    if (err instanceof Error && err.stack) out.stack = err.stack;
+    return out;
 }
 
 async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {

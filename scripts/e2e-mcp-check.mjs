@@ -183,6 +183,44 @@ try {
         typeof badDTO?.last_check_error === "string" && badDTO.last_check_error.length > 0,
         `err=${badDTO?.last_check_error}`);
 
+    // ---- 2b. stderr capture: child writes a distinctive error to
+    //          stderr then exits without speaking MCP. The runtime
+    //          must surface that text alongside the JSON-RPC
+    //          "Connection closed" so the admin sees the cause.
+    const noisyChildPath = path.join(tmp, "mcp-noisy.mjs");
+    writeFileSync(noisyChildPath, `
+process.stderr.write("Error: AIUI_STDERR_MARKER could not stat /home/who/mcp (ENOENT)\\n");
+process.exit(1);
+`);
+    const noisyRes = await fetch(`${BASE}/api/mcp/servers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({
+            name: "noisy", description: "", transport: "stdio",
+            config: { command: "node", args: [noisyChildPath] },
+            enabled: true,
+        }),
+    });
+    const noisyId = (await noisyRes.json()).data?.id;
+    let noisyDTO = null;
+    for (let i = 0; i < 30; i++) {
+        await sleep(300);
+        const r = await fetch(`${BASE}/api/mcp/servers/${noisyId}`, { headers: { Cookie: cookie } });
+        noisyDTO = (await r.json()).data;
+        if (noisyDTO?.last_check_status) break;
+    }
+    expect("noisy server: check reports error",
+        noisyDTO?.last_check_status === "error",
+        `status=${noisyDTO?.last_check_status}`);
+    expect("noisy server: child stderr captured into last_check_error",
+        typeof noisyDTO?.last_check_error === "string"
+        && noisyDTO.last_check_error.includes("AIUI_STDERR_MARKER"),
+        `err=${noisyDTO?.last_check_error}`);
+    expect("noisy server: error message preserves the JSON-RPC summary",
+        typeof noisyDTO?.last_check_error === "string"
+        && /Connection closed|connect|exit/i.test(noisyDTO.last_check_error),
+        `err=${noisyDTO?.last_check_error}`);
+
     // ---- 3. explicit check endpoint ----
     const recheckRes = await fetch(`${BASE}/api/mcp/servers/${badId}/check`, {
         method: "POST", headers: { Cookie: cookie },

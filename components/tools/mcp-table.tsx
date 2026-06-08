@@ -82,7 +82,10 @@ export function McpServersTable({ servers, onSelect, onEdit, onDelete, selectedI
             if (s.last_check_status === "ok") {
                 toast.success(`${s.name}: ${s.tools_cache?.length ?? 0} tools`)
             } else {
-                toast.error(`${s.name}: ${s.last_check_error ?? "check failed"}`)
+                // First-line summary; the full multi-line trace lives
+                // on the details sheet's error block.
+                const first = (s.last_check_error ?? "check failed").split("\n", 1)[0]
+                toast.error(`${s.name}: ${first}`)
             }
         },
         onError: (e) => toast.error(e.message || "Check failed"),
