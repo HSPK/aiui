@@ -24,18 +24,19 @@ interface Props {
 }
 
 export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProviderId }: Props) {
-    const isOverride = mode === "create" && !!model?.is_discovered
-    const title = isOverride ? "Create override" : mode === "create" ? "Add model" : "Edit model"
+    // Pure create only when no model is supplied. Promoting a discovered
+    // model is a form of edit from the user's POV — show the same title.
+    const title = model || mode === "edit" ? "Edit" : "Add model"
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent
                 className="sm:max-w-[640px] max-h-[90vh] overflow-y-auto"
-                // In edit mode the cursor jumping into the display-name
-                // field is surprising — the admin almost never wants to
-                // retype the name. Block the default first-focus; the
-                // admin can click whatever field they actually want.
-                onOpenAutoFocus={mode === "edit" ? (e) => e.preventDefault() : undefined}
+                // Whenever the dialog opens against an existing record
+                // (edit or discovered-promote) the cursor in the
+                // display-name field is surprising. Only pure-add lets
+                // the default first-focus stand.
+                onOpenAutoFocus={model ? (e) => e.preventDefault() : undefined}
             >
                 <DialogHeader>
                     <DialogTitle>{title}</DialogTitle>

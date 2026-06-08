@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
-import { Loader2, Sparkles } from "lucide-react"
+import { Loader2 } from "lucide-react"
 
 import { capabilities, models, providers, variants } from "@/lib/api"
 import type { ModelCreateInput, ModelDTO } from "@/lib/schemas/model"
@@ -58,7 +58,6 @@ export function ModelForm({ mode, model, defaultProviderId, onSaved, onCancel }:
     // Provider is locked in edit + discovered-promote. Pure create lets
     // the admin pick freely.
     const providerLocked = mode === "edit" || isOverride
-
     useEffect(() => {
         if (model) {
             setName(model.name)
@@ -94,18 +93,18 @@ export function ModelForm({ mode, model, defaultProviderId, onSaved, onCancel }:
 
     const createMutation = models.useCreate({
         onSuccess: (saved) => {
-            toast.success(isOverride ? "Override saved" : "Model created")
+            toast.success("Saved")
             onSaved?.(saved)
         },
-        onError: (e) => toast.error(e.message || "Create failed"),
+        onError: (e) => toast.error(e.message || "Save failed"),
     })
 
     const updateMutation = models.useUpdate({
         onSuccess: (saved) => {
-            toast.success("Model updated")
+            toast.success("Saved")
             onSaved?.(saved ?? null)
         },
-        onError: (e) => toast.error(e.message || "Update failed"),
+        onError: (e) => toast.error(e.message || "Save failed"),
     })
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -152,7 +151,7 @@ export function ModelForm({ mode, model, defaultProviderId, onSaved, onCancel }:
     }
 
     const isLoading = createMutation.isPending || updateMutation.isPending
-    const submitLabel = isOverride ? "Save override" : mode === "create" ? "Create" : "Save"
+    const submitLabel = model || mode === "edit" ? "Save" : "Create"
 
     const variantsForCapability = useMemo(
         () => (variantList ?? []).filter((v) => v.capability === type),
@@ -165,13 +164,6 @@ export function ModelForm({ mode, model, defaultProviderId, onSaved, onCancel }:
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
-            {isOverride && (
-                <div className="flex items-center gap-2 text-xs text-primary">
-                    <Sparkles className="h-3.5 w-3.5" />
-                    <span>Promoting a discovered model into a DB-backed override.</span>
-                </div>
-            )}
-
             <div className="grid sm:grid-cols-2 gap-3">
                 <Field label="Display name" htmlFor="m-name">
                     <Input
