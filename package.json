@@ -1,8 +1,42 @@
 {
   "name": "aiui",
   "version": "0.1.0",
-  "private": true,
+  "description": "Industrial-grade AI gateway with built-in playground, OpenAI-compatible (Next.js + SQLite).",
+  "keywords": [
+    "ai",
+    "ai-gateway",
+    "openai",
+    "openai-compatible",
+    "mcp",
+    "model-context-protocol",
+    "llm",
+    "playground",
+    "nextjs"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HSPK/aiui.git"
+  },
+  "homepage": "https://github.com/HSPK/aiui#readme",
+  "bugs": {
+    "url": "https://github.com/HSPK/aiui/issues"
+  },
   "packageManager": "bun@1.3.14",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "bin/aiui.mjs",
+    ".next",
+    "drizzle",
+    "public",
+    "README.md",
+    "LICENSE"
+  ],
   "bin": {
     "aiui": "./bin/aiui.mjs"
   },
@@ -12,10 +46,12 @@
     "build:cli": "node scripts/build-cli.mjs",
     "start": "next start",
     "lint": "eslint",
-    "prepare": "node scripts/build-cli.mjs"
+    "prepare": "node scripts/build-cli.mjs",
+    "prepublishOnly": "bun run build"
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.29",
+    "@clack/prompts": "^1.5.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",

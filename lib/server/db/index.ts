@@ -23,7 +23,12 @@ function createDb() {
 
     const db = drizzle(sqlite, { schema });
 
-    const migrationsFolder = resolve(process.cwd(), "drizzle");
+    // Migrations live alongside the package source, not the user's
+    // project. `AIUI_PACKAGE_ROOT` is set by the CLI; in dev (bun run
+    // dev / next start from repo) it's absent and `process.cwd()`
+    // happens to be the package root, so the fallback still works.
+    const packageRoot = process.env.AIUI_PACKAGE_ROOT || process.cwd();
+    const migrationsFolder = resolve(packageRoot, "drizzle");
     if (existsSync(migrationsFolder)) {
         try {
             migrate(db, { migrationsFolder });

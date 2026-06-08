@@ -1,0 +1,6 @@
+# `files` in package.json is the allowlist — this file is a final
+# safety net for things that match an included pattern but shouldn't
+# ship.
+
+# Build cache — huge, never needed at runtime.
+.next/cache
