@@ -191,6 +191,22 @@ export async function disposeMcpClient(serverId: string): Promise<void> {
     await entry.close();
 }
 
+/** Read the server-reported identity from the initialize handshake
+ *  (already completed when `connect()` resolved). Returns `null` for
+ *  servers that supply no `serverInfo` / `instructions`. */
+export function readServerInfo(serverId: string): { name?: string; version?: string; instructions?: string } | null {
+    const entry = cache.get(serverId);
+    if (!entry) return null;
+    const ver = entry.client.getServerVersion();
+    const instructions = entry.client.getInstructions();
+    if (!ver && !instructions) return null;
+    return {
+        name: ver?.name,
+        version: ver?.version,
+        instructions,
+    };
+}
+
 /** List tools for a single server, surfaced as OpenAI tool shape. */
 export async function listToolsForServer(server: McpServerDTO): Promise<AggregatedTool[]> {
     sweep();

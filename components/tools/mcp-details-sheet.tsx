@@ -5,7 +5,7 @@ import { toast } from "sonner"
 import { CheckCircle2, ExternalLink, Loader2, RefreshCcw, Wrench, XCircle } from "lucide-react"
 
 import { mcpServers } from "@/lib/api"
-import type { McpServerDTO, McpToolDescriptor } from "@/lib/schemas/mcp"
+import type { McpServerDTO, McpServerInfo, McpToolDescriptor } from "@/lib/schemas/mcp"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
@@ -65,6 +65,7 @@ export function McpServerDetailsSheet({ server, open, onOpenChange, isAdmin }: P
 
                 <div className="px-6 py-4 space-y-5">
                     <HealthSection server={server} onCheck={runCheck} isChecking={check.isPending} isAdmin={isAdmin} />
+                    {server.server_info && <ServerInfoSection info={server.server_info} />}
                     <EndpointSection server={server} isAdmin={isAdmin} />
                     <ToolsSection tools={server.tools_cache ?? []} status={server.last_check_status} />
                 </div>
@@ -83,8 +84,7 @@ function HealthSection({
     onCheck: () => void
     isChecking: boolean
     isAdmin: boolean
-}) {
-    const status = server.last_check_status
+}) {    const status = server.last_check_status
     const checkedAt = server.last_check_at ? formatToLocal(server.last_check_at) : "never"
     return (
         <section className="space-y-2">
@@ -123,6 +123,32 @@ function StatusDot({ status }: { status: "ok" | "error" | null }) {
     if (status === "ok") return <CheckCircle2 className="h-4 w-4 text-emerald-500" />
     if (status === "error") return <XCircle className="h-4 w-4 text-destructive" />
     return <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
+}
+
+function ServerInfoSection({ info }: { info: McpServerInfo }) {
+    const hasIdentity = !!(info.name || info.version)
+    const hasInstructions = !!info.instructions?.trim()
+    if (!hasIdentity && !hasInstructions) return null
+    return (
+        <section className="space-y-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Server
+            </h3>
+            <div className="rounded-md border p-3 space-y-2 text-sm">
+                {hasIdentity && (
+                    <div className="font-mono text-xs">
+                        {info.name ?? "<unnamed>"}
+                        {info.version && <span className="text-muted-foreground"> @ {info.version}</span>}
+                    </div>
+                )}
+                {hasInstructions && (
+                    <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                        {info.instructions}
+                    </p>
+                )}
+            </div>
+        </section>
+    )
 }
 
 function EndpointSection({ server, isAdmin }: { server: McpServerDTO; isAdmin: boolean }) {

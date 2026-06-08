@@ -117,6 +117,9 @@ try {
     expect("good server: tools_cache populated by initialize handshake",
         Array.isArray(goodDTO?.tools_cache) && goodDTO.tools_cache.some((t) => t.name === "ping"),
         `tools=${JSON.stringify(goodDTO?.tools_cache)}`);
+    expect("good server: server_info captured from initialize handshake",
+        goodDTO?.server_info?.name === "tiny",
+        `server_info=${JSON.stringify(goodDTO?.server_info)}`);
     expect("good server: last_check_at is set", typeof goodDTO?.last_check_at === "string");
 
     // ---- 2. failure-path create ----

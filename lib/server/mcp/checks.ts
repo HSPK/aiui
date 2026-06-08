@@ -2,7 +2,7 @@ import "server-only";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { mcpServers } from "../db/schema";
-import { disposeMcpClient, listToolsForServer } from "./runtime";
+import { disposeMcpClient, listToolsForServer, readServerInfo } from "./runtime";
 import type { McpServerDTO, McpToolDescriptor } from "@/lib/schemas/mcp";
 import { serializeMcpServer } from "./serializer";
 
@@ -34,11 +34,16 @@ export async function checkMcpServer(serverId: string): Promise<McpServerDTO | n
             description: t.description,
             parameters: t.parameters,
         }));
+        // Capture the server-reported identity that the initialize
+        // handshake established alongside tools/list. Keeps the
+        // details sheet useful without forcing the admin to type it.
+        const serverInfo = readServerInfo(serverId);
         db.update(mcpServers).set({
             lastCheckStatus: "ok",
             lastCheckAt: now,
             lastCheckError: null,
             toolsCache: snapshot,
+            serverInfo,
             updatedAt: now,
         }).where(eq(mcpServers.id, serverId)).run();
     } catch (err) {

@@ -24,6 +24,12 @@ export const mcpToolDescriptorSchema = z.object({
     parameters: z.record(z.string(), z.unknown()),
 });
 
+export const mcpServerInfoSchema = z.object({
+    name: z.string().optional(),
+    version: z.string().optional(),
+    instructions: z.string().optional(),
+});
+
 export const mcpServerDTOSchema = z.object({
     id: z.string(),
     name: z.string(),
@@ -39,6 +45,10 @@ export const mcpServerDTOSchema = z.object({
     last_check_error: z.string().nullable(),
     /** `tools/list` snapshot from the last successful check. */
     tools_cache: z.array(mcpToolDescriptorSchema).nullable(),
+    /** Server-reported identity from the initialize handshake. Useful
+     *  for showing the upstream's own description / version on the
+     *  details sheet without forcing the admin to type one. */
+    server_info: mcpServerInfoSchema.nullable(),
     created_at: z.string(),
     updated_at: z.string(),
 });
@@ -98,6 +108,7 @@ export type McpTransport = z.infer<typeof mcpTransportSchema>;
 export type McpStdioConfig = z.infer<typeof mcpStdioConfigSchema>;
 export type McpHttpConfig = z.infer<typeof mcpHttpConfigSchema>;
 export type McpToolDescriptor = z.infer<typeof mcpToolDescriptorSchema>;
+export type McpServerInfo = z.infer<typeof mcpServerInfoSchema>;
 export type McpServerDTO = z.infer<typeof mcpServerDTOSchema>;
 export type McpServerCreateInput = z.infer<typeof mcpServerCreateSchema>;
 export type McpServerUpdateInput = z.infer<typeof mcpServerUpdateSchema>;
