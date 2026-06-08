@@ -126,8 +126,12 @@ const markdownComponents = {
     h4: ({ children }: any) => <h4 className="mt-3 mb-1 text-base font-semibold">{children}</h4>,
     h5: ({ children }: any) => <h5 className="mt-2 mb-1 text-sm font-semibold">{children}</h5>,
     h6: ({ children }: any) => <h6 className="mt-2 mb-1 text-sm font-medium text-muted-foreground">{children}</h6>,
-    // Paragraph
-    p: ({ children }: any) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+    // Paragraph — emitted as <div> rather than <p> because
+    // react-markdown wraps mixed inline + block content (e.g. text +
+    // a fenced code block inside a list item) in <p>, and our
+    // CodeBlock renders as a <div>. A block-level <div>/<pre> inside
+    // an HTML <p> is invalid and triggers a React hydration error.
+    p: ({ children }: any) => <div className="mb-2 last:mb-0 leading-relaxed">{children}</div>,
 }
 
 interface ChatMessageProps {

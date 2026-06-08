@@ -133,7 +133,12 @@ const logMarkdownComponents = {
     h3: ({ children }: any) => <h3 className="mt-3 mb-1 text-base font-semibold">{children}</h3>,
     h4: ({ children }: any) => <h4 className="mt-2 mb-1 text-sm font-semibold">{children}</h4>,
     // Paragraph
-    p: ({ children }: any) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+    // Paragraphs use <div> instead of <p> because react-markdown
+    // emits a <p> wrapper around mixed inline + block content (e.g.
+    // text + a fenced code block inside a list item). Rendering a
+    // <pre> / <div>-shaped CodeBlock inside an HTML <p> is invalid
+    // and triggers a React hydration error.
+    p: ({ children }: any) => <div className="mb-2 last:mb-0 leading-relaxed">{children}</div>,
 }
 
 interface LogDetailsProps {
