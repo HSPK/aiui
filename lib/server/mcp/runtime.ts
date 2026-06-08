@@ -50,6 +50,11 @@ interface CachedClient {
 const IDLE_MS = 5 * 60 * 1000;
 const CONNECT_TIMEOUT_MS = 15_000;
 const CALL_TIMEOUT_MS = 60_000;
+/** Hard cap on the connection pool — if exceeded, the LRU entry is
+ *  evicted on next admit. Prevents a misconfigured deployment with
+ *  hundreds of MCP servers from spawning hundreds of child processes
+ *  and exhausting fds / memory. */
+const MAX_CACHED_CLIENTS = 50;
 const NAME_MANGLE_SEP = "__";
 
 const cache = new Map<string, CachedClient>();
@@ -135,6 +140,7 @@ async function getClient(server: McpServerDTO): Promise<CachedClient> {
 
     const fresh = buildClient(server)
         .then((cc) => {
+            evictLruIfFull();
             cache.set(server.id, cc);
             pending.delete(server.id);
             return cc;
@@ -154,6 +160,21 @@ function sweep() {
             cache.delete(id);
             entry.close().catch(() => { /* ignore */ });
         }
+    }
+}
+
+/** Bound the cache size by evicting the least-recently-used entries
+ *  whenever we're at or above the cap. Called before every admit so
+ *  the cap is a hard ceiling regardless of access pattern. */
+function evictLruIfFull() {
+    if (cache.size < MAX_CACHED_CLIENTS) return;
+    const sorted = Array.from(cache.entries()).sort(
+        ([, a], [, b]) => a.lastUsed - b.lastUsed,
+    );
+    const toEvict = sorted.slice(0, cache.size - MAX_CACHED_CLIENTS + 1);
+    for (const [id, entry] of toEvict) {
+        cache.delete(id);
+        entry.close().catch(() => { /* ignore */ });
     }
 }
 

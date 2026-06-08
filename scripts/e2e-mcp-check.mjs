@@ -180,6 +180,77 @@ try {
     expect("after fix: tools_cache replaced", Array.isArray(fixedDTO?.tools_cache) && fixedDTO.tools_cache.length > 0,
         `tools_cache_len=${fixedDTO?.tools_cache?.length}`);
 
+    // ---- 5. env encryption round-trip ----
+    // Write a tiny child whose `whoami` tool returns the env var
+    // SECRET_TOKEN it was spawned with. Verify (a) the DTO surfaces
+    // the plaintext env to the admin form, (b) the connection picks
+    // up the value correctly (tool returns it), (c) the DB row's
+    // config blob is ciphertext for that field (the AIUI_MASTER_KEY
+    // hash is required to read it back).
+    const secretChildPath = path.join(tmp, "mcp-secret.mjs");
+    writeFileSync(secretChildPath, `
+import { Server } from "${process.cwd()}/node_modules/@modelcontextprotocol/sdk/dist/esm/server/index.js";
+import { StdioServerTransport } from "${process.cwd()}/node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js";
+import { CallToolRequestSchema, ListToolsRequestSchema } from "${process.cwd()}/node_modules/@modelcontextprotocol/sdk/dist/esm/types.js";
+
+const server = new Server({ name: "secret", version: "0" }, { capabilities: { tools: {} } });
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: [{ name: "whoami", description: "Returns SECRET_TOKEN env value", inputSchema: { type: "object", properties: {}, required: [] } }],
+}));
+server.setRequestHandler(CallToolRequestSchema, async () => ({
+    content: [{ type: "text", text: process.env.SECRET_TOKEN ?? "<missing>" }],
+}));
+await server.connect(new StdioServerTransport());
+`);
+
+    const SECRET = "s3cr3t-" + Math.random().toString(36).slice(2);
+    const secretSrvRes = await fetch(`${BASE}/api/mcp/servers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({
+            name: "secrets", description: "", transport: "stdio",
+            config: {
+                command: "node",
+                args: [secretChildPath],
+                env: { SECRET_TOKEN: SECRET },
+            },
+            enabled: true,
+        }),
+    });
+    expect("create secrets 200", secretSrvRes.status === 200, `status=${secretSrvRes.status}`);
+    const secretsId = (await secretSrvRes.json()).data?.id;
+
+    // Wait for background check + tool discovery.
+    let secretsDTO = null;
+    for (let i = 0; i < 30; i++) {
+        await sleep(300);
+        const r = await fetch(`${BASE}/api/mcp/servers/${secretsId}`, { headers: { Cookie: cookie } });
+        secretsDTO = (await r.json()).data;
+        if (secretsDTO?.last_check_status === "ok") break;
+    }
+    expect("secrets server: check ok", secretsDTO?.last_check_status === "ok",
+        `status=${secretsDTO?.last_check_status} err=${secretsDTO?.last_check_error}`);
+
+    expect("DTO surfaces env in plaintext (admin-facing)",
+        secretsDTO?.config?.env?.SECRET_TOKEN === SECRET,
+        `got=${secretsDTO?.config?.env?.SECRET_TOKEN}`);
+
+    // Inspect DB row via better-sqlite3 — it's the only way to verify
+    // the ciphertext (the API route always decrypts on serialize).
+    const sqlite = await import("better-sqlite3");
+    const dbPath = path.join(tmp, "data", "aiui.db");
+    const sdb = new sqlite.default(dbPath, { readonly: true });
+    const row = sdb.prepare("SELECT config FROM mcp_servers WHERE id = ?").get(secretsId);
+    sdb.close();
+    const stored = JSON.parse(row?.config ?? "{}");
+    const storedEnv = stored?.env?.SECRET_TOKEN ?? "";
+    expect("DB row stores env value with enc:v1: sentinel (ciphertext on disk)",
+        typeof storedEnv === "string" && storedEnv.startsWith("enc:v1:"),
+        `stored=${String(storedEnv).slice(0, 32)}…`);
+    expect("DB row's ciphertext does NOT contain the plaintext secret",
+        typeof storedEnv === "string" && !storedEnv.includes(SECRET),
+        `stored_len=${String(storedEnv).length}`);
+
     console.log(`\n${passed}/${expectations.length} expectations passed`);
     process.exit(passed === expectations.length ? 0 : 1);
 } catch (err) {

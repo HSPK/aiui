@@ -8,7 +8,7 @@ import { mcpServers } from "@/lib/api"
 import type { McpServerDTO, McpToolDescriptor } from "@/lib/schemas/mcp"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { cn, formatToLocal } from "@/lib/utils"
 
 interface Props {
@@ -58,9 +58,9 @@ export function McpServerDetailsSheet({ server, open, onOpenChange, isAdmin }: P
                             </Badge>
                         )}
                     </SheetTitle>
-                    {server.description && (
-                        <p className="text-xs text-muted-foreground pt-1">{server.description}</p>
-                    )}
+                    <SheetDescription className="text-xs text-muted-foreground pt-1">
+                        {server.description || "MCP server connection details, health, and discovered tools."}
+                    </SheetDescription>
                 </SheetHeader>
 
                 <div className="px-6 py-4 space-y-5">

@@ -6,6 +6,7 @@ import { mcpServers } from "../db/schema";
 import { badRequest, notFound } from "../response";
 import { serializeMcpServer } from "./serializer";
 import { checkMcpServer } from "./checks";
+import { encryptConfig } from "./config-crypto";
 import type { McpServerCreateInput, McpServerDTO, McpServerUpdateInput } from "@/lib/schemas/mcp";
 
 function findByIdOrName(idOrName: string) {
@@ -44,7 +45,7 @@ export function createMcpServer(input: McpServerCreateInput): McpServerDTO {
         name,
         description: input.description ?? "",
         transport: input.transport,
-        config: input.config,
+        config: encryptConfig(input.transport, input.config),
         enabled: input.enabled ?? true,
     }).run();
     scheduleCheck(id);
@@ -67,12 +68,13 @@ export function updateMcpServer(idOrName: string, input: McpServerUpdateInput): 
         }
     }
     if (input.description !== undefined) updates.description = input.description;
+    const finalTransport = input.transport ?? s.transport;
     if (input.transport !== undefined && input.transport !== s.transport) {
         updates.transport = input.transport;
         configChanged = true;
     }
     if (input.config !== undefined) {
-        updates.config = input.config;
+        updates.config = encryptConfig(finalTransport, input.config);
         configChanged = true;
     }
     if (input.enabled !== undefined) updates.enabled = !!input.enabled;
