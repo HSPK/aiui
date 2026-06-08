@@ -159,11 +159,14 @@ try {
         roles.includes("user"),
         `roles=${roles.slice(-5).join(",")}…`);
 
-    // Sanity: tool rows are in there too.
+    // Sanity: ALL tool rows come back, not just the newest 20.
+    // Without descendant walk, the FE's ToolCallsList would show
+    // 20 ok + 11 running for a 31-tool turn until the user loads
+    // more — which is exactly the bug this commit fixes.
     const toolCount = roles.filter((r) => r === "tool").length;
-    expect("tool rows still present (newest 20 by created_at)",
-        toolCount >= 19 && toolCount <= 20,
-        `tool_count=${toolCount}`);
+    expect("descendant walk: all tool children of the loaded assistant come back",
+        toolCount === TOOL_COUNT,
+        `tool_count=${toolCount}/${TOOL_COUNT}`);
 
     // total reflects the underlying count BEFORE ancestor expansion
     // — page semantics stay sane for the FE pagination math.

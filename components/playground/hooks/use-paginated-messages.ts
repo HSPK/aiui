@@ -140,10 +140,14 @@ export function usePaginatedMessages({
                 pageRef.current += 1
                 const newMessages = res.items.slice().reverse().map(transformMessage)
 
+                let appendedZero = false
                 setMessages((prev) => {
                     const existingIds = new Set(prev.map((m) => m.id))
                     const unique = newMessages.filter((m) => !existingIds.has(m.id))
-                    if (unique.length === 0) return prev
+                    if (unique.length === 0) {
+                        appendedZero = true
+                        return prev
+                    }
                     const merged = [...unique, ...prev]
                     // Keep the cache in sync with the visible head of the list.
                     queryClient.setQueryData<Message[]>(
@@ -152,6 +156,13 @@ export function usePaginatedMessages({
                     )
                     return merged
                 })
+                // The server's ancestor + descendant walk can pull in
+                // older rows up-front (e.g. all 31 tool results for a
+                // single assistant land on page 1). Subsequent raw
+                // page windows then return rows we already have; if
+                // every item is a dupe we know we've seen the whole
+                // tail and should stop polling.
+                if (appendedZero) setHasMore(false)
 
                 return newMessages
             }

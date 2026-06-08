@@ -124,8 +124,35 @@ export function listMessages(userId: string, conversationId: string, query: Mess
         hops += 1;
     }
 
+    // Also descend: for every loaded assistant, pull in any `role:
+    // "tool"` rows that point back at it via parent_id. The newest-
+    // first page window can stop mid-turn (e.g. only 20 of 31 tool
+    // results land in the page), which leaves the assistant's
+    // tool_call parts unresolved on the FE and they render as
+    // "running" forever. Tool rows have no children so this is a
+    // single non-recursive pass.
+    const assistantIds = [...rows, ...ancestors]
+        .filter((r) => r.role === "assistant")
+        .map((r) => r.id);
+    const descendants: typeof rows = [];
+    if (assistantIds.length > 0) {
+        const toolChildren = db.select().from(messages)
+            .where(and(
+                eq(messages.conversationId, conversationId),
+                eq(messages.isActive, true),
+                eq(messages.role, "tool"),
+                inArray(messages.parentId, assistantIds),
+            ))
+            .all();
+        for (const t of toolChildren) {
+            if (haveIds.has(t.id)) continue;
+            haveIds.add(t.id);
+            descendants.push(t);
+        }
+    }
+
     // Merge + dedup, preserving the requested sort order.
-    const merged = [...rows, ...ancestors].sort((a, b) => {
+    const merged = [...rows, ...ancestors, ...descendants].sort((a, b) => {
         const cmp = a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0;
         return query.sort.startsWith("-") ? -cmp : cmp;
     });
