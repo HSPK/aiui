@@ -2,30 +2,61 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { db, schema } from "../db";
-import { forwardGeneration, resolveModel } from "../gateway";
+import { forwardGeneration, resolveModel, type AssembledToolCall } from "../gateway";
 import { forbidden } from "../response";
 import type { SessionUser } from "../auth";
 import type { PlaygroundChatInput } from "@/lib/schemas/playground";
-import { extractText, type MessageContent } from "@/lib/schemas/content";
+import {
+    extractText,
+    type ContentPart,
+    type MessageContent,
+    type ToolCallPart,
+    type ToolResultPart,
+} from "@/lib/schemas/content";
+import { aggregateTools, executeTool, type AggregatedTool } from "../mcp/runtime";
+
+const MAX_TOOL_HOPS = 8;
+
+/** Wire message shape passed through to the gateway. `role: "tool"`
+ *  carries the result of a function execution; the model uses it on
+ *  the next round to compose a final answer. */
+interface WireMessage {
+    role: string;
+    content: MessageContent;
+    tool_call_id?: string;
+    tool_calls?: Array<{
+        id: string;
+        type: "function";
+        function: { name: string; arguments: string };
+    }>;
+}
 
 /**
  * Send a playground chat turn. Persists the user message + assistant
  * slot via upsert keyed on `assistant_message_id` — so a retry from
  * the inline error card replaces the same row instead of leaving an
  * orphaned sibling. Returns a streaming Response with `X-*` headers.
+ *
+ * When `enabled_mcp_server_ids` is non-empty, the service enters a
+ * multi-hop tool execution loop: it aggregates tools from those MCP
+ * servers, injects them into the upstream `tools[]`, and when the
+ * model finishes a turn with `finish_reason="tool_calls"` it executes
+ * each call via the MCP runtime, persists the assistant + tool result
+ * messages, and re-issues the upstream call with the extended history.
+ * The single response stream interleaves rounds: chat-completion SSE
+ * chunks per round, plus synthetic `event: aiui_tool_result` events so
+ * the FE can render result bubbles in real time. The terminal `[DONE]`
+ * fires only after the model produces a non-tool-call answer (or the
+ * hop cap is reached).
  */
 export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChatInput): Promise<Response> {
     // Fail fast with a sensible 4xx if the model is bad before we touch the DB.
     await resolveModel(body.model);
 
-    // Normalize the incoming content into a stable array form for
-    // persistence — bare strings become a single text part, arrays stay
-    // verbatim. The wire shape on the upstream call uses the same array
-    // (chat-completions accepts it; the responses variant translates).
-    const userContent: Array<{ type: string; [k: string]: unknown }> =
+    const userContentArray: ContentPart[] =
         typeof body.content === "string"
             ? [{ type: "text", text: body.content }]
-            : (body.content as Array<{ type: string; [k: string]: unknown }>);
+            : body.content;
     const userText = extractText(body.content);
 
     const conversationId = body.conversation_id ?? randomUUID();
@@ -38,8 +69,6 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
         db.update(schema.conversations).set({ updatedAt: now })
             .where(eq(schema.conversations.id, conversationId)).run();
     } else {
-        // Title from the user's text portion only — attachments don't
-        // make for good titles.
         const titleText = (userText.trim() || "New Chat").slice(0, 40);
         db.insert(schema.conversations).values({
             id: conversationId,
@@ -59,7 +88,7 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
             id: userMessageId,
             conversationId,
             role: "user",
-            content: userContent,
+            content: userContentArray,
             parentId: body.parent_message_id ?? null,
             isActive: true,
             createdAt: now,
@@ -80,60 +109,77 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
         .all();
     recent.reverse();
 
-    const messages: Array<{ role: string; content: MessageContent }> = [];
-    if (body.system?.trim()) messages.push({ role: "system", content: body.system });
+    const wireMessages: WireMessage[] = [];
+    if (body.system?.trim()) wireMessages.push({ role: "system", content: body.system });
     for (const m of recent) {
-        // Stored content is unknown — pass it through verbatim when it's
-        // already in canonical shape; otherwise fall back to flattening.
         const c = m.content as MessageContent | unknown;
-        if (typeof c === "string" || Array.isArray(c)) {
-            messages.push({ role: m.role, content: c as MessageContent });
-        } else {
-            messages.push({ role: m.role, content: extractText(c as MessageContent) });
-        }
+        wireMessages.push(...replayDbMessageToWire(m.role, c));
     }
 
-    const reqBody: Record<string, unknown> = {
+    const assistantMessageId = body.assistant_message_id ?? randomUUID();
+
+    // Aggregate MCP tools (if any) for this turn. Failed servers are
+    // surfaced to the client via synthetic SSE events but don't fail
+    // the whole request.
+    const enabledIds = body.enabled_mcp_server_ids ?? [];
+    const { tools: aggregatedTools, errors: aggregateErrors } =
+        enabledIds.length > 0
+            ? await aggregateTools(enabledIds)
+            : { tools: [] as AggregatedTool[], errors: [] };
+    const toolIndex = new Map<string, AggregatedTool>();
+    for (const t of aggregatedTools) toolIndex.set(t.qualifiedName, t);
+
+    const baseBody: Record<string, unknown> = {
         model: body.model,
-        messages,
         stream: body.stream !== false,
     };
     for (const k of ["temperature", "max_tokens", "top_p", "frequency_penalty", "presence_penalty", "reasoning_effort"] as const) {
         const v = body[k];
-        if (v !== undefined) reqBody[k] = v;
+        if (v !== undefined) baseBody[k] = v;
+    }
+    if (aggregatedTools.length > 0) {
+        baseBody.tools = aggregatedTools.map((t) => ({
+            type: "function" as const,
+            function: {
+                name: t.qualifiedName,
+                description: t.description,
+                parameters: t.parameters,
+            },
+        }));
     }
 
-    // Same id across attempts → retry replaces the row, no orphan sibling.
-    const assistantMessageId = body.assistant_message_id ?? randomUUID();
+    // ---- assistant slot persistence ----
 
-    const upsertAssistant = (fields: {
-        content: string;
-        reasoning?: string | null;
-        generationId?: string | null;
-        error?: string | null;
-    }) => {
+    const accumParts: ContentPart[] = [];
+    let lastReasoning = "";
+    let lastError: string | null = null;
+    let lastGenerationId: string | null = null;
+
+    const upsertAssistant = () => {
         const tsNow = new Date().toISOString();
-        const errorValue = fields.error ?? null;
+        const contentForRow: ContentPart[] = accumParts.length > 0
+            ? accumParts
+            : [{ type: "text", text: "" }];
         db.insert(schema.messages).values({
             id: assistantMessageId,
             conversationId,
             role: "assistant",
-            content: [{ type: "text", text: fields.content }],
-            reasoningContent: fields.reasoning || null,
+            content: contentForRow,
+            reasoningContent: lastReasoning || null,
             modelId: body.model,
-            generationId: fields.generationId ?? null,
+            generationId: lastGenerationId,
             parentId: userMessageId,
             isActive: true,
-            error: errorValue,
+            error: lastError,
             createdAt: tsNow,
         }).onConflictDoUpdate({
             target: schema.messages.id,
             set: {
-                content: [{ type: "text", text: fields.content }],
-                reasoningContent: fields.reasoning || null,
+                content: contentForRow,
+                reasoningContent: lastReasoning || null,
                 modelId: body.model,
-                generationId: fields.generationId ?? null,
-                error: errorValue,
+                generationId: lastGenerationId,
+                error: lastError,
             },
         }).run();
         db.update(schema.conversations)
@@ -142,56 +188,318 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
             .run();
     };
 
-    let logId: string | undefined;
-    let response: Response;
-    try {
-        const result = await forwardGeneration(user, "chat", reqBody, {
+    const insertToolMessage = (part: ToolResultPart, parentId: string) => {
+        const tsNow = new Date().toISOString();
+        db.insert(schema.messages).values({
+            id: randomUUID(),
             conversationId,
-            messageId: assistantMessageId,
-            onComplete: ({ content, reasoning }) => {
-                upsertAssistant({
-                    content,
-                    reasoning,
-                    generationId: logId ?? null,
-                    error: null,
+            role: "tool",
+            content: [part],
+            parentId,
+            isActive: true,
+            createdAt: tsNow,
+        }).run();
+    };
+
+    // ---- response stream ----
+
+    const encoder = new TextEncoder();
+
+    const responseStream = new ReadableStream<Uint8Array>({
+        async start(controller) {
+            const send = (chunk: Uint8Array) => controller.enqueue(chunk);
+            const emitEvent = (event: string, data: unknown) => {
+                send(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+            };
+
+            // Surface any tool-aggregation errors up front so the FE can
+            // toast them before the model starts responding.
+            for (const err of aggregateErrors) {
+                emitEvent("aiui_tool_error", {
+                    server_id: err.serverId,
+                    server_name: err.serverName,
+                    message: err.message,
                 });
-            },
-        });
-        logId = result.logId;
-        response = result.response;
-    } catch (err) {
-        // Thrown (network / resolveModel / empty-stream) — persist
-        // as error slot and return structured response with the id.
-        const message = err instanceof Error ? err.message : String(err);
-        upsertAssistant({ content: "", error: message, generationId: null });
-        return new Response(JSON.stringify({ code: 1, msg: message, data: null }), {
-            status: 502,
-            headers: {
-                "Content-Type": "application/json",
-                "X-Conversation-ID": conversationId,
-                "X-Message-ID": assistantMessageId,
-            },
-        });
+            }
+
+            try {
+                let hops = 0;
+                let pendingToolCalls: AssembledToolCall[] | undefined;
+                let pendingFinishReason: string | undefined;
+
+                while (true) {
+                    if (hops >= MAX_TOOL_HOPS) {
+                        emitEvent("aiui_tool_error", {
+                            message: `Max tool hops (${MAX_TOOL_HOPS}) reached without final answer`,
+                        });
+                        break;
+                    }
+
+                    const reqBody = { ...baseBody, messages: wireMessages };
+
+                    let roundContent = "";
+                    let roundReasoning = "";
+                    let roundFinish: string | undefined;
+                    let roundToolCalls: AssembledToolCall[] | undefined;
+                    let result;
+                    try {
+                        result = await forwardGeneration(user, "chat", reqBody, {
+                            conversationId,
+                            messageId: assistantMessageId,
+                            onComplete: ({ content, reasoning, toolCalls, finishReason }) => {
+                                roundContent = content;
+                                roundReasoning = reasoning;
+                                roundToolCalls = toolCalls;
+                                roundFinish = finishReason;
+                            },
+                        });
+                    } catch (err) {
+                        const message = err instanceof Error ? err.message : String(err);
+                        lastError = message;
+                        upsertAssistant();
+                        emitEvent("aiui_error", { message });
+                        break;
+                    }
+
+                    lastGenerationId = result.logId;
+
+                    // The gateway already opened the upstream connection
+                    // and is streaming chat-completion-shaped SSE. Strip
+                    // its terminal [DONE] tokens so the client sees one
+                    // continuous stream across rounds.
+                    if (!result.response.ok) {
+                        const text = await result.response.text().catch(() => "");
+                        lastError = `HTTP ${result.response.status}: ${text.slice(0, 500)}`;
+                        upsertAssistant();
+                        emitEvent("aiui_error", { message: lastError });
+                        break;
+                    }
+                    if (!result.response.body) {
+                        lastError = "Upstream returned empty stream";
+                        upsertAssistant();
+                        emitEvent("aiui_error", { message: lastError });
+                        break;
+                    }
+
+                    await pipeAndStripDone(result.response.body, controller);
+
+                    // Round complete — merge into accumulators.
+                    if (roundContent) {
+                        accumParts.push({ type: "text", text: roundContent });
+                    }
+                    if (roundReasoning) {
+                        // Reasoning is overwritten with the latest round
+                        // (final round answer matters most).
+                        lastReasoning = roundReasoning;
+                    }
+
+                    pendingToolCalls = roundToolCalls;
+                    pendingFinishReason = roundFinish;
+
+                    const wantsTools = pendingFinishReason === "tool_calls"
+                        && pendingToolCalls && pendingToolCalls.length > 0;
+                    if (!wantsTools) {
+                        // Final answer — persist + terminate.
+                        upsertAssistant();
+                        break;
+                    }
+
+                    // Annotate the assistant message with the tool_call
+                    // parts the model just emitted so the FE shows the
+                    // bubbles on a fresh page-load too.
+                    for (const tc of pendingToolCalls!) {
+                        const envelope = toolIndex.get(tc.name);
+                        const callPart: ToolCallPart = {
+                            type: "tool_call",
+                            tool_call: {
+                                id: tc.id,
+                                name: tc.name,
+                                arguments: tc.arguments,
+                                source: envelope?.serverName,
+                            },
+                        };
+                        accumParts.push(callPart);
+                    }
+                    upsertAssistant();
+
+                    // Build the assistant tool_calls envelope for the
+                    // next round's history. Without this, the model
+                    // doesn't know which calls produced which results.
+                    wireMessages.push({
+                        role: "assistant",
+                        content: roundContent,
+                        tool_calls: pendingToolCalls!.map((tc) => ({
+                            id: tc.id,
+                            type: "function",
+                            function: { name: tc.name, arguments: tc.arguments },
+                        })),
+                    });
+
+                    // Execute each tool call. Failures become tool
+                    // result messages with `is_error: true` so the model
+                    // can see them and recover.
+                    for (const tc of pendingToolCalls!) {
+                        const envelope = toolIndex.get(tc.name);
+                        let exec;
+                        if (!envelope) {
+                            exec = {
+                                content: `No MCP server has a tool called "${tc.name}". Available: ${Array.from(toolIndex.keys()).join(", ") || "<none>"}.`,
+                                isError: true,
+                                serverName: "unknown",
+                            };
+                        } else {
+                            exec = await executeTool(tc.name, tc.arguments);
+                        }
+
+                        const resultPart: ToolResultPart = {
+                            type: "tool_result",
+                            tool_result: {
+                                tool_call_id: tc.id,
+                                name: tc.name,
+                                content: exec.content,
+                                is_error: exec.isError,
+                                source: exec.serverName,
+                            },
+                        };
+                        insertToolMessage(resultPart, assistantMessageId);
+
+                        // Surface to the FE as a synthetic event — the
+                        // chat input doesn't poll messages mid-turn so
+                        // this is how the bubble appears in real time.
+                        emitEvent("aiui_tool_result", {
+                            call_id: tc.id,
+                            name: tc.name,
+                            content: exec.content,
+                            is_error: exec.isError,
+                            source: exec.serverName,
+                        });
+
+                        wireMessages.push({
+                            role: "tool",
+                            content: exec.content,
+                            tool_call_id: tc.id,
+                        });
+                    }
+
+                    hops += 1;
+                }
+            } finally {
+                // One terminal [DONE] for the whole multi-round stream.
+                send(encoder.encode("data: [DONE]\n\n"));
+                controller.close();
+            }
+        },
+    });
+
+    return new Response(responseStream, {
+        status: 200,
+        headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Conversation-ID": conversationId,
+            "X-Message-ID": assistantMessageId,
+        },
+    });
+}
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+/**
+ * Re-emit a stored message as one or more wire messages. assistant
+ * tool_call parts are folded into the assistant turn's `tool_calls`
+ * envelope; tool_result parts become standalone `role: "tool"` turns.
+ */
+function replayDbMessageToWire(role: string, content: unknown): WireMessage[] {
+    if (typeof content === "string") {
+        return [{ role, content }];
+    }
+    if (!Array.isArray(content)) {
+        return [{ role, content: extractText(content as MessageContent) }];
+    }
+    const parts = content as ContentPart[];
+
+    if (role === "tool") {
+        const out: WireMessage[] = [];
+        for (const p of parts) {
+            if (p.type === "tool_result") {
+                out.push({
+                    role: "tool",
+                    content: p.tool_result.content,
+                    tool_call_id: p.tool_result.tool_call_id,
+                });
+            }
+        }
+        return out;
     }
 
-    // Upstream returned non-stream error — persist slot, pass body through.
-    if (!response.ok) {
-        const text = await response.text();
-        upsertAssistant({
-            content: "",
-            error: `HTTP ${response.status}: ${text.slice(0, 500)}`,
-            generationId: logId ?? null,
-        });
-        const headers = new Headers(response.headers);
-        headers.set("X-Message-ID", assistantMessageId);
-        if (logId) headers.set("X-Generation-ID", logId);
-        headers.set("X-Conversation-ID", conversationId);
-        return new Response(text, { status: response.status, headers });
+    // Assistant or user (or system, etc.). Split user-visible content
+    // from tool_call parts (assistant only).
+    const visibleParts: ContentPart[] = [];
+    const toolCalls: WireMessage["tool_calls"] = [];
+    for (const p of parts) {
+        if (p.type === "tool_call") {
+            toolCalls!.push({
+                id: p.tool_call.id,
+                type: "function",
+                function: { name: p.tool_call.name, arguments: p.tool_call.arguments },
+            });
+        } else if (p.type === "tool_result") {
+            // Should only appear on role:"tool" but tolerate.
+            continue;
+        } else {
+            visibleParts.push(p);
+        }
     }
+    if (visibleParts.length === 0 && toolCalls!.length === 0) return [];
 
-    const headers = new Headers(response.headers);
-    headers.set("X-Message-ID", assistantMessageId);
-    if (logId) headers.set("X-Generation-ID", logId);
-    headers.set("X-Conversation-ID", conversationId);
-    return new Response(response.body, { status: response.status, headers });
+    const visibleContent: MessageContent = (() => {
+        if (visibleParts.length === 0) return "";
+        // Keep arrays verbatim — flattening a single-text-part array
+        // back to a bare string would round-trip data lossy and
+        // break clients that depend on the canonical wire shape.
+        return visibleParts;
+    })();
+
+    const msg: WireMessage = { role, content: visibleContent };
+    if (role === "assistant" && toolCalls!.length > 0) msg.tool_calls = toolCalls;
+    return [msg];
+}
+
+/**
+ * Pipe one round's SSE stream to the client, stripping its `[DONE]`
+ * terminator so the next round can keep emitting on the same socket.
+ * Operates on line boundaries with carry-over buffering for chunks
+ * that split mid-line.
+ */
+async function pipeAndStripDone(
+    body: ReadableStream<Uint8Array>,
+    controller: ReadableStreamDefaultController<Uint8Array>,
+): Promise<void> {
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    const encoder = new TextEncoder();
+    let carry = "";
+    while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        carry += decoder.decode(value, { stream: true });
+        const lines = carry.split("\n");
+        carry = lines.pop() ?? "";
+        let out = "";
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed === "data: [DONE]" || trimmed === "data:[DONE]") continue;
+            out += line + "\n";
+        }
+        if (out) controller.enqueue(encoder.encode(out));
+    }
+    if (carry) {
+        const trimmed = carry.trim();
+        if (trimmed !== "data: [DONE]" && trimmed !== "data:[DONE]") {
+            controller.enqueue(encoder.encode(carry));
+        }
+    }
 }

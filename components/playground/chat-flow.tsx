@@ -95,6 +95,11 @@ export function ChatFlow({ conversationId }: { conversationId: string }) {
         [buildConfigForModel, historyLimit, systemPrompt]
     )
 
+    const getEnabledMcpServerIds = React.useCallback(
+        () => usePlaygroundStore.getState().getSettings(conversationId).enabledMcpServerIds ?? [],
+        [conversationId]
+    )
+
     const onFormSubmit = React.useCallback(
         (input: import("@/lib/schemas/content").MessageContent) => {
             const modelIds = getModelIds()
@@ -102,23 +107,29 @@ export function ChatFlow({ conversationId }: { conversationId: string }) {
                 models: modelIds.length > 0 ? modelIds : ["gpt-3.5-turbo"],
                 getModelConfig: buildPerModelConfig,
                 contextMessageId: contextAssistantIdRef.current,
+                enabledMcpServerIds: getEnabledMcpServerIds(),
             })
         },
-        [buildPerModelConfig, handleSubmit, getModelIds, contextAssistantIdRef]
+        [buildPerModelConfig, handleSubmit, getModelIds, contextAssistantIdRef, getEnabledMcpServerIds]
     )
 
     const onRegenerate = React.useCallback(() => {
-        handleRegenerate({ models: getModelIds(), getModelConfig: buildPerModelConfig })
-    }, [buildPerModelConfig, handleRegenerate, getModelIds])
+        handleRegenerate({
+            models: getModelIds(),
+            getModelConfig: buildPerModelConfig,
+            enabledMcpServerIds: getEnabledMcpServerIds(),
+        })
+    }, [buildPerModelConfig, handleRegenerate, getModelIds, getEnabledMcpServerIds])
 
     const onRetryFailed = React.useCallback(
         (failedAssistantId: string) => {
             handleRetryFailed(failedAssistantId, {
                 models: getModelIds(),
                 getModelConfig: buildPerModelConfig,
+                enabledMcpServerIds: getEnabledMcpServerIds(),
             })
         },
-        [buildPerModelConfig, handleRetryFailed, getModelIds]
+        [buildPerModelConfig, handleRetryFailed, getModelIds, getEnabledMcpServerIds]
     )
 
     const showInitialLoading = isInitialLoading && messages.length === 0

@@ -30,6 +30,9 @@ export class StreamClient {
                     user_message_id: config.userMessageId,
                     assistant_message_id: config.assistantMessageId,
                     parent_message_id: config.parentMessageId ?? null,
+                    enabled_mcp_server_ids: config.enabledMcpServerIds && config.enabledMcpServerIds.length > 0
+                        ? config.enabledMcpServerIds
+                        : undefined,
                     ...config.additionalConfig
                 }),
                 signal: this.abortController.signal
@@ -67,6 +70,22 @@ export class StreamClient {
                             accumulatedContent += event.content
                             accumulatedReasoning += event.reasoning || ""
                             callbacks.onContent(accumulatedContent, accumulatedReasoning)
+                            break
+
+                        case 'tool_call_delta':
+                            callbacks.onToolEvent({ type: 'tool_call_delta', call: event.call })
+                            break
+
+                        case 'tool_result':
+                            callbacks.onToolEvent({ type: 'tool_result', result: event.result })
+                            break
+
+                        case 'tool_error':
+                            callbacks.onToolEvent({
+                                type: 'tool_error',
+                                message: event.message,
+                                serverName: event.serverName,
+                            })
                             break
 
                         case 'error':

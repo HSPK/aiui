@@ -31,7 +31,10 @@ export function transformMessage(m: MessageDTO): Message {
     }
     return {
         id: m.id,
-        role: m.role === "tool" ? "assistant" : m.role,
+        // Preserve `tool` — message-list folds these into the parent
+        // assistant's tool_calls[].result so they don't render as
+        // standalone bubbles.
+        role: m.role,
         content,
         model_id: m.model_id,
         reasoning_content: m.reasoning_content,

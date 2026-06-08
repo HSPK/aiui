@@ -46,6 +46,11 @@ export interface NormalizedNonStreamResult {
      *  variant. For embeddings/image/audio variants this is just the raw
      *  upstream JSON re-emitted. */
     normalized: Record<string, unknown>;
+    /** Fully-assembled tool calls from `choices[0].message.tool_calls`,
+     *  surfaced so the playground service can react without re-parsing
+     *  `normalized`. Empty / undefined when the model did not call a tool. */
+    toolCalls?: Array<{ id: string; name: string; arguments: string }>;
+    finishReason?: string;
 }
 
 export interface NormalizedStreamDelta {
@@ -57,6 +62,20 @@ export interface NormalizedStreamDelta {
     /** Final chunk only: total usage in chat-completion shape
      *  (`{prompt_tokens, completion_tokens, total_tokens, ...}`). */
     usage?: Record<string, unknown>;
+    /** Tool-call function-call deltas. Each entry is a partial — `name`
+     *  arrives once in the first delta, `argumentsDelta` is concatenated
+     *  across subsequent deltas with the matching `index`. Mirrors
+     *  OpenAI's `choices[].delta.tool_calls[]` streaming convention. */
+    toolCalls?: Array<{
+        index: number;
+        id?: string;
+        name?: string;
+        argumentsDelta?: string;
+    }>;
+    /** Upstream-provided finish reason for this choice ("stop",
+     *  "tool_calls", "length", …). Surfaced so the gateway knows when
+     *  to switch into the tool-execution branch. */
+    finishReason?: string;
 }
 
 export interface UpstreamApiVariant {

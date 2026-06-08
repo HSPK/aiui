@@ -1,6 +1,7 @@
 // Chat Stream Hook - orchestrates streaming for multiple models
 
 import { useRef, useCallback } from "react"
+import { toast } from "sonner"
 import { StreamClient } from "./stream-client"
 import { ThrottledUpdater } from "./throttled-updater"
 import type { Message, MessageContent, StreamConfig } from "./types"
@@ -15,6 +16,7 @@ type StreamParams = {
     models: string[]
     config?: ModelConfig
     getModelConfig?: (modelId: string) => ModelConfig
+    enabledMcpServerIds?: string[]
 }
 
 export function useChatStream(
@@ -36,6 +38,7 @@ export function useChatStream(
         assistantMsgId: string
         model: string
         modelConfig?: ModelConfig
+        enabledMcpServerIds?: string[]
     }) => {
         const client = new StreamClient()
         clientsRef.current.push(client)
@@ -56,6 +59,7 @@ export function useChatStream(
                     // Upsert key — same id across retries replaces the row server-side.
                     assistantMessageId: params.assistantMsgId,
                     parentMessageId: params.parentMessageId,
+                    enabledMcpServerIds: params.enabledMcpServerIds,
                     additionalConfig: params.modelConfig
                 },
                 {
@@ -64,6 +68,16 @@ export function useChatStream(
                             content.slice(updater.getContent().content.length),
                             reasoning.slice(updater.getContent().reasoning.length)
                         )
+                    },
+                    onToolEvent: (ev) => {
+                        if (ev.type === "tool_call_delta") {
+                            updater.applyToolCallDelta(ev.call)
+                        } else if (ev.type === "tool_result") {
+                            updater.applyToolResult(ev.result)
+                        } else if (ev.type === "tool_error") {
+                            const where = ev.serverName ? ` (${ev.serverName})` : ""
+                            toast.error(`MCP${where}: ${ev.message}`)
+                        }
                     },
                     onComplete: (messageId, generationId) => {
                         updater.setServerIds(messageId, generationId)
@@ -100,7 +114,7 @@ export function useChatStream(
 
     /** Stream responses for multiple models in parallel. */
     const streamMultiple = useCallback(async (params: StreamParams): Promise<void> => {
-        const { userMessageId, userContent, parentMessageId, models, config, getModelConfig } = params
+        const { userMessageId, userContent, parentMessageId, models, config, getModelConfig, enabledMcpServerIds } = params
 
         const assistantMsgs: Message[] = models.map(model => ({
             id: crypto.randomUUID(),
@@ -122,7 +136,8 @@ export function useChatStream(
                 parentMessageId,
                 assistantMsgId: assistantMsg.id,
                 model,
-                modelConfig
+                modelConfig,
+                enabledMcpServerIds,
             })
         })
 
@@ -137,7 +152,8 @@ export function useChatStream(
     const retryFailedMessage = useCallback(async (
         failedMessage: Message,
         userContent: MessageContent,
-        getModelConfig?: (modelId: string) => ModelConfig
+        getModelConfig?: (modelId: string) => ModelConfig,
+        enabledMcpServerIds?: string[],
     ): Promise<void> => {
         if (!failedMessage.model_id || !failedMessage.parent_id) return
 
@@ -149,6 +165,7 @@ export function useChatStream(
                     reasoning_content: undefined,
                     error: undefined,
                     generation_id: undefined,
+                    tool_calls: undefined,
                     created_at: new Date()
                 }
                 : m
@@ -162,7 +179,8 @@ export function useChatStream(
                 parentMessageId: failedMessage.parent_id,
                 assistantMsgId: failedMessage.id,
                 model: failedMessage.model_id,
-                modelConfig
+                modelConfig,
+                enabledMcpServerIds,
             })
         } finally {
             clientsRef.current = []

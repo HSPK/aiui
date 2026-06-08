@@ -198,9 +198,23 @@ export interface ForwardGenerationOpts {
     conversationId?: string;
     messageId?: string;
     /** Called once with extracted info after a non-stream or end-of-stream completion. */
-    onComplete?: (info: { content: string; reasoning: string; usage?: Record<string, unknown> }) => void;
+    onComplete?: (info: {
+        content: string;
+        reasoning: string;
+        usage?: Record<string, unknown>;
+        toolCalls?: AssembledToolCall[];
+        finishReason?: string;
+    }) => void;
     /** Called per stream chunk for callers that want incremental access. */
     onStreamDelta?: (delta: { content: string; reasoning: string }) => void;
+}
+
+/** Tool calls in the form the playground service dispatches them by:
+ *  the model has fully committed to a name + JSON args string. */
+export interface AssembledToolCall {
+    id: string;
+    name: string;
+    arguments: string;
 }
 
 /**
@@ -353,6 +367,8 @@ async function handleNonStream({ upstream, variant, ctx, opts, started, logId }:
             content: parsed.output ?? "",
             reasoning: "",
             usage: parsed.normalized.usage as Record<string, unknown> | undefined,
+            toolCalls: parsed.toolCalls,
+            finishReason: parsed.finishReason,
         });
         return {
             response: new Response(JSON.stringify(parsed.normalized), {
@@ -402,8 +418,14 @@ function handleStream({ upstream, variant, ctx, opts, started, logId, model }: S
     let streamModel: string | undefined;
     let streamId: string | undefined;
     let systemFingerprint: string | undefined;
+    let finishReason: string | null = null;
     let buf = "";
     let firstTokenMs: number | null = null;
+
+    // Tool-call accumulator keyed by streaming `index`. OpenAI streams
+    // tool calls as `{index, id, function:{name, arguments(_delta)}}` —
+    // we concatenate `arguments` per-index across chunks.
+    const toolAcc = new Map<number, { id?: string; name?: string; arguments: string }>();
 
     const decoder = new TextDecoder();
     const encoder = new TextEncoder();
@@ -411,13 +433,28 @@ function handleStream({ upstream, variant, ctx, opts, started, logId, model }: S
 
     const emitChunk = (
         controller: TransformStreamDefaultController<Uint8Array>,
-        delta: { content?: string; reasoning?: string },
+        delta: {
+            content?: string;
+            reasoning?: string;
+            toolCalls?: NonNullable<ReturnType<UpstreamApiVariant["parseStreamChunk"]>>["toolCalls"];
+        },
         usagePayload?: Record<string, unknown>,
-        finishReason: string | null = null,
+        chunkFinishReason: string | null = null,
     ) => {
         const messageDelta: Record<string, unknown> = {};
         if (delta.content) messageDelta.content = delta.content;
         if (delta.reasoning) messageDelta.reasoning_content = delta.reasoning;
+        if (delta.toolCalls && delta.toolCalls.length > 0) {
+            messageDelta.tool_calls = delta.toolCalls.map((tc) => ({
+                index: tc.index,
+                id: tc.id,
+                type: "function" as const,
+                function: {
+                    name: tc.name,
+                    arguments: tc.argumentsDelta,
+                },
+            }));
+        }
         const chunkObj: Record<string, unknown> = {
             id: streamId ?? logId,
             object: "chat.completion.chunk",
@@ -427,7 +464,7 @@ function handleStream({ upstream, variant, ctx, opts, started, logId, model }: S
                 {
                     index: 0,
                     delta: messageDelta,
-                    finish_reason: finishReason,
+                    finish_reason: chunkFinishReason,
                 },
             ],
         };
@@ -462,9 +499,21 @@ function handleStream({ upstream, variant, ctx, opts, started, logId, model }: S
                 if (delta.model) streamModel = delta.model;
                 if (delta.systemFingerprint) systemFingerprint = delta.systemFingerprint;
                 if (delta.usage) usage = delta.usage;
+                if (delta.finishReason) finishReason = delta.finishReason;
 
-                const hasContent = !!(delta.content || delta.reasoning);
-                if (hasContent) {
+                if (delta.toolCalls && delta.toolCalls.length > 0) {
+                    for (const tc of delta.toolCalls) {
+                        const slot = toolAcc.get(tc.index) ?? { arguments: "" };
+                        if (tc.id) slot.id = tc.id;
+                        if (tc.name) slot.name = tc.name;
+                        if (tc.argumentsDelta) slot.arguments += tc.argumentsDelta;
+                        toolAcc.set(tc.index, slot);
+                    }
+                    if (firstTokenMs === null) firstTokenMs = Date.now() - started;
+                }
+
+                const hasText = !!(delta.content || delta.reasoning);
+                if (hasText) {
                     if (firstTokenMs === null) firstTokenMs = Date.now() - started;
                     if (delta.content) accumContent += delta.content;
                     if (delta.reasoning) accumReasoning += delta.reasoning;
@@ -472,28 +521,51 @@ function handleStream({ upstream, variant, ctx, opts, started, logId, model }: S
                         content: delta.content ?? "",
                         reasoning: delta.reasoning ?? "",
                     });
+                }
+                if (hasText || (delta.toolCalls && delta.toolCalls.length > 0)) {
                     emitChunk(controller, {
                         content: delta.content,
                         reasoning: delta.reasoning,
+                        toolCalls: delta.toolCalls,
                     });
                 }
             }
         },
         flush(controller) {
+            // Assemble fully-merged tool_calls for both the log and the
+            // onComplete callback. Sorted by index to keep deterministic
+            // ordering across attempts.
+            const orderedToolCalls = Array.from(toolAcc.entries())
+                .sort(([a], [b]) => a - b)
+                .map(([, v]) => ({
+                    id: v.id ?? "",
+                    name: v.name ?? "",
+                    arguments: v.arguments,
+                }))
+                .filter((tc) => tc.name);
+
+            const closingReason = finishReason ?? (orderedToolCalls.length > 0 ? "tool_calls" : "stop");
             // Terminal stop chunk (carries final usage if known) + [DONE].
-            emitChunk(controller, {}, usage, "stop");
+            emitChunk(controller, {}, usage, closingReason);
             controller.enqueue(encoder.encode("data: [DONE]\n\n"));
 
             // Persist the merged log entry in canonical chat-completion shape.
             const u = usage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined;
             const message: Record<string, unknown> = { role: "assistant", content: accumContent };
             if (accumReasoning) message.reasoning_content = accumReasoning;
+            if (orderedToolCalls.length > 0) {
+                message.tool_calls = orderedToolCalls.map((tc) => ({
+                    id: tc.id,
+                    type: "function",
+                    function: { name: tc.name, arguments: tc.arguments },
+                }));
+            }
             const mergedResponse: Record<string, unknown> = {
                 id: streamId ?? logId,
                 object: "chat.completion",
                 created: createdAt,
                 model: streamModel ?? model.upstreamModelId,
-                choices: [{ index: 0, message, finish_reason: "stop" }],
+                choices: [{ index: 0, message, finish_reason: closingReason }],
             };
             if (systemFingerprint) mergedResponse.system_fingerprint = systemFingerprint;
             if (usage) mergedResponse.usage = usage;
@@ -509,7 +581,13 @@ function handleStream({ upstream, variant, ctx, opts, started, logId, model }: S
                 firstTokenLatencyMs: firstTokenMs,
                 totalLatencyMs: Date.now() - started,
             });
-            opts.onComplete?.({ content: accumContent, reasoning: accumReasoning, usage });
+            opts.onComplete?.({
+                content: accumContent,
+                reasoning: accumReasoning,
+                usage,
+                toolCalls: orderedToolCalls.length > 0 ? orderedToolCalls : undefined,
+                finishReason: closingReason,
+            });
         },
     });
 

@@ -1,7 +1,7 @@
 // Throttled Message Updater - handles batched UI updates during streaming
 // Optimized: Removed flushSync to allow React to batch updates naturally
 
-import type { Message, MessageUpdate } from "./types"
+import type { AssembledToolCall, Message, MessageUpdate } from "./types"
 
 type SetMessages = React.Dispatch<React.SetStateAction<Message[]>>
 
@@ -15,6 +15,12 @@ export class ThrottledUpdater {
     private serverMessageId: string | null = null
     private serverGenerationId: string | null = null
     private pendingUpdate = false
+
+    /** Tool calls assembled from streaming deltas, keyed by index so
+     *  out-of-order chunks merge cleanly. Results are filled in as
+     *  `aiui_tool_result` events arrive (keyed by id). */
+    private toolCallsByIndex = new Map<number, AssembledToolCall & { index: number }>()
+    private toolCallIndexById = new Map<string, number>()
 
     constructor(
         private readonly clientMessageId: string,
@@ -39,6 +45,52 @@ export class ThrottledUpdater {
     appendContent(content: string, reasoning: string) {
         if (content) this.accumulatedContent += content
         if (reasoning) this.accumulatedReasoning += reasoning
+        this.scheduleUpdate()
+    }
+
+    /** Merge a streaming tool-call delta into the in-progress message. */
+    applyToolCallDelta(delta: { index: number; id?: string; name?: string; argumentsDelta?: string }) {
+        const slot = this.toolCallsByIndex.get(delta.index) ?? {
+            index: delta.index,
+            id: "",
+            name: "",
+            arguments: "",
+        }
+        if (delta.id) {
+            slot.id = delta.id
+            this.toolCallIndexById.set(delta.id, delta.index)
+        }
+        if (delta.name) slot.name = delta.name
+        if (delta.argumentsDelta) slot.arguments += delta.argumentsDelta
+        this.toolCallsByIndex.set(delta.index, slot)
+        this.scheduleUpdate()
+    }
+
+    /** Attach an MCP execution result to a previously-assembled tool call. */
+    applyToolResult(result: { call_id: string; name: string; content: string; is_error: boolean; source?: string }) {
+        const idx = this.toolCallIndexById.get(result.call_id)
+        if (idx === undefined) {
+            // Result arrived for a call we never saw a delta for —
+            // synthesize a slot so it still renders.
+            const synthetic: AssembledToolCall & { index: number } = {
+                index: this.toolCallsByIndex.size,
+                id: result.call_id,
+                name: result.name,
+                arguments: "",
+                source: result.source,
+                result: { content: result.content, is_error: result.is_error, source: result.source },
+            }
+            this.toolCallIndexById.set(result.call_id, synthetic.index)
+            this.toolCallsByIndex.set(synthetic.index, synthetic)
+        } else {
+            const slot = this.toolCallsByIndex.get(idx)!
+            slot.source = result.source ?? slot.source
+            slot.result = {
+                content: result.content,
+                is_error: result.is_error,
+                source: result.source,
+            }
+        }
         this.scheduleUpdate()
     }
 
@@ -111,7 +163,14 @@ export class ThrottledUpdater {
 
         const update: MessageUpdate = {
             content: this.accumulatedContent,
-            reasoning_content: this.accumulatedReasoning || undefined
+            reasoning_content: this.accumulatedReasoning || undefined,
+        }
+
+        if (this.toolCallsByIndex.size > 0) {
+            update.tool_calls = Array.from(this.toolCallsByIndex.values())
+                .sort((a, b) => a.index - b.index)
+                // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                .map(({ index: _idx, ...rest }) => rest)
         }
 
         if (includeIds) {

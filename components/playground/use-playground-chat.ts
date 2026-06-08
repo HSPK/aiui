@@ -111,7 +111,8 @@ export function usePlaygroundChat({
                 parentMessageId: userParentId,
                 models,
                 config: options?.config,
-                getModelConfig: options?.getModelConfig
+                getModelConfig: options?.getModelConfig,
+                enabledMcpServerIds: options?.enabledMcpServerIds,
             })
         } catch (err) {
             console.error("Chat Error:", err)
@@ -146,7 +147,8 @@ export function usePlaygroundChat({
             await retryFailedMessage(
                 failed,
                 userMessage.content,
-                options?.getModelConfig
+                options?.getModelConfig,
+                options?.enabledMcpServerIds,
             )
         } catch (err) {
             console.error("Chat Retry Failed Error:", err)
@@ -191,7 +193,8 @@ export function usePlaygroundChat({
                 parentMessageId: userMessage.parent_id,
                 models,
                 config: options?.config,
-                getModelConfig: options?.getModelConfig
+                getModelConfig: options?.getModelConfig,
+                enabledMcpServerIds: options?.enabledMcpServerIds,
             })
         } catch (err) {
             console.error("Chat Regenerate Error:", err)

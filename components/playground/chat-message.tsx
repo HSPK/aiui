@@ -4,7 +4,7 @@ import { messages } from "@/lib/api";
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Check, Copy, ChevronDown, ChevronRight, ThumbsUp, ThumbsDown, Info, RotateCcw, AlertCircle, FileText } from "lucide-react"
+import { Check, Copy, ChevronDown, ChevronRight, ThumbsUp, ThumbsDown, Info, RotateCcw, AlertCircle, FileText, Wrench, AlertTriangle, Loader2 } from "lucide-react"
 import { cn, formatMessageTime } from "@/lib/utils"
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -15,7 +15,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { preferences } from "@/lib/api"
 import { defaultUserPreferences } from "@/lib/schemas/preferences"
 import { extractText, type ContentPart } from "@/lib/schemas/content"
-import type { Message } from "@/components/playground/chat/types"
+import type { Message, AssembledToolCall } from "@/components/playground/chat/types"
 import { useTypewriter } from "@/components/playground/chat/use-typewriter"
 
 import { toast } from "sonner"
@@ -195,8 +195,30 @@ export const ChatMessage = React.memo(({
     const displayContent = extractText(content ?? "")
     const attachmentParts = React.useMemo<ContentPart[]>(() => {
         if (!Array.isArray(content)) return []
-        return content.filter((p) => p.type !== "text") as ContentPart[]
+        return content.filter((p) => p.type === "image_url" || p.type === "file") as ContentPart[]
     }, [content])
+
+    // Persisted tool_call parts (from a server-fetched message) are
+    // hoisted into the same `tool_calls` array the live updater uses,
+    // so the renderer doesn't need a second code path.
+    const renderedToolCalls = React.useMemo<AssembledToolCall[]>(() => {
+        if (message.tool_calls && message.tool_calls.length > 0) {
+            return message.tool_calls
+        }
+        if (!Array.isArray(content)) return []
+        const calls: AssembledToolCall[] = []
+        for (const p of content) {
+            if (p.type === "tool_call") {
+                calls.push({
+                    id: p.tool_call.id,
+                    name: p.tool_call.name,
+                    arguments: p.tool_call.arguments,
+                    source: p.tool_call.source,
+                })
+            }
+        }
+        return calls
+    }, [content, message.tool_calls])
 
     const typewriterEnabled = renderMode === "typewriter" && role === "assistant"
     const animatedContent = useTypewriter(displayContent, {
@@ -406,6 +428,9 @@ export const ChatMessage = React.memo(({
                             >
                                 {visibleContent}
                             </ReactMarkdown>
+                            {renderedToolCalls.length > 0 && (
+                                <ToolCallsView calls={renderedToolCalls} />
+                            )}
                             {showCursor && !visibleContent && (
                                 <span className="typing-cursor text-primary">▋</span>
                             )}
@@ -570,3 +595,91 @@ function FileAttachment({ filename, dataUrl, mime }: { filename: string; dataUrl
         </a>
     )
 }
+
+// ---- Tool call rendering ----
+
+function prettyJson(s: string): string {
+    if (!s) return ""
+    try {
+        return JSON.stringify(JSON.parse(s), null, 2)
+    } catch {
+        return s
+    }
+}
+
+function ToolCallsView({ calls }: { calls: AssembledToolCall[] }) {
+    return (
+        <div className="not-prose my-2 flex flex-col gap-1.5">
+            {calls.map((c) => (
+                <ToolCallCard key={c.id || `${c.name}-${calls.indexOf(c)}`} call={c} />
+            ))}
+        </div>
+    )
+}
+
+function ToolCallCard({ call }: { call: AssembledToolCall }) {
+    const [open, setOpen] = React.useState(false)
+    const status = !call.result
+        ? "running"
+        : call.result.is_error
+            ? "error"
+            : "ok"
+
+    const icon = status === "running"
+        ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+        : status === "error"
+            ? <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
+            : <Wrench className="h-3.5 w-3.5 text-muted-foreground" />
+
+    const headerBg = status === "error"
+        ? "bg-destructive/5 border-destructive/30"
+        : "bg-muted/40 border-border"
+
+    return (
+        <div className={cn("rounded-lg border text-xs overflow-hidden", headerBg)}>
+            <button
+                type="button"
+                onClick={() => setOpen((o) => !o)}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-left hover:bg-muted/50 transition-colors"
+            >
+                {icon}
+                <span className="font-mono text-[11px] text-foreground truncate flex-1">
+                    {call.source ? <span className="text-muted-foreground">{call.source}/</span> : null}
+                    {call.name}
+                </span>
+                {status === "running" && (
+                    <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Running…</span>
+                )}
+                {status === "error" && (
+                    <span className="text-[10px] uppercase tracking-wide text-destructive">Error</span>
+                )}
+                {open
+                    ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                    : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+            </button>
+            {open && (
+                <div className="border-t border-border bg-background/60 px-2.5 py-2 space-y-2">
+                    <div>
+                        <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">
+                            Arguments
+                        </div>
+                        <pre className="font-mono text-[11px] leading-tight whitespace-pre-wrap break-all bg-muted/40 rounded p-2 max-h-60 overflow-auto">
+                            {prettyJson(call.arguments) || "{}"}
+                        </pre>
+                    </div>
+                    {call.result && (
+                        <div>
+                            <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">
+                                Result {call.result.is_error && <span className="text-destructive">(error)</span>}
+                            </div>
+                            <pre className="font-mono text-[11px] leading-tight whitespace-pre-wrap break-all bg-muted/40 rounded p-2 max-h-80 overflow-auto">
+                                {call.result.content}
+                            </pre>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    )
+}
+

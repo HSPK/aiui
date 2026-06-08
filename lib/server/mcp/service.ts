@@ -6,7 +6,6 @@ import { mcpServers } from "../db/schema";
 import { badRequest, notFound } from "../response";
 import { serializeMcpServer } from "./serializer";
 import type { McpServerCreateInput, McpServerDTO, McpServerUpdateInput } from "@/lib/schemas/mcp";
-
 function findByIdOrName(idOrName: string) {
     return (
         db.select().from(mcpServers).where(eq(mcpServers.id, idOrName)).get() ||

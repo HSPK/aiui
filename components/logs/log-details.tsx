@@ -21,7 +21,7 @@ import {
     AccordionTrigger,
 } from "@/components/ui/accordion"
 import dynamic from 'next/dynamic'
-import { Loader2, Copy, Check, FileText, Terminal, AlignLeft, Code, Download, Image as ImageIcon, Paperclip } from "lucide-react"
+import { Loader2, Copy, Check, FileText, Terminal, AlignLeft, Code, Download, Image as ImageIcon, Paperclip, Wrench, ChevronDown, ChevronRight } from "lucide-react"
 import { formatToLocal, cn } from "@/lib/utils"
 // @ts-ignore
 import ReactMarkdown from 'react-markdown'
@@ -486,6 +486,12 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
 interface ChatMessage {
     role?: string
     content?: MessageContent
+    tool_call_id?: string
+    tool_calls?: Array<{
+        id?: string
+        type?: string
+        function?: { name?: string; arguments?: string }
+    }>
 }
 
 /** Try to read a chat-completion-shaped messages array out of the log
@@ -609,18 +615,31 @@ function RequestPreview({
 function MessageRow({ message }: { message: ChatMessage }) {
     const text = extractText(message.content ?? "")
     const parts = Array.isArray(message.content)
-        ? (message.content.filter((p) => p.type !== "text") as ContentPart[])
+        ? (message.content.filter((p) => p.type === "image_url" || p.type === "file") as ContentPart[])
         : []
+
+    const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : []
+    const isToolRole = message.role === "tool"
 
     return (
         <div className="p-3 space-y-2">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="outline" className="text-[10px] uppercase tracking-wider font-semibold">
                     {message.role ?? "user"}
                 </Badge>
                 {parts.length > 0 && (
                     <span className="text-[10px] text-muted-foreground font-mono">
                         +{parts.length} attachment{parts.length === 1 ? "" : "s"}
+                    </span>
+                )}
+                {toolCalls.length > 0 && (
+                    <span className="text-[10px] text-muted-foreground font-mono">
+                        +{toolCalls.length} tool call{toolCalls.length === 1 ? "" : "s"}
+                    </span>
+                )}
+                {isToolRole && message.tool_call_id && (
+                    <span className="text-[10px] text-muted-foreground font-mono truncate">
+                        ↳ {message.tool_call_id}
                     </span>
                 )}
             </div>
@@ -633,7 +652,7 @@ function MessageRow({ message }: { message: ChatMessage }) {
                     })}
                 </div>
             )}
-            {text && (
+            {text && !isToolRole && (
                 <div className="prose prose-sm dark:prose-invert max-w-none break-words leading-relaxed">
                     <ReactMarkdown
                         remarkPlugins={[remarkMath, remarkGfm]}
@@ -644,8 +663,56 @@ function MessageRow({ message }: { message: ChatMessage }) {
                     </ReactMarkdown>
                 </div>
             )}
-            {!text && parts.length === 0 && (
+            {isToolRole && text && (
+                <pre className="font-mono text-[11px] leading-tight whitespace-pre-wrap break-all bg-muted/40 rounded p-2 max-h-60 overflow-auto">
+                    {text}
+                </pre>
+            )}
+            {toolCalls.length > 0 && (
+                <div className="flex flex-col gap-1">
+                    {toolCalls.map((tc, i) => (
+                        <LogToolCallCard
+                            key={tc.id ?? i}
+                            name={tc.function?.name ?? "(unknown)"}
+                            args={tc.function?.arguments ?? ""}
+                            callId={tc.id}
+                        />
+                    ))}
+                </div>
+            )}
+            {!text && parts.length === 0 && toolCalls.length === 0 && (
                 <p className="text-xs text-muted-foreground italic">(empty)</p>
+            )}
+        </div>
+    )
+}
+
+function LogToolCallCard({ name, args, callId }: { name: string; args: string; callId?: string }) {
+    const [open, setOpen] = useState(false)
+    const pretty = (() => {
+        if (!args) return "{}"
+        try {
+            return JSON.stringify(JSON.parse(args), null, 2)
+        } catch {
+            return args
+        }
+    })()
+    return (
+        <div className="rounded-md border bg-muted/30 overflow-hidden">
+            <button
+                type="button"
+                onClick={() => setOpen((o) => !o)}
+                className="w-full flex items-center gap-2 px-2 py-1.5 text-left hover:bg-muted/60 transition-colors"
+            >
+                <Wrench className="h-3 w-3 text-muted-foreground shrink-0" />
+                <span className="font-mono text-[11px] text-foreground truncate flex-1">{name}</span>
+                {callId && <span className="text-[10px] text-muted-foreground font-mono truncate">{callId}</span>}
+                {open ? <ChevronDown className="h-3 w-3 text-muted-foreground" /> : <ChevronRight className="h-3 w-3 text-muted-foreground" />}
+            </button>
+            {open && (
+                <pre className="border-t font-mono text-[11px] leading-tight whitespace-pre-wrap break-all bg-background/60 p-2 max-h-60 overflow-auto">
+                    {pretty}
+                </pre>
             )}
         </div>
     )

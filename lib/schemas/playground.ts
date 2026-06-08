@@ -21,6 +21,11 @@ export const playgroundChatSchema = z.object({
     /** Legacy typo, kept for the existing client. */
     conv_histrory_limit: z.number().int().min(1).optional(),
     stream: z.boolean().optional(),
+    /** Enabled MCP server ids for this turn. Tools from each enabled
+     *  server are flattened, mangled with `<server>__<tool>` and passed
+     *  to the upstream as `tools[]`. Tool execution + recursion are
+     *  handled by the playground service, transparent to the FE. */
+    enabled_mcp_server_ids: z.array(z.string().min(1)).optional(),
 });
 
 export type PlaygroundChatInput = z.infer<typeof playgroundChatSchema>;

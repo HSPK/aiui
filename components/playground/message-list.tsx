@@ -39,7 +39,7 @@ interface MessageListProps {
 }
 
 export const MessageList = React.memo(({
-    messages,
+    messages: rawMessages,
     isLoading,
     onViewGeneration,
     onRegenerate,
@@ -48,6 +48,11 @@ export const MessageList = React.memo(({
     onSelectSibling
 }: MessageListProps) => {
     const { data: modelsData } = models.useList(undefined, { staleTime: 5 * 60 * 1000 })
+
+    // Fold persisted `role: "tool"` messages into the parent assistant's
+    // tool_calls[].result so they render inline inside the bubble (just
+    // like during streaming) instead of as standalone messages.
+    const messages = React.useMemo(() => foldToolMessages(rawMessages), [rawMessages])
 
     const modelProviderMap = React.useMemo(() => {
         const map = new Map<string, string>()
@@ -271,3 +276,70 @@ export const MessageList = React.memo(({
     )
 })
 MessageList.displayName = "MessageList"
+
+// =============================================================================
+// Tool-message folding
+// =============================================================================
+
+/**
+ * `role: "tool"` messages persist results of MCP function calls. Each
+ * one carries a single `tool_result` part whose `tool_call_id` links
+ * back to a `tool_call` part on the preceding assistant message. We
+ * hoist those results into the assistant message's `tool_calls` field
+ * so they render inline (matching the live-stream experience) instead
+ * of as standalone bubbles.
+ */
+function foldToolMessages(messages: Message[]): Message[] {
+    if (messages.length === 0) return messages
+
+    type StoredToolResult = { tool_call_id: string; name?: string; content: string; is_error?: boolean; source?: string }
+
+    // First pass: collect tool results by call id.
+    const resultByCallId = new Map<string, StoredToolResult>()
+    for (const m of messages) {
+        if (m.role !== "tool" || !Array.isArray(m.content)) continue
+        for (const p of m.content as ContentPartLike[]) {
+            if (p.type === "tool_result") {
+                const tr = (p as { tool_result?: StoredToolResult }).tool_result
+                if (tr?.tool_call_id) resultByCallId.set(tr.tool_call_id, tr)
+            }
+        }
+    }
+
+    if (resultByCallId.size === 0) {
+        // Still strip any orphan tool messages so they don't render.
+        return messages.filter((m) => m.role !== "tool")
+    }
+
+    // Second pass: project assistant messages, injecting `.tool_calls`
+    // with embedded results. Drop the tool messages from the output.
+    const out: Message[] = []
+    for (const m of messages) {
+        if (m.role === "tool") continue
+        if (m.role !== "assistant" || !Array.isArray(m.content)) {
+            out.push(m)
+            continue
+        }
+        const calls: NonNullable<Message["tool_calls"]> = []
+        for (const p of m.content as ContentPartLike[]) {
+            if (p.type === "tool_call") {
+                const tc = (p as { tool_call?: { id: string; name: string; arguments: string; source?: string } }).tool_call
+                if (!tc) continue
+                const result = resultByCallId.get(tc.id)
+                calls.push({
+                    id: tc.id,
+                    name: tc.name,
+                    arguments: tc.arguments,
+                    source: tc.source,
+                    result: result
+                        ? { content: result.content, is_error: !!result.is_error, source: result.source }
+                        : undefined,
+                })
+            }
+        }
+        out.push(calls.length > 0 ? { ...m, tool_calls: calls } : m)
+    }
+    return out
+}
+
+type ContentPartLike = { type: string }
