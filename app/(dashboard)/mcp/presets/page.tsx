@@ -339,7 +339,12 @@ function PresetCard({
                 {onUse && (
                     <Button
                         size="sm"
-                        variant={installed ? "outline" : "default"}
+                        // `secondary` for installed: subtle gray fill +
+                        // text-secondary-foreground stays readable on
+                        // top of the card's hover:bg-muted/30 without
+                        // the `outline` variant's text-accent-foreground
+                        // swap (which composes poorly with parent hover).
+                        variant={installed ? "secondary" : "default"}
                         className="h-7 text-xs"
                         onClick={() => onUse(preset)}
                     >
