@@ -103,14 +103,16 @@ export function ChatFlow({ conversationId }: { conversationId: string }) {
     const { data: allMcpServers } = mcpServers.useList()
 
     /** Compute the per-turn allowlist sent to the gateway:
-     *  (globally enabled servers) - (this conversation's denylist).
-     *  Read at submit time (getState) so the latest store value is
-     *  used without taking a React subscription. */
+     *  (globally enabled + healthy) - (this conversation's denylist).
+     *  Excludes servers whose last check failed — those have no
+     *  usable tools and would just produce error events. Read at
+     *  submit time (getState) so the latest store value is used
+     *  without taking a React subscription. */
     const getEnabledMcpServerIds = React.useCallback((): string[] => {
         const settings = usePlaygroundStore.getState().getSettings(conversationId)
         const disabled = new Set(settings.disabledMcpServerIds ?? [])
         return (allMcpServers ?? [])
-            .filter((s) => s.enabled && !disabled.has(s.id))
+            .filter((s) => s.enabled && s.last_check_status === "ok" && !disabled.has(s.id))
             .map((s) => s.id)
     }, [conversationId, allMcpServers])
 

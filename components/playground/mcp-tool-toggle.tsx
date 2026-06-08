@@ -32,7 +32,11 @@ export function McpToolToggle({ conversationId }: Props) {
 
     const disabledIds = React.useMemo(() => disabledRaw ?? EMPTY_IDS, [disabledRaw])
     const available = React.useMemo(
-        () => (servers ?? []).filter((s) => s.enabled),
+        // Only servers that are globally-enabled AND passed their
+        // most recent health check. An unhealthy server has no usable
+        // tools and would just inject toast-level errors into the
+        // turn, so it shouldn't even be offered.
+        () => (servers ?? []).filter((s) => s.enabled && s.last_check_status === "ok"),
         [servers]
     )
     const disabledSet = React.useMemo(() => new Set(disabledIds), [disabledIds])

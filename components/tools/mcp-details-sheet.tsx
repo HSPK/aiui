@@ -82,8 +82,16 @@ export function McpServerDetailsSheet({ server, open, onOpenChange, isAdmin }: P
                     {server.server_info && <ServerInfoSection info={server.server_info} />}
                     <EndpointSection server={server} isAdmin={isAdmin} />
                     <ToolsSection tools={server.tools_cache ?? []} status={server.last_check_status} />
-                    <ResourcesSection snapshot={server.resources_cache} />
-                    <PromptsSection prompts={server.prompts_cache} />
+                    <ResourcesSection
+                        snapshot={server.resources_cache}
+                        capabilityAdvertised={!!server.server_info?.capabilities?.resources}
+                        status={server.last_check_status}
+                    />
+                    <PromptsSection
+                        prompts={server.prompts_cache}
+                        capabilityAdvertised={!!server.server_info?.capabilities?.prompts}
+                        status={server.last_check_status}
+                    />
                 </div>
             </SheetContent>
         </Sheet>
@@ -325,27 +333,34 @@ function ToolRow({ tool }: { tool: McpToolDescriptor }) {
     )
 }
 
-function ResourcesSection({ snapshot }: { snapshot: McpResourcesSnapshot | null }) {
-    if (!snapshot) {
-        // Server didn't advertise the resources capability — hide the
-        // section entirely so we don't confuse admins with an empty
-        // block for a feature this server doesn't support.
-        return null
-    }
-    const { resources, templates } = snapshot
-    const total = resources.length + templates.length
+function ResourcesSection({
+    snapshot,
+    capabilityAdvertised,
+    status,
+}: {
+    snapshot: McpResourcesSnapshot | null
+    capabilityAdvertised: boolean
+    status: "ok" | "error" | null
+}) {
+    const total = snapshot ? snapshot.resources.length + snapshot.templates.length : 0
     return (
         <section className="space-y-2">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Resources {total > 0 && <span className="ml-1 text-foreground">({total})</span>}
             </h3>
-            {total === 0 ? (
-                <div className="rounded-md border p-3 text-xs text-muted-foreground italic">
-                    Server advertises `resources` but exposes none.
-                </div>
+            {!capabilityAdvertised ? (
+                <EmptyHint>This server does not advertise the <Tag>resources</Tag> capability.</EmptyHint>
+            ) : snapshot === null ? (
+                <EmptyHint>
+                    {status === "error"
+                        ? "Last check failed — run another to populate."
+                        : "Server advertises resources but the list call did not complete."}
+                </EmptyHint>
+            ) : total === 0 ? (
+                <EmptyHint>Server advertises resources but exposes none.</EmptyHint>
             ) : (
                 <ul className="rounded-md border divide-y">
-                    {resources.map((r) => (
+                    {snapshot.resources.map((r) => (
                         <li key={`r-${r.uri}`} className="p-3 text-xs space-y-0.5">
                             <div className="font-mono text-foreground break-all">{r.uri}</div>
                             <div className="flex items-baseline gap-2">
@@ -359,7 +374,7 @@ function ResourcesSection({ snapshot }: { snapshot: McpResourcesSnapshot | null 
                             )}
                         </li>
                     ))}
-                    {templates.map((t) => (
+                    {snapshot.templates.map((t) => (
                         <li key={`t-${t.uriTemplate}`} className="p-3 text-xs space-y-0.5 bg-muted/10">
                             <div className="flex items-baseline gap-2">
                                 <span className="inline-flex items-center rounded border border-border bg-muted/40 px-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
@@ -386,17 +401,32 @@ function ResourcesSection({ snapshot }: { snapshot: McpResourcesSnapshot | null 
     )
 }
 
-function PromptsSection({ prompts }: { prompts: McpPromptDescriptor[] | null }) {
-    if (!prompts) return null
+function PromptsSection({
+    prompts,
+    capabilityAdvertised,
+    status,
+}: {
+    prompts: McpPromptDescriptor[] | null
+    capabilityAdvertised: boolean
+    status: "ok" | "error" | null
+}) {
     return (
         <section className="space-y-2">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Prompts {prompts.length > 0 && <span className="ml-1 text-foreground">({prompts.length})</span>}
+                Prompts {prompts && prompts.length > 0 && (
+                    <span className="ml-1 text-foreground">({prompts.length})</span>
+                )}
             </h3>
-            {prompts.length === 0 ? (
-                <div className="rounded-md border p-3 text-xs text-muted-foreground italic">
-                    Server advertises `prompts` but exposes none.
-                </div>
+            {!capabilityAdvertised ? (
+                <EmptyHint>This server does not advertise the <Tag>prompts</Tag> capability.</EmptyHint>
+            ) : prompts === null ? (
+                <EmptyHint>
+                    {status === "error"
+                        ? "Last check failed — run another to populate."
+                        : "Server advertises prompts but the list call did not complete."}
+                </EmptyHint>
+            ) : prompts.length === 0 ? (
+                <EmptyHint>Server advertises prompts but exposes none.</EmptyHint>
             ) : (
                 <ul className="rounded-md border divide-y">
                     {prompts.map((p) => (
@@ -405,6 +435,22 @@ function PromptsSection({ prompts }: { prompts: McpPromptDescriptor[] | null }) 
                 </ul>
             )}
         </section>
+    )
+}
+
+function EmptyHint({ children }: { children: React.ReactNode }) {
+    return (
+        <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground italic">
+            {children}
+        </div>
+    )
+}
+
+function Tag({ children }: { children: React.ReactNode }) {
+    return (
+        <span className="not-italic inline-flex items-center rounded border border-border bg-muted/40 px-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground mx-0.5">
+            {children}
+        </span>
     )
 }
 
