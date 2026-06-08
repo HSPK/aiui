@@ -19,6 +19,11 @@ interface ChatInputProps {
     onSubmit: (content: MessageContent) => void
     isLoading: boolean
     onStop: () => void
+    /** When true, the most recent assistant slot is in an error state
+     *  and the user must retry it before sending anything new. The
+     *  textarea + send button are disabled; an inline hint points at
+     *  the retry action on the failed message card. */
+    blockedByFailedTail?: boolean
 }
 
 export interface ChatInputRef {
@@ -83,6 +88,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     onSubmit,
     isLoading,
     onStop,
+    blockedByFailedTail,
 }, ref) {
     const [text, setText] = React.useState("")
     const [attachments, setAttachments] = React.useState<Attachment[]>([])
@@ -176,13 +182,13 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
 
     const handleSubmit = React.useCallback((e?: React.FormEvent) => {
         e?.preventDefault()
-        if (isLoading) return
+        if (isLoading || blockedByFailedTail) return
         const content = buildContent()
         if (!content) return
         onSubmitRef.current(content)
         setText("")
         setAttachments([])
-    }, [buildContent, isLoading])
+    }, [buildContent, isLoading, blockedByFailedTail])
 
     // ---- events ----
 
@@ -254,7 +260,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
         if (files.length > 0) await ingestFiles(files)
     }, [ingestFiles])
 
-    const canSubmit = !isLoading && (text.trim().length > 0 || attachments.length > 0)
+    const canSubmit = !isLoading && !blockedByFailedTail && (text.trim().length > 0 || attachments.length > 0)
 
     return (
         <form
@@ -313,8 +319,18 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
                         ref={textareaRef}
                         value={text}
                         onChange={(e) => setText(e.target.value)}
-                        placeholder={isDragging ? "Drop files to attach" : "Message AI…"}
-                        className="min-h-[32px] max-h-[240px] border-0 focus-visible:outline-none resize-none p-0 py-[6px] bg-transparent flex-1 text-sm leading-[20px]"
+                        placeholder={
+                            blockedByFailedTail
+                                ? "Retry the failed message first"
+                                : isDragging
+                                    ? "Drop files to attach"
+                                    : "Message AI…"
+                        }
+                        disabled={blockedByFailedTail}
+                        className={cn(
+                            "min-h-[32px] max-h-[240px] border-0 focus-visible:outline-none resize-none p-0 py-[6px] bg-transparent flex-1 text-sm leading-[20px]",
+                            blockedByFailedTail && "cursor-not-allowed text-muted-foreground",
+                        )}
                         onKeyDown={handleKeyDown}
                         onPaste={handlePaste}
                         onCompositionStart={() => { isComposingRef.current = true }}
@@ -350,7 +366,8 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     )
 }), (prev, next) => (
     prev.conversationId === next.conversationId &&
-    prev.isLoading === next.isLoading
+    prev.isLoading === next.isLoading &&
+    !!prev.blockedByFailedTail === !!next.blockedByFailedTail
 ))
 
 // ---- attachment chip ----

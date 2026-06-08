@@ -86,6 +86,27 @@ export function ChatFlow({ conversationId }: { conversationId: string }) {
     useTitleGeneration({ conversationId, messages, isLoading, getModelIds })
     useMessageSync({ conversationId, messages, isLoading, pageSize: INITIAL_PAGE_SIZE })
 
+    // Block new sends when the latest interaction failed: the user
+    // should retry that turn (in-place upsert preserves the parent
+    // pointer chain) before starting a new one. We walk back from
+    // the tail, skipping in-progress sends (no generation_id yet,
+    // no error) so the gate doesn't trip mid-stream. The first
+    // settled assistant message we hit decides:
+    //   - has .error            → block
+    //   - clean (has gen_id)    → don't block
+    // User messages and tool messages don't gate.
+    const blockedByFailedTail = React.useMemo(() => {
+        for (let i = messages.length - 1; i >= 0; i--) {
+            const m = messages[i]
+            if (m.role !== "assistant") continue
+            // Still streaming this slot — wait it out instead of
+            // declaring the tail failed.
+            if (!m.generation_id && !m.error) return false
+            return !!m.error
+        }
+        return false
+    }, [messages])
+
     const handleViewGeneration = React.useCallback(
         (generationId: string) => setSelectedGenerationId(generationId),
         []
@@ -194,6 +215,7 @@ export function ChatFlow({ conversationId }: { conversationId: string }) {
                     onSubmit={onFormSubmit}
                     isLoading={isLoading}
                     onStop={stop}
+                    blockedByFailedTail={blockedByFailedTail}
                 />
             </div>
 
