@@ -214,4 +214,96 @@ export const MCP_PRESETS: McpPreset[] = [
         slots: [],
         homepage: "https://www.npmjs.com/package/shell-mcp-server",
     },
+    {
+        id: "playwright",
+        name: "playwright",
+        description: "Headless browser automation (23 tools: navigate, click, type, screenshot, console, network).",
+        transport: "stdio",
+        category: "system",
+        config: { command: "npx", args: ["-y", "@playwright/mcp@latest"], env: {} },
+        slots: [],
+        homepage: "https://github.com/microsoft/playwright-mcp",
+    },
+    {
+        id: "code-runner",
+        name: "code-runner",
+        description: "Execute snippets of code in many languages — JS, Python, Bash, Rust, Go, etc.",
+        transport: "stdio",
+        category: "dev",
+        config: { command: "npx", args: ["-y", "mcp-server-code-runner"], env: {} },
+        slots: [],
+        homepage: "https://www.npmjs.com/package/mcp-server-code-runner",
+    },
+
+    // ---------------- web / knowledge ----------------
+    {
+        id: "duckduckgo",
+        name: "duckduckgo",
+        description: "Web search via DuckDuckGo + scrape page content. No API key needed.",
+        transport: "stdio",
+        category: "web",
+        config: { command: "uvx", args: ["duckduckgo-mcp-server"], env: {} },
+        slots: [],
+        homepage: "https://pypi.org/project/duckduckgo-mcp-server/",
+    },
+    {
+        id: "wikipedia",
+        name: "wikipedia",
+        description: "Search and read Wikipedia articles (search, get article, random).",
+        transport: "stdio",
+        category: "web",
+        config: { command: "npx", args: ["-y", "wikipedia-mcp-server"], env: {} },
+        slots: [],
+        homepage: "https://www.npmjs.com/package/wikipedia-mcp-server",
+    },
+
+    // ---------------- productivity ----------------
+    {
+        id: "notion",
+        name: "notion",
+        description: "Read / write Notion pages and databases via the official OpenAPI MCP server.",
+        transport: "stdio",
+        category: "productivity",
+        config: {
+            command: "npx",
+            args: ["-y", "notion-mcp-server"],
+            env: { OPENAPI_MCP_HEADERS: '{"Authorization":"Bearer <NOTION_TOKEN>","Notion-Version":"2022-06-28"}' },
+        },
+        slots: [
+            { path: "env.OPENAPI_MCP_HEADERS", label: "Headers JSON with Notion integration token", kind: "secret" },
+        ],
+        homepage: "https://github.com/makenotion/notion-mcp-server",
+    },
+    {
+        id: "pandoc",
+        name: "pandoc",
+        description: "Convert between document formats — markdown ↔ html ↔ pdf ↔ docx (uses local pandoc).",
+        transport: "stdio",
+        category: "productivity",
+        config: { command: "uvx", args: ["mcp-pandoc"], env: {} },
+        slots: [],
+        homepage: "https://pypi.org/project/mcp-pandoc/",
+    },
+
+    // ---------------- data: vector / kb ----------------
+    {
+        id: "qdrant",
+        name: "qdrant",
+        description: "Store + retrieve from a Qdrant vector database (RAG over a custom corpus).",
+        transport: "stdio",
+        category: "data",
+        config: {
+            command: "uvx",
+            args: ["mcp-server-qdrant"],
+            env: {
+                QDRANT_URL: "http://localhost:6333",
+                COLLECTION_NAME: "<COLLECTION_NAME>",
+            },
+        },
+        slots: [
+            { path: "env.QDRANT_URL", label: "Qdrant URL (e.g. http://localhost:6333)", kind: "text" },
+            { path: "env.COLLECTION_NAME", label: "Qdrant collection name", kind: "text" },
+        ],
+        homepage: "https://github.com/qdrant/mcp-server-qdrant",
+    },
 ];

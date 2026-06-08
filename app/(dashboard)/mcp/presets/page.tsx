@@ -9,6 +9,7 @@ import {
     Database,
     ExternalLink,
     Globe,
+    Network,
     Search,
     Sparkles,
     Terminal,
@@ -38,6 +39,7 @@ const CATEGORIES: Record<McpPresetCategory, CategoryMeta> = {
     dev: { label: "Developer", icon: Code },
     academic: { label: "Academic", icon: Beaker },
     data: { label: "Data", icon: Database },
+    web: { label: "Web", icon: Network },
     productivity: { label: "Productivity", icon: Boxes },
     community: { label: "Community", icon: Globe },
 }
@@ -48,6 +50,7 @@ const CATEGORY_ORDER: McpPresetCategory[] = [
     "dev",
     "academic",
     "data",
+    "web",
     "productivity",
     "community",
 ]
@@ -80,7 +83,7 @@ export default function McpPresetsPage() {
         const out: Record<FilterKey, number> = {
             all: 0,
             official: 0, system: 0, dev: 0, academic: 0,
-            data: 0, productivity: 0, community: 0,
+            data: 0, web: 0, productivity: 0, community: 0,
         }
         for (const p of presets ?? []) {
             out.all += 1

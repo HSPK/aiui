@@ -174,6 +174,7 @@ export const mcpPresetCategorySchema = z.enum([
     "dev",
     "academic",
     "data",
+    "web",
     "productivity",
     "community",
 ]);
