@@ -1,0 +1,4 @@
+# Documentation site dependencies — pinned for reproducible CI builds.
+# Bump these intentionally; CI runs `mkdocs build --strict`.
+mkdocs-material>=9.5,<10
+pymdown-extensions>=10

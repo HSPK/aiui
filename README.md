@@ -8,6 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg?style=flat-square)](#requirements)
 [![Docs](https://img.shields.io/badge/docs-mkdocs-success?style=flat-square)](https://hspk.github.io/loom)
+[![Docs CI](https://img.shields.io/github/actions/workflow/status/HSPK/loom/docs.yml?branch=main&style=flat-square&label=docs%20build)](https://github.com/HSPK/loom/actions/workflows/docs.yml)
 
 <sub>Single binary · SQLite-only state · Forensic-grade per-request logs · Multi-modal under one auth · MCP native</sub>
 

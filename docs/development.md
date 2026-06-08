@@ -68,6 +68,18 @@ Concretely:
 | FE domain | one `defineResource(...)` call |
 | CLI subcommand | one file in `lib/cli/commands/` + one line in `main.ts` |
 
+## Documentation
+
+Docs live under `docs/` and are built with **mkdocs-material**.
+
+```bash
+pip install -r docs/requirements.txt
+mkdocs serve              # preview at http://localhost:8000
+mkdocs build --strict     # what CI runs — fails on broken cross-page links
+```
+
+On push to `main`, the [`Docs`](https://github.com/HSPK/loom/actions/workflows/docs.yml) workflow builds the site with `--strict` and publishes to GitHub Pages at <https://hspk.github.io/loom>. Pull requests run the build step only, so broken links are caught before merge.
+
 ## Contributing
 
 Issues and pull requests are welcome. Please:
