@@ -10,8 +10,11 @@ import {
     type DiscoveredModel,
 } from "../discovery";
 import { findProviderByIdOrName } from "../providers";
-import { resolveAdapter } from "../adapters";
+import { resolveAdapter, resolveVariantId } from "../adapters";
 import "../adapters/register";
+import { getCapability } from "../capabilities";
+import "../capabilities/register";
+import "../api-variants/register";
 import { badRequest, notFound } from "../response";
 import { serializeModel } from "./serializer";
 import type { ModelDTO } from "@/lib/schemas/model";
@@ -52,8 +55,37 @@ function metaForDbModel(
     return adapter.extractModelMeta(raw ?? { id: model.upstreamModelId }, provider);
 }
 
+/** Compute the variant id the gateway would dispatch to right now —
+ *  combines the model's pin (if any) with the capability preference
+ *  chain. Surfaced on the DTO so the admin form seeds its dropdown with
+ *  the same value the gateway is using. */
+function resolveDisplayVariant(
+    model: typeof models.$inferSelect,
+    provider: Provider | undefined,
+    meta: NormalizedModelMeta | null,
+): string | null {
+    if (!provider) return null;
+    const capability = getCapability(model.type);
+    if (!capability) return null;
+    try {
+        const adapter = resolveAdapter(provider);
+        return resolveVariantId(adapter, capability, model, meta);
+    } catch {
+        return null;
+    }
+}
+
 /** Synthesize a transient ModelDTO for a discovered upstream model. */
 function discoveredToDTO(d: DiscoveredModel, provider: Provider | undefined): ModelDTO & { is_discovered: true } {
+    // Build a tiny shim Model so resolveDisplayVariant can drive the
+    // same capability + adapter logic as for DB-backed rows. Only the
+    // fields resolveVariantId reads need to be present.
+    const shim = {
+        apiVariantId: null,
+        type: d.capability,
+        upstreamModelId: d.id,
+    } as typeof models.$inferSelect;
+    const resolved = resolveDisplayVariant(shim, provider, d.meta);
     return {
         id: `discovered:${d.provider_id}:${d.id}`,
         name: d.id,
@@ -65,6 +97,7 @@ function discoveredToDTO(d: DiscoveredModel, provider: Provider | undefined): Mo
         default_params: {},
         type: d.capability,
         api_variant_id: null,
+        resolved_variant_id: resolved,
         pricing: null,
         output_dimension: null,
         context_window: d.meta.context_window ?? null,
@@ -99,8 +132,9 @@ export async function listAllModels(): Promise<ModelDTO[]> {
     const dbModels: ModelDTO[] = rows.map((m) => {
         const p = allProvidersById.get(m.providerId);
         const raw = rawForDbModel(m, p);
+        const meta = metaForDbModel(m, p, raw);
         return {
-            ...serializeModel(m, p?.name ?? null, p?.baseUrl ?? null, metaForDbModel(m, p, raw)),
+            ...serializeModel(m, p?.name ?? null, p?.baseUrl ?? null, meta, resolveDisplayVariant(m, p, meta)),
             is_discovered: false,
         };
     });
@@ -132,8 +166,9 @@ export async function listModelsForProvider(providerIdOrName: string): Promise<M
 
     const dbModels: ModelDTO[] = rows.map((m) => {
         const raw = rawForDbModel(m, provider);
+        const meta = metaForDbModel(m, provider, raw);
         return {
-            ...serializeModel(m, provider.name, provider.baseUrl, metaForDbModel(m, provider, raw)),
+            ...serializeModel(m, provider.name, provider.baseUrl, meta, resolveDisplayVariant(m, provider, meta)),
             is_discovered: false,
         };
     });
@@ -162,7 +197,8 @@ export async function getModel(idOrName: string): Promise<ModelDTO> {
             }
         }
         const raw = rawForDbModel(model, provider);
-        return serializeModel(model, provider?.name ?? null, provider?.baseUrl ?? null, metaForDbModel(model, provider, raw));
+        const meta = metaForDbModel(model, provider, raw);
+        return serializeModel(model, provider?.name ?? null, provider?.baseUrl ?? null, meta, resolveDisplayVariant(model, provider, meta));
     }
     // No DB row — fall back to the live discovery union so /models/<name>
     // works for transient discovered entries too.

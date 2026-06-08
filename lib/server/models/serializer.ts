@@ -8,6 +8,7 @@ export function serializeModel(
     providerName?: string | null,
     providerProxy?: string | null,
     meta?: NormalizedModelMeta | null,
+    resolvedVariantId?: string | null,
 ): ModelDTO {
     return {
         id: m.id,
@@ -20,6 +21,7 @@ export function serializeModel(
         default_params: (m.defaultParams ?? {}) as Record<string, unknown>,
         type: m.type,
         api_variant_id: m.apiVariantId ?? null,
+        resolved_variant_id: resolvedVariantId ?? null,
         pricing: m.pricing ?? null,
         output_dimension: m.outputDimension ?? null,
         context_window: m.contextWindow ?? null,

@@ -60,6 +60,7 @@ function transientModel(name: string, provider: Provider, upstreamModelId: strin
         maxRetries: 2,
         httpProxy: null,
         enabled: true,
+        apiVariantId: null,
         discoveredMetadata: null,
         createdAt: now,
         updatedAt: now,

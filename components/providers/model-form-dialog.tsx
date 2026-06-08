@@ -29,7 +29,14 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[640px] max-h-[90vh] overflow-y-auto">
+            <DialogContent
+                className="sm:max-w-[640px] max-h-[90vh] overflow-y-auto"
+                // In edit mode the cursor jumping into the display-name
+                // field is surprising — the admin almost never wants to
+                // retype the name. Block the default first-focus; the
+                // admin can click whatever field they actually want.
+                onOpenAutoFocus={mode === "edit" ? (e) => e.preventDefault() : undefined}
+            >
                 <DialogHeader>
                     <DialogTitle>{title}</DialogTitle>
                 </DialogHeader>

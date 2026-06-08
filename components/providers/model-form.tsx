@@ -25,16 +25,12 @@ interface Props {
     /** In create mode: optional seed (e.g. a discovered model being
      *  promoted). In edit mode: the row being edited. */
     model?: ModelDTO | null
-    /** Locks the provider field on create. Always locked in edit mode
-     *  and discovered-promote mode. */
+    /** Used to pre-select the provider on pure create. Always locked
+     *  (provider field becomes read-only) in edit + discovered-promote. */
     defaultProviderId?: string
     onSaved?: (saved: ModelDTO | null) => void
     onCancel?: () => void
 }
-
-/** "Pinned variant = auto" sentinel. Radix Select forbids empty-string
- *  values, so we use a marker and translate it to null on submit. */
-const VARIANT_AUTO = "__auto__"
 
 export function ModelForm({ mode, model, defaultProviderId, onSaved, onCancel }: Props) {
     const { data: providerList } = providers.useList()
@@ -45,7 +41,7 @@ export function ModelForm({ mode, model, defaultProviderId, onSaved, onCancel }:
     const [providerId, setProviderId] = useState<string>("")
     const [upstreamModelId, setUpstreamModelId] = useState("")
     const [type, setType] = useState<string>("chat")
-    const [apiVariantId, setApiVariantId] = useState<string>(VARIANT_AUTO)
+    const [apiVariantId, setApiVariantId] = useState<string>("")
     const [contextWindow, setContextWindow] = useState("")
     const [maxTokens, setMaxTokens] = useState("")
     const [outputDim, setOutputDim] = useState("")
@@ -54,15 +50,13 @@ export function ModelForm({ mode, model, defaultProviderId, onSaved, onCancel }:
     const [enabled, setEnabled] = useState(true)
     const [parseError, setParseError] = useState<string | null>(null)
 
-    // Promoting a discovered row → "create" mode but with a seed model.
     const isOverride = useMemo(
         () => mode === "create" && !!model?.is_discovered,
         [mode, model?.is_discovered],
     )
 
-    // Provider is locked in edit (existing row) and in discovered-promote
-    // (provider is determined by the source discovery entry). Only pure
-    // create lets the admin pick freely.
+    // Provider is locked in edit + discovered-promote. Pure create lets
+    // the admin pick freely.
     const providerLocked = mode === "edit" || isOverride
 
     useEffect(() => {
@@ -71,7 +65,11 @@ export function ModelForm({ mode, model, defaultProviderId, onSaved, onCancel }:
             setProviderId(model.provider_id ?? "")
             setUpstreamModelId(model.model_id ?? model.name)
             setType(model.type ?? "chat")
-            setApiVariantId(model.api_variant_id ?? VARIANT_AUTO)
+            // Seed the variant dropdown from the gateway's currently-
+            // resolved choice (pin → preference walk → capability default).
+            // The form has no Auto option — the dropdown always shows a
+            // concrete variant the gateway is using right now.
+            setApiVariantId(model.api_variant_id ?? model.resolved_variant_id ?? "")
             setContextWindow(model.context_window?.toString() ?? "")
             setMaxTokens(model.max_tokens?.toString() ?? "")
             setOutputDim(model.output_dimension?.toString() ?? "")
@@ -83,7 +81,7 @@ export function ModelForm({ mode, model, defaultProviderId, onSaved, onCancel }:
             setProviderId(defaultProviderId ?? "")
             setUpstreamModelId("")
             setType("chat")
-            setApiVariantId(VARIANT_AUTO)
+            setApiVariantId("")
             setContextWindow("")
             setMaxTokens("")
             setOutputDim("")
@@ -130,7 +128,7 @@ export function ModelForm({ mode, model, defaultProviderId, onSaved, onCancel }:
             provider_id: providerId,
             upstream_model_id: upstreamModelId.trim(),
             type,
-            api_variant_id: apiVariantId === VARIANT_AUTO ? null : apiVariantId,
+            api_variant_id: apiVariantId || null,
             default_params: params,
             context_window: contextWindow ? Number(contextWindow) : null,
             max_tokens: maxTokens ? Number(maxTokens) : null,
@@ -156,8 +154,6 @@ export function ModelForm({ mode, model, defaultProviderId, onSaved, onCancel }:
     const isLoading = createMutation.isPending || updateMutation.isPending
     const submitLabel = isOverride ? "Save override" : mode === "create" ? "Create" : "Save"
 
-    // Variants registered for the chosen capability — Radix select needs
-    // the candidate set up-front so the value resolves correctly.
     const variantsForCapability = useMemo(
         () => (variantList ?? []).filter((v) => v.capability === type),
         [variantList, type],
@@ -198,10 +194,7 @@ export function ModelForm({ mode, model, defaultProviderId, onSaved, onCancel }:
             </div>
 
             <div className="grid sm:grid-cols-2 gap-3">
-                <Field
-                    label="Provider"
-                    hint={providerLocked ? "Provider cannot be changed after creation." : undefined}
-                >
+                <Field label="Provider">
                     {providerLocked ? (
                         <Input
                             value={selectedProvider?.name ?? providerId}
@@ -237,29 +230,23 @@ export function ModelForm({ mode, model, defaultProviderId, onSaved, onCancel }:
                 </Field>
             </div>
 
-            {variantsForCapability.length > 1 && (
-                <Field
-                    label="Pinned upstream API"
-                    hint="Override the gateway's automatic variant pick. Leave on Auto unless you need to force a specific wire shape."
-                >
+            {variantsForCapability.length > 1 && apiVariantId && (
+                <Field label="Upstream API">
                     <Select value={apiVariantId} onValueChange={setApiVariantId}>
                         <SelectTrigger className="h-9 text-sm">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                            <SelectItem value={VARIANT_AUTO}>Auto (capability preference)</SelectItem>
                             {variantsForCapability.map((v) => (
                                 <SelectItem key={v.id} value={v.id}>
                                     <span className="font-mono text-xs">{v.id}</span>
                                 </SelectItem>
                             ))}
-                            {/* Allow saving an unregistered id so legacy / future pins still load. */}
-                            {apiVariantId !== VARIANT_AUTO &&
-                                !variantsForCapability.some((v) => v.id === apiVariantId) && (
-                                    <SelectItem value={apiVariantId}>
-                                        <span className="font-mono text-xs">{apiVariantId}</span>
-                                    </SelectItem>
-                                )}
+                            {!variantsForCapability.some((v) => v.id === apiVariantId) && (
+                                <SelectItem value={apiVariantId}>
+                                    <span className="font-mono text-xs">{apiVariantId}</span>
+                                </SelectItem>
+                            )}
                         </SelectContent>
                     </Select>
                 </Field>
@@ -319,19 +306,16 @@ export function ModelForm({ mode, model, defaultProviderId, onSaved, onCancel }:
 function Field({
     label,
     htmlFor,
-    hint,
     children,
 }: {
     label: string
     htmlFor?: string
-    hint?: string
     children: React.ReactNode
 }) {
     return (
         <div className="grid gap-1.5 min-w-0">
             <Label htmlFor={htmlFor} className="text-xs">{label}</Label>
             {children}
-            {hint && <p className="text-[11px] text-muted-foreground leading-snug">{hint}</p>}
         </div>
     )
 }

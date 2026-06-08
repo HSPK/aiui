@@ -21,6 +21,12 @@ export const modelDTOSchema = z.object({
     /** Pinned upstream API variant id; null = gateway auto-selects via
      *  capability.variantPreference + meta.supported_apis. */
     api_variant_id: z.string().nullable(),
+    /** The variant id the gateway would currently dispatch to for this
+     *  model — equals `api_variant_id` when pinned, otherwise the result
+     *  of the capability preference walk. Always set when the capability
+     *  + at least one variant resolves. Read-only; the form seeds its
+     *  dropdown from this so the user sees what's effectively in use. */
+    resolved_variant_id: z.string().nullable(),
     pricing: pricingSchema.nullable(),
     output_dimension: z.number().int().nullable(),
     context_window: z.number().int().nullable(),
