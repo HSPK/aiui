@@ -18,34 +18,36 @@ interface Props {
 
 const EMPTY_IDS: readonly string[] = Object.freeze([])
 
-/** Per-conversation MCP server picker. Only globally-enabled servers
- *  are listed; the user picks which subset is exposed to the model
- *  for this conversation. */
+/** Per-conversation MCP server picker. Every globally-enabled server
+ *  is active by default; the popover Switches OFF to add the server
+ *  to the conversation's denylist (`disabledMcpServerIds`). */
 export function McpToolToggle({ conversationId }: Props) {
     const { data: servers } = mcpServers.useList()
     // Select the raw (possibly undefined) array so the selector returns
     // a stable reference; default in a memo outside the store.
-    const enabledIdsRaw = usePlaygroundStore(
-        (s) => s.settings[conversationId]?.enabledMcpServerIds
+    const disabledRaw = usePlaygroundStore(
+        (s) => s.settings[conversationId]?.disabledMcpServerIds
     )
     const updateSettings = usePlaygroundStore((s) => s.updateSettings)
 
-    const enabledIds = React.useMemo(() => enabledIdsRaw ?? EMPTY_IDS, [enabledIdsRaw])
+    const disabledIds = React.useMemo(() => disabledRaw ?? EMPTY_IDS, [disabledRaw])
     const available = React.useMemo(
         () => (servers ?? []).filter((s) => s.enabled),
         [servers]
     )
-    const enabledSet = React.useMemo(() => new Set(enabledIds), [enabledIds])
-    const activeCount = available.filter((s) => enabledSet.has(s.id)).length
+    const disabledSet = React.useMemo(() => new Set(disabledIds), [disabledIds])
+    const activeCount = available.filter((s) => !disabledSet.has(s.id)).length
 
     const toggle = React.useCallback(
         (id: string, on: boolean) => {
+            // on = include in this conv → remove from denylist
+            // off = exclude from this conv → add to denylist
             const next = on
-                ? Array.from(new Set([...enabledIds, id]))
-                : enabledIds.filter((x) => x !== id)
-            updateSettings(conversationId, { enabledMcpServerIds: next })
+                ? disabledIds.filter((x) => x !== id)
+                : Array.from(new Set([...disabledIds, id]))
+            updateSettings(conversationId, { disabledMcpServerIds: next })
         },
-        [enabledIds, conversationId, updateSettings]
+        [disabledIds, conversationId, updateSettings]
     )
 
     return (
@@ -86,7 +88,7 @@ export function McpToolToggle({ conversationId }: Props) {
                         </div>
                     ) : (
                         available.map((s) => {
-                            const checked = enabledSet.has(s.id)
+                            const checked = !disabledSet.has(s.id)
                             return (
                                 <label
                                     key={s.id}

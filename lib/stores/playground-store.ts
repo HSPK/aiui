@@ -32,10 +32,11 @@ export interface ChatSettings {
      *  replaces the current selection and closes the dropdown. When
      *  false (default), modelIds is a multi-select set. */
     singleModelMode?: boolean;
-    /** MCP server ids whose tools are exposed to the model for this
-     *  conversation. Tool execution is wired up in a follow-up commit;
-     *  this just persists the user's intent. */
-    enabledMcpServerIds?: string[];
+    /** Per-conversation MCP override (denylist). Empty / undefined
+     *  means "every globally-enabled MCP server is active in this
+     *  conversation"; ids in the list are excluded for this chat
+     *  only. The popover Switches reflect `enabled && !disabled`. */
+    disabledMcpServerIds?: string[];
 }
 
 export const EMPTY_SETTINGS: ChatSettings = Object.freeze({});

@@ -21,6 +21,7 @@ import {
 } from "@/components/playground/hooks"
 import { readCachedMessages } from "@/components/playground/hooks/use-paginated-messages"
 import { LogDetails } from "@/components/logs/log-details"
+import { mcpServers } from "@/lib/api"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
 
 const INITIAL_PAGE_SIZE = 20
@@ -95,10 +96,23 @@ export function ChatFlow({ conversationId }: { conversationId: string }) {
         [buildConfigForModel, historyLimit, systemPrompt]
     )
 
-    const getEnabledMcpServerIds = React.useCallback(
-        () => usePlaygroundStore.getState().getSettings(conversationId).enabledMcpServerIds ?? [],
-        [conversationId]
-    )
+    // List of globally-enabled MCP servers; the chat input's Wrench
+    // popover can then unselect (denylist) per-conversation. We
+    // subscribe via TanStack Query so newly-added servers appear
+    // automatically without remounting the chat.
+    const { data: allMcpServers } = mcpServers.useList()
+
+    /** Compute the per-turn allowlist sent to the gateway:
+     *  (globally enabled servers) - (this conversation's denylist).
+     *  Read at submit time (getState) so the latest store value is
+     *  used without taking a React subscription. */
+    const getEnabledMcpServerIds = React.useCallback((): string[] => {
+        const settings = usePlaygroundStore.getState().getSettings(conversationId)
+        const disabled = new Set(settings.disabledMcpServerIds ?? [])
+        return (allMcpServers ?? [])
+            .filter((s) => s.enabled && !disabled.has(s.id))
+            .map((s) => s.id)
+    }, [conversationId, allMcpServers])
 
     const onFormSubmit = React.useCallback(
         (input: import("@/lib/schemas/content").MessageContent) => {

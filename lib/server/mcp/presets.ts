@@ -91,6 +91,20 @@ export const MCP_PRESETS: McpPreset[] = [
         homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/github",
     },
     {
+        id: "github-remote",
+        name: "github-remote",
+        description: "GitHub's hosted MCP endpoint — no local install required.",
+        transport: "http",
+        config: {
+            url: "https://api.githubcopilot.com/mcp/",
+            headers: { Authorization: "Bearer <GITHUB_TOKEN>" },
+        },
+        slots: [
+            { path: "headers.Authorization", label: "Authorization header (Bearer <github PAT>)", kind: "secret" },
+        ],
+        homepage: "https://github.com/github/github-mcp-server",
+    },
+    {
         id: "time",
         name: "time",
         description: "Time-zone-aware date / time queries (Python — requires uvx).",
