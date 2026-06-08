@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, count, desc, eq, like, or, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, like, or, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { conversations, messages } from "../db/schema";
 import { forbidden, notFound } from "../response";
@@ -86,7 +86,51 @@ export function listMessages(userId: string, conversationId: string, query: Mess
         .offset((query.page - 1) * query.page_size)
         .all();
 
-    const items: MessageDTO[] = rows.map((m) => ({
+    // Pull in ancestors so a page is always subtree-complete: a tool
+    // row needs its parent assistant (whose tool_call parts contain
+    // the call ids that link the rows), an assistant needs its parent
+    // user. Without this, paginating a tool-heavy turn breaks the FE
+    // fold (orphan tool rows can't bind back to a missing parent and
+    // get dropped, leaving an empty render).
+    const haveIds = new Set(rows.map((r) => r.id));
+    const ancestors: typeof rows = [];
+    let frontier = rows
+        .map((r) => r.parentId)
+        .filter((id): id is string => !!id && !haveIds.has(id));
+    const seenParentIds = new Set<string>(frontier);
+    // Bounded loop — even pathological chains will terminate at the
+    // root user message. Cap at 64 just in case of corrupted data so
+    // we never spin forever.
+    let hops = 0;
+    while (frontier.length > 0 && hops < 64) {
+        const parents = db.select().from(messages)
+            .where(and(
+                eq(messages.conversationId, conversationId),
+                inArray(messages.id, frontier),
+            ))
+            .all();
+        for (const p of parents) {
+            ancestors.push(p);
+            haveIds.add(p.id);
+        }
+        const nextFrontier: string[] = [];
+        for (const p of parents) {
+            if (p.parentId && !haveIds.has(p.parentId) && !seenParentIds.has(p.parentId)) {
+                seenParentIds.add(p.parentId);
+                nextFrontier.push(p.parentId);
+            }
+        }
+        frontier = nextFrontier;
+        hops += 1;
+    }
+
+    // Merge + dedup, preserving the requested sort order.
+    const merged = [...rows, ...ancestors].sort((a, b) => {
+        const cmp = a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0;
+        return query.sort.startsWith("-") ? -cmp : cmp;
+    });
+
+    const items: MessageDTO[] = merged.map((m) => ({
         id: m.id,
         conversation_id: m.conversationId,
         role: m.role,

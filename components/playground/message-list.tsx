@@ -294,28 +294,46 @@ function foldToolMessages(messages: Message[]): Message[] {
 
     type StoredToolResult = { tool_call_id: string; name?: string; content: string; is_error?: boolean; source?: string }
 
-    // First pass: collect tool results by call id.
+    // First pass: collect every tool_result keyed by call id, and
+    // every tool_call_id known to a loaded assistant message (so we
+    // can detect orphans whose parent isn't in the current page).
     const resultByCallId = new Map<string, StoredToolResult>()
+    const knownCallIds = new Set<string>()
     for (const m of messages) {
-        if (m.role !== "tool" || !Array.isArray(m.content)) continue
-        for (const p of m.content as ContentPartLike[]) {
-            if (p.type === "tool_result") {
-                const tr = (p as { tool_result?: StoredToolResult }).tool_result
-                if (tr?.tool_call_id) resultByCallId.set(tr.tool_call_id, tr)
+        if (m.role === "tool" && Array.isArray(m.content)) {
+            for (const p of m.content as ContentPartLike[]) {
+                if (p.type === "tool_result") {
+                    const tr = (p as { tool_result?: StoredToolResult }).tool_result
+                    if (tr?.tool_call_id) resultByCallId.set(tr.tool_call_id, tr)
+                }
+            }
+        } else if (m.role === "assistant" && Array.isArray(m.content)) {
+            for (const p of m.content as ContentPartLike[]) {
+                if (p.type === "tool_call") {
+                    const tc = (p as { tool_call?: { id: string } }).tool_call
+                    if (tc?.id) knownCallIds.add(tc.id)
+                }
             }
         }
     }
 
-    if (resultByCallId.size === 0) {
-        // Still strip any orphan tool messages so they don't render.
-        return messages.filter((m) => m.role !== "tool")
-    }
-
-    // Second pass: project assistant messages, injecting `.tool_calls`
-    // with embedded results. Drop the tool messages from the output.
+    // Project assistant messages with their resolved tool results;
+    // drop tool rows that fold into a known parent; keep orphan tool
+    // rows so the user still sees the execution trail when an older
+    // page hasn't loaded the parent assistant yet.
     const out: Message[] = []
     for (const m of messages) {
-        if (m.role === "tool") continue
+        if (m.role === "tool") {
+            // Render only if NO known assistant has this call id.
+            const parts = Array.isArray(m.content) ? (m.content as ContentPartLike[]) : []
+            const callIds = parts
+                .filter((p) => p.type === "tool_result")
+                .map((p) => (p as { tool_result?: StoredToolResult }).tool_result?.tool_call_id)
+                .filter((id): id is string => !!id)
+            const isOrphan = callIds.length > 0 && callIds.every((id) => !knownCallIds.has(id))
+            if (isOrphan) out.push(m)
+            continue
+        }
         if (m.role !== "assistant" || !Array.isArray(m.content)) {
             out.push(m)
             continue
