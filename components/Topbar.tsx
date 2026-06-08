@@ -42,7 +42,7 @@ const primaryNav: NavItem[] = [
     { title: "Playground", href: "/playground", icon: MessageSquare },
     { title: "Logs", href: "/logs", icon: ScrollText },
     { title: "Providers", href: "/providers", icon: Server },
-    { title: "Tools", href: "/tools", icon: Wrench },
+    { title: "MCP", href: "/mcp", icon: Wrench },
 ]
 
 interface UserMenuItem extends NavItem {

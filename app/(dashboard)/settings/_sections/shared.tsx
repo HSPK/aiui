@@ -12,11 +12,13 @@ export function SettingsSection({
     icon: Icon,
     title,
     description,
+    action,
     children,
 }: {
     icon: React.ElementType
     title: string
     description?: string
+    action?: React.ReactNode
     children: React.ReactNode
 }) {
     return (
@@ -26,12 +28,13 @@ export function SettingsSection({
                     <div className="rounded-lg bg-primary/10 p-2">
                         <Icon className="h-4 w-4 text-primary" />
                     </div>
-                    <div>
+                    <div className="flex-1 min-w-0">
                         <CardTitle className="text-base">{title}</CardTitle>
                         {description && (
                             <CardDescription className="text-sm">{description}</CardDescription>
                         )}
                     </div>
+                    {action}
                 </div>
             </CardHeader>
             <CardContent className="space-y-4">{children}</CardContent>

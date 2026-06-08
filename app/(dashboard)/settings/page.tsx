@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Bot, MessageSquare, Palette, RotateCcw, Sliders, User } from "lucide-react"
+import { Bot, MessageSquare, Palette, RotateCcw, Sliders, User, Wrench } from "lucide-react"
 import { toast } from "sonner"
 
 import { preferences } from "@/lib/api"
@@ -15,8 +15,9 @@ import { BehaviorSection } from "./_sections/behavior"
 import { ChatSection } from "./_sections/chat"
 import { ModelsSection } from "./_sections/models"
 import { ProfileSection } from "./_sections/profile"
+import { ToolsSection } from "./_sections/tools"
 
-type SectionId = "profile" | "appearance" | "models" | "chat" | "behavior"
+type SectionId = "profile" | "appearance" | "models" | "chat" | "behavior" | "tools"
 
 interface SectionDef {
     id: SectionId
@@ -31,6 +32,7 @@ const SECTIONS: SectionDef[] = [
     { id: "models", label: "Models", icon: Bot, Component: ModelsSection },
     { id: "chat", label: "Chat", icon: MessageSquare, Component: ChatSection },
     { id: "behavior", label: "Behavior", icon: Sliders, Component: BehaviorSection },
+    { id: "tools", label: "Tools", icon: Wrench, Component: ToolsSection },
 ]
 
 const DEFAULT_SECTION: SectionId = "appearance"

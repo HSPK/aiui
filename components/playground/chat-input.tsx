@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { useDeviceSettingsStore } from "@/lib/stores/device-settings-store"
 import { ConnectedModelSelector } from "@/components/playground/model-selector"
 import { ModelChipsWithConfig } from "@/components/playground/model-chips-with-config"
+import { McpToolToggle } from "@/components/playground/mcp-tool-toggle"
 import type { ContentPart, MessageContent } from "@/lib/schemas/content"
 import { cn } from "@/lib/utils"
 
@@ -266,6 +267,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
         >
             <div className="flex items-center gap-2 px-2">
                 <ConnectedModelSelector conversationId={conversationId} />
+                <McpToolToggle conversationId={conversationId} />
                 <ModelChipsWithConfig conversationId={conversationId} />
             </div>
 

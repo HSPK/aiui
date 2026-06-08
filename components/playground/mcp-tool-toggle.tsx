@@ -1,0 +1,110 @@
+"use client"
+
+import * as React from "react"
+import Link from "next/link"
+import { Wrench } from "lucide-react"
+
+import { mcpServers } from "@/lib/api"
+import { usePlaygroundStore } from "@/lib/stores/playground-store"
+import { Button } from "@/components/ui/button"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Switch } from "@/components/ui/switch"
+import { Badge } from "@/components/ui/badge"
+import { cn } from "@/lib/utils"
+
+interface Props {
+    conversationId: string
+}
+
+/** Per-conversation MCP server picker. Only globally-enabled servers
+ *  are listed; the user picks which subset is exposed to the model
+ *  for this conversation. */
+export function McpToolToggle({ conversationId }: Props) {
+    const { data: servers } = mcpServers.useList()
+    const enabledIds = usePlaygroundStore(
+        (s) => s.settings[conversationId]?.enabledMcpServerIds ?? []
+    )
+    const updateSettings = usePlaygroundStore((s) => s.updateSettings)
+
+    const available = React.useMemo(
+        () => (servers ?? []).filter((s) => s.enabled),
+        [servers]
+    )
+    const enabledSet = React.useMemo(() => new Set(enabledIds), [enabledIds])
+    const activeCount = available.filter((s) => enabledSet.has(s.id)).length
+
+    const toggle = React.useCallback(
+        (id: string, on: boolean) => {
+            const next = on
+                ? Array.from(new Set([...enabledIds, id]))
+                : enabledIds.filter((x) => x !== id)
+            updateSettings(conversationId, { enabledMcpServerIds: next })
+        },
+        [enabledIds, conversationId, updateSettings]
+    )
+
+    return (
+        <Popover>
+            <PopoverTrigger asChild>
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className={cn(
+                        "h-7 px-2 gap-1.5 text-xs text-muted-foreground hover:text-foreground",
+                        activeCount > 0 && "text-foreground"
+                    )}
+                    title="MCP tools"
+                >
+                    <Wrench className="h-3.5 w-3.5" />
+                    {activeCount > 0 && (
+                        <Badge variant="secondary" className="h-4 px-1 text-[10px] font-mono">
+                            {activeCount}
+                        </Badge>
+                    )}
+                </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-72 p-0">
+                <div className="px-3 py-2 border-b">
+                    <div className="text-xs font-medium">MCP tools</div>
+                </div>
+                <div className="max-h-80 overflow-y-auto p-1">
+                    {available.length === 0 ? (
+                        <div className="p-4 text-center text-xs text-muted-foreground space-y-2">
+                            <p>No MCP servers configured.</p>
+                            <Link
+                                href="/mcp"
+                                className="inline-block text-foreground underline underline-offset-2 hover:text-primary"
+                            >
+                                Add one →
+                            </Link>
+                        </div>
+                    ) : (
+                        available.map((s) => {
+                            const checked = enabledSet.has(s.id)
+                            return (
+                                <label
+                                    key={s.id}
+                                    className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted/50 cursor-pointer"
+                                >
+                                    <div className="min-w-0 flex-1">
+                                        <div className="truncate font-medium">{s.name}</div>
+                                        {s.description && (
+                                            <div className="truncate text-[10px] text-muted-foreground">
+                                                {s.description}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <Switch
+                                        checked={checked}
+                                        onCheckedChange={(v) => toggle(s.id, v)}
+                                    />
+                                </label>
+                            )
+                        })
+                    )}
+                </div>
+            </PopoverContent>
+        </Popover>
+    )
+}
