@@ -81,7 +81,7 @@ export default function McpPage() {
                     {activeTab === "mcp" && (
                         <div className="flex items-center gap-1.5 ml-auto">
                             <Link href="/mcp/presets">
-                                <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5">
+                                <Button size="sm" variant="secondary" className="h-8 text-xs gap-1.5">
                                     <LayoutGrid className="h-3.5 w-3.5" />
                                     Catalogue
                                 </Button>
