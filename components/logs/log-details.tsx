@@ -294,17 +294,23 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
         <Sheet open={open} onOpenChange={onOpenChange}>
             <SheetContent className="sm:max-w-xl md:max-w-3xl lg:max-w-4xl w-[90vw] overflow-y-auto p-0 gap-0 flex flex-col">
                 <SheetHeader className="px-6 py-4 border-b bg-muted/40 sticky top-0 z-10 backdrop-blur-sm shrink-0">
-                    <div className="flex items-center justify-between mr-8">
-                        <div className="space-y-1">
+                    <div className="flex items-start justify-between gap-4 mr-8">
+                        <div className="min-w-0 space-y-1">
                             <SheetTitle>Trace Details</SheetTitle>
                             <SheetDescription className="flex items-center gap-2 font-mono text-xs">
-                                {logId} <CopyButton text={logId || ""} />
+                                <span className="truncate">{logId}</span>
+                                <CopyButton text={logId || ""} />
                             </SheetDescription>
                         </div>
                         {log && (
-                            <Badge variant={log.status === "completed" ? "default" : log.status === "failed" ? "destructive" : "secondary"}>
-                                {log.status}
-                            </Badge>
+                            <div className="flex items-center gap-2 shrink-0">
+                                <span className="text-[11px] font-mono text-muted-foreground whitespace-nowrap">
+                                    {formatToLocal(log.created_at, "MM-dd HH:mm:ss")}
+                                </span>
+                                <Badge variant={log.status === "completed" ? "default" : log.status === "failed" ? "destructive" : "secondary"}>
+                                    {log.status}
+                                </Badge>
+                            </div>
                         )}
                     </div>
                 </SheetHeader>
@@ -315,8 +321,9 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                     </div>
                 ) : log ? (
                     <div className="px-6 py-6 space-y-8 flex-1 overflow-y-auto">
-                        {/* KPI Grid */}
-                        <div className="grid grid-cols-2 md:grid-cols-[1.5fr_1fr_1fr_1fr_0.7fr_0.7fr] gap-4 p-4 bg-card rounded-lg border shadow-sm">
+                        {/* KPI Grid — 6 metrics, single row at lg. Time
+                         *  lives in the header so we never wrap. */}
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-[1.5fr_1fr_1fr_0.8fr_0.8fr_0.8fr] gap-4 p-4 bg-card rounded-lg border shadow-sm">
                             <div className="space-y-1">
                                 <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider flex items-center gap-1">
                                     <Terminal className="h-3 w-3" /> Model
@@ -340,12 +347,6 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                                     title={log.username ? `${log.username} (${log.user_id})` : log.user_id}
                                 >
                                     {log.username || log.user_id}
-                                </div>
-                            </div>
-                            <div className="space-y-1">
-                                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Time</span>
-                                <div className="text-sm font-mono text-muted-foreground whitespace-nowrap">
-                                    {formatToLocal(log.created_at, "MM-dd HH:mm:ss")}
                                 </div>
                             </div>
                             <div className="space-y-1">
@@ -375,7 +376,7 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                                 </div>
                             </div>
                             <div className="space-y-1">
-                                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Total Latency</span>
+                                <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Latency</span>
                                 <div
                                     className="text-sm font-mono"
                                     title="End-to-end latency from request start to response fully consumed"
