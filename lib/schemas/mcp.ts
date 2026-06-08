@@ -18,6 +18,12 @@ export const mcpTransportSchema = z.enum(["stdio", "http"]);
 
 // ---- DTO ----
 
+export const mcpToolDescriptorSchema = z.object({
+    name: z.string(),
+    description: z.string().optional(),
+    parameters: z.record(z.string(), z.unknown()),
+});
+
 export const mcpServerDTOSchema = z.object({
     id: z.string(),
     name: z.string(),
@@ -26,6 +32,13 @@ export const mcpServerDTOSchema = z.object({
     /** Free-form config object — discriminated by `transport`. */
     config: z.record(z.string(), z.unknown()),
     enabled: z.boolean(),
+    /** Health check status from the most recent check (create / update
+     *  / explicit /check call). `null` means "never checked". */
+    last_check_status: z.enum(["ok", "error"]).nullable(),
+    last_check_at: z.string().nullable(),
+    last_check_error: z.string().nullable(),
+    /** `tools/list` snapshot from the last successful check. */
+    tools_cache: z.array(mcpToolDescriptorSchema).nullable(),
     created_at: z.string(),
     updated_at: z.string(),
 });
@@ -84,6 +97,7 @@ export const mcpServerUpdateSchema = z
 export type McpTransport = z.infer<typeof mcpTransportSchema>;
 export type McpStdioConfig = z.infer<typeof mcpStdioConfigSchema>;
 export type McpHttpConfig = z.infer<typeof mcpHttpConfigSchema>;
+export type McpToolDescriptor = z.infer<typeof mcpToolDescriptorSchema>;
 export type McpServerDTO = z.infer<typeof mcpServerDTOSchema>;
 export type McpServerCreateInput = z.infer<typeof mcpServerCreateSchema>;
 export type McpServerUpdateInput = z.infer<typeof mcpServerUpdateSchema>;

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Pencil, Trash2 } from "lucide-react"
+import { CheckCircle2, Loader2, Pencil, Trash2, XCircle } from "lucide-react"
 
 import type { McpServerDTO } from "@/lib/schemas/mcp"
 import { Badge } from "@/components/ui/badge"
@@ -16,11 +16,16 @@ import {
     DataTableRow,
     DataTableShell,
 } from "@/components/ui/data-table"
+import { cn } from "@/lib/utils"
 
 interface Props {
     servers: McpServerDTO[]
+    onSelect?: (s: McpServerDTO) => void
     onEdit?: (s: McpServerDTO) => void
     onDelete?: (s: McpServerDTO) => void
+    /** When set, the row matching this id renders with an accent
+     *  background — mirrors the providers/models table selection. */
+    selectedId?: string | null
 }
 
 function summarizeConfig(s: McpServerDTO): string {
@@ -33,9 +38,38 @@ function summarizeConfig(s: McpServerDTO): string {
     return typeof c.url === "string" ? c.url : ""
 }
 
-export function McpServersTable({ servers, onEdit, onDelete }: Props) {
+function HealthCell({ s }: { s: McpServerDTO }) {
+    if (s.last_check_status === "ok") {
+        const count = s.tools_cache?.length ?? 0
+        return (
+            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                {count} tool{count === 1 ? "" : "s"}
+            </span>
+        )
+    }
+    if (s.last_check_status === "error") {
+        return (
+            <span
+                className="inline-flex items-center gap-1 text-[11px] text-destructive"
+                title={s.last_check_error ?? undefined}
+            >
+                <XCircle className="h-3.5 w-3.5" />
+                Failed
+            </span>
+        )
+    }
+    return (
+        <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Checking…
+        </span>
+    )
+}
+
+export function McpServersTable({ servers, onSelect, onEdit, onDelete, selectedId }: Props) {
     const showActions = !!onEdit || !!onDelete
-    const colCount = showActions ? 5 : 4
+    const colCount = showActions ? 6 : 5
 
     return (
         <DataTableShell>
@@ -44,16 +78,24 @@ export function McpServersTable({ servers, onEdit, onDelete }: Props) {
                     <DataTableHead>Name</DataTableHead>
                     <DataTableHead>Transport</DataTableHead>
                     <DataTableHead>Endpoint / Command</DataTableHead>
-                    <DataTableHead>Status</DataTableHead>
+                    <DataTableHead>Health</DataTableHead>
+                    <DataTableHead>Enabled</DataTableHead>
                     {showActions && <DataTableHead className="w-[88px] text-right">Actions</DataTableHead>}
                 </DataTableHeaderRow>
             </DataTableHeader>
             <DataTableBody>
                 {servers.length === 0 ? (
-                    <DataTableEmpty colSpan={colCount}>No MCP servers registered yet.</DataTableEmpty>
+                    <DataTableEmpty colSpan={colCount} />
                 ) : (
                     servers.map((s) => (
-                        <DataTableRow key={s.id}>
+                        <DataTableRow
+                            key={s.id}
+                            className={cn(
+                                onSelect && "cursor-pointer hover:bg-muted/40",
+                                selectedId === s.id && "bg-muted/60",
+                            )}
+                            onClick={onSelect ? () => onSelect(s) : undefined}
+                        >
                             <DataTableCell className="font-mono text-xs max-w-[200px] truncate" title={s.name}>
                                 {s.name}
                             </DataTableCell>
@@ -66,6 +108,9 @@ export function McpServersTable({ servers, onEdit, onDelete }: Props) {
                                 {summarizeConfig(s) || <span className="italic">—</span>}
                             </DataTableCell>
                             <DataTableCell>
+                                <HealthCell s={s} />
+                            </DataTableCell>
+                            <DataTableCell>
                                 <Badge variant={s.enabled ? "default" : "secondary"} className="text-[10px] uppercase">
                                     {s.enabled ? "on" : "off"}
                                 </Badge>
@@ -74,7 +119,13 @@ export function McpServersTable({ servers, onEdit, onDelete }: Props) {
                                 <DataTableCell className="text-right">
                                     <div className="flex items-center justify-end gap-1">
                                         {onEdit && (
-                                            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onEdit(s)} title="Edit">
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-7 w-7"
+                                                onClick={(e) => { e.stopPropagation(); onEdit(s) }}
+                                                title="Edit"
+                                            >
                                                 <Pencil className="h-3.5 w-3.5" />
                                             </Button>
                                         )}
@@ -83,7 +134,7 @@ export function McpServersTable({ servers, onEdit, onDelete }: Props) {
                                                 variant="ghost"
                                                 size="icon"
                                                 className="h-7 w-7 text-destructive hover:text-destructive"
-                                                onClick={() => onDelete(s)}
+                                                onClick={(e) => { e.stopPropagation(); onDelete(s) }}
                                                 title="Delete"
                                             >
                                                 <Trash2 className="h-3.5 w-3.5" />

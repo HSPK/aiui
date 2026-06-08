@@ -215,6 +215,20 @@ export const mcpServers = sqliteTable("mcp_servers", {
      *  http:  `{ url: string, headers?: Record<string,string> }` */
     config: text("config", { mode: "json" }).$type<Record<string, unknown>>().notNull().default({}),
     enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    /** Last health check result. `null` means "never checked". Mirrors
+     *  the providers.last_health_* pattern so the FE can render a pill
+     *  on the table + a status block on the details sheet. */
+    lastCheckStatus: text("last_check_status", { enum: ["ok", "error"] }),
+    lastCheckAt: text("last_check_at"),
+    lastCheckError: text("last_check_error"),
+    /** Snapshot of `tools/list` from the last successful check, so the
+     *  details sheet can render the catalogue without spawning the
+     *  process every time it opens. */
+    toolsCache: text("tools_cache", { mode: "json" }).$type<Array<{
+        name: string;
+        description?: string;
+        parameters: Record<string, unknown>;
+    }> | null>(),
     createdAt: text("created_at").notNull().default(now),
     updatedAt: text("updated_at").notNull().default(now),
 });

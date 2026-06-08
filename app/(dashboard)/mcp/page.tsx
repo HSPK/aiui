@@ -14,6 +14,7 @@ import { LoadingState } from "@/components/ui/loading-state"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { McpFormDialog } from "@/components/tools/mcp-form-dialog"
 import { McpServersTable } from "@/components/tools/mcp-table"
+import { McpServerDetailsSheet } from "@/components/tools/mcp-details-sheet"
 
 type McpDialogState = { open: boolean; mode: "create" | "edit"; server?: McpServerDTO | null }
 
@@ -26,15 +27,30 @@ export default function McpPage() {
 
     const { data: mcpList, isLoading: loadingMcp } = mcpServers.useList(undefined, {
         enabled: activeTab === "mcp",
+        // Auto-refresh while any server is still "checking" (status
+        // null) so the post-create background probe surfaces without
+        // a manual refresh.
+        refetchInterval: (q) => {
+            const data = q.state.data as McpServerDTO[] | undefined
+            if (!data) return false
+            return data.some((s) => s.last_check_status === null) ? 2_000 : false
+        },
     })
 
     const [mcpDialog, setMcpDialog] = React.useState<McpDialogState>({ open: false, mode: "create" })
     const [deleteServer, setDeleteServer] = React.useState<McpServerDTO | null>(null)
+    const [selectedId, setSelectedId] = React.useState<string | null>(null)
+
+    const selectedServer = React.useMemo(
+        () => (mcpList ?? []).find((s) => s.id === selectedId) ?? null,
+        [mcpList, selectedId],
+    )
 
     const deleteServerMutation = mcpServers.useDelete({
         onSuccess: () => {
             toast.success("Server deleted")
             setDeleteServer(null)
+            if (selectedId === deleteServer?.id) setSelectedId(null)
         },
         onError: (e) => toast.error(e.message || "Delete failed"),
     })
@@ -75,8 +91,10 @@ export default function McpPage() {
                         <div className="flex-1 overflow-auto">
                             <McpServersTable
                                 servers={mcpList ?? []}
+                                onSelect={(s) => setSelectedId(s.id)}
                                 onEdit={isAdmin ? (s) => setMcpDialog({ open: true, mode: "edit", server: s }) : undefined}
                                 onDelete={isAdmin ? setDeleteServer : undefined}
+                                selectedId={selectedId}
                             />
                         </div>
                     </div>
@@ -96,6 +114,13 @@ export default function McpPage() {
                 onOpenChange={(open) => setMcpDialog((s) => ({ ...s, open }))}
                 mode={mcpDialog.mode}
                 server={mcpDialog.server}
+            />
+
+            <McpServerDetailsSheet
+                server={selectedServer}
+                open={!!selectedServer}
+                onOpenChange={(o) => !o && setSelectedId(null)}
+                isAdmin={isAdmin}
             />
 
             <ConfirmDialog

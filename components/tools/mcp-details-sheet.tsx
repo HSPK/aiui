@@ -1,0 +1,265 @@
+"use client"
+
+import * as React from "react"
+import { toast } from "sonner"
+import { CheckCircle2, ExternalLink, Loader2, RefreshCcw, Wrench, XCircle } from "lucide-react"
+
+import { mcpServers } from "@/lib/api"
+import type { McpServerDTO, McpToolDescriptor } from "@/lib/schemas/mcp"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { cn, formatToLocal } from "@/lib/utils"
+
+interface Props {
+    server: McpServerDTO | null
+    open: boolean
+    onOpenChange: (open: boolean) => void
+    isAdmin: boolean
+}
+
+/**
+ * Read-only details panel for one MCP server. Shows connection
+ * status, last-known tool list (with parameter schema), full config
+ * (admin only — config can carry secrets), and a "Re-check" button.
+ */
+export function McpServerDetailsSheet({ server, open, onOpenChange, isAdmin }: Props) {
+    const check = mcpServers.useCheck({
+        onSuccess: (s) => {
+            toast.success(
+                s.last_check_status === "ok"
+                    ? `Check passed — ${s.tools_cache?.length ?? 0} tools`
+                    : `Check failed: ${s.last_check_error ?? "unknown error"}`,
+            )
+        },
+        onError: (e) => toast.error(e.message || "Check failed"),
+    })
+
+    const runCheck = React.useCallback(() => {
+        if (!server) return
+        check.mutate(server.id)
+    }, [server, check])
+
+    if (!server) return null
+
+    return (
+        <Sheet open={open} onOpenChange={onOpenChange}>
+            <SheetContent side="right" className="w-full sm:max-w-[640px] overflow-y-auto scrollbar-thin p-0">
+                <SheetHeader className="px-6 py-4 border-b">
+                    <SheetTitle className="flex items-center gap-2 text-base">
+                        <Wrench className="h-4 w-4 text-muted-foreground" />
+                        <span className="font-mono">{server.name}</span>
+                        <Badge variant="outline" className="text-[10px] uppercase ml-2">
+                            {server.transport}
+                        </Badge>
+                        {!server.enabled && (
+                            <Badge variant="secondary" className="text-[10px] uppercase">
+                                disabled
+                            </Badge>
+                        )}
+                    </SheetTitle>
+                    {server.description && (
+                        <p className="text-xs text-muted-foreground pt-1">{server.description}</p>
+                    )}
+                </SheetHeader>
+
+                <div className="px-6 py-4 space-y-5">
+                    <HealthSection server={server} onCheck={runCheck} isChecking={check.isPending} isAdmin={isAdmin} />
+                    <EndpointSection server={server} isAdmin={isAdmin} />
+                    <ToolsSection tools={server.tools_cache ?? []} status={server.last_check_status} />
+                </div>
+            </SheetContent>
+        </Sheet>
+    )
+}
+
+function HealthSection({
+    server,
+    onCheck,
+    isChecking,
+    isAdmin,
+}: {
+    server: McpServerDTO
+    onCheck: () => void
+    isChecking: boolean
+    isAdmin: boolean
+}) {
+    const status = server.last_check_status
+    const checkedAt = server.last_check_at ? formatToLocal(server.last_check_at) : "never"
+    return (
+        <section className="space-y-2">
+            <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Health</h3>
+                {isAdmin && (
+                    <Button size="sm" variant="outline" onClick={onCheck} disabled={isChecking} className="h-7 text-xs">
+                        {isChecking
+                            ? <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                            : <RefreshCcw className="h-3 w-3 mr-1.5" />}
+                        Re-check
+                    </Button>
+                )}
+            </div>
+            <div className="rounded-md border p-3 text-sm space-y-1.5">
+                <div className="flex items-center gap-2">
+                    <StatusDot status={status} />
+                    <span className="font-medium">
+                        {status === "ok" && "Connected"}
+                        {status === "error" && "Failed"}
+                        {status === null && "Never checked"}
+                    </span>
+                </div>
+                <div className="text-[11px] text-muted-foreground">Last check: {checkedAt}</div>
+                {status === "error" && server.last_check_error && (
+                    <pre className="mt-1.5 font-mono text-[11px] leading-tight whitespace-pre-wrap break-all bg-destructive/10 text-destructive rounded p-2 max-h-40 overflow-auto">
+                        {server.last_check_error}
+                    </pre>
+                )}
+            </div>
+        </section>
+    )
+}
+
+function StatusDot({ status }: { status: "ok" | "error" | null }) {
+    if (status === "ok") return <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+    if (status === "error") return <XCircle className="h-4 w-4 text-destructive" />
+    return <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
+}
+
+function EndpointSection({ server, isAdmin }: { server: McpServerDTO; isAdmin: boolean }) {
+    const c = server.config ?? {}
+    return (
+        <section className="space-y-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {server.transport === "stdio" ? "Command" : "Endpoint"}
+            </h3>
+            <div className="rounded-md border p-3 space-y-2">
+                {server.transport === "stdio" ? (
+                    <>
+                        <div className="font-mono text-xs break-all">
+                            <span className="text-muted-foreground">$ </span>
+                            {String(c.command ?? "")}{" "}
+                            {Array.isArray(c.args) ? (c.args as string[]).join(" ") : ""}
+                        </div>
+                        {c.env && isAdmin && Object.keys(c.env as object).length > 0 && (
+                            <div>
+                                <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Env</div>
+                                <ul className="font-mono text-[11px] space-y-0.5">
+                                    {Object.entries(c.env as Record<string, string>).map(([k, v]) => (
+                                        <li key={k} className="truncate">
+                                            <span className="text-muted-foreground">{k}</span>={isSecretKey(k) ? "•••" : v}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+                    </>
+                ) : (
+                    <>
+                        <div className="font-mono text-xs break-all">{String(c.url ?? "")}</div>
+                        {c.headers && isAdmin && Object.keys(c.headers as object).length > 0 && (
+                            <div>
+                                <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Headers</div>
+                                <ul className="font-mono text-[11px] space-y-0.5">
+                                    {Object.entries(c.headers as Record<string, string>).map(([k, v]) => (
+                                        <li key={k} className="truncate">
+                                            <span className="text-muted-foreground">{k}:</span> {isSecretKey(k) ? "•••" : v}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
+                    </>
+                )}
+            </div>
+        </section>
+    )
+}
+
+function isSecretKey(k: string): boolean {
+    return /token|secret|key|password|auth/i.test(k)
+}
+
+function ToolsSection({
+    tools,
+    status,
+}: {
+    tools: McpToolDescriptor[]
+    status: "ok" | "error" | null
+}) {
+    return (
+        <section className="space-y-2">
+            <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Tools {tools.length > 0 && <span className="ml-1 text-foreground">({tools.length})</span>}
+                </h3>
+            </div>
+            {tools.length === 0 ? (
+                <div className="rounded-md border p-3 text-xs text-muted-foreground italic">
+                    {status === "error"
+                        ? "No tools cached — last check failed."
+                        : "No tools cached yet. Run a check to populate."}
+                </div>
+            ) : (
+                <ul className="rounded-md border divide-y">
+                    {tools.map((t) => (
+                        <ToolRow key={t.name} tool={t} />
+                    ))}
+                </ul>
+            )}
+        </section>
+    )
+}
+
+function ToolRow({ tool }: { tool: McpToolDescriptor }) {
+    const [open, setOpen] = React.useState(false)
+    const params = tool.parameters as { properties?: Record<string, unknown>; required?: string[] }
+    const propEntries = params?.properties ? Object.entries(params.properties) : []
+    const required = new Set(params?.required ?? [])
+    return (
+        <li className={cn("p-3 text-xs space-y-1.5", open && "bg-muted/30")}>
+            <button
+                type="button"
+                onClick={() => setOpen((o) => !o)}
+                className="flex w-full items-center gap-2 text-left"
+            >
+                <ExternalLink className="h-3 w-3 text-muted-foreground rotate-90" />
+                <span className="font-mono text-foreground">{tool.name}</span>
+                {propEntries.length > 0 && (
+                    <span className="text-[10px] text-muted-foreground">{propEntries.length} param{propEntries.length === 1 ? "" : "s"}</span>
+                )}
+            </button>
+            {tool.description && (
+                <p className="text-muted-foreground pl-5 leading-snug">{tool.description}</p>
+            )}
+            {open && (
+                <div className="pl-5 pt-1">
+                    {propEntries.length === 0 ? (
+                        <p className="text-muted-foreground italic">(no parameters)</p>
+                    ) : (
+                        <ul className="space-y-1">
+                            {propEntries.map(([k, v]) => {
+                                const meta = v as { type?: string; description?: string }
+                                return (
+                                    <li key={k} className="flex gap-2">
+                                        <span className="font-mono text-foreground">{k}</span>
+                                        {meta?.type && (
+                                            <span className="font-mono text-muted-foreground text-[10px]">
+                                                : {meta.type}
+                                            </span>
+                                        )}
+                                        {required.has(k) && (
+                                            <Badge variant="outline" className="h-3.5 px-1 text-[9px]">required</Badge>
+                                        )}
+                                        {meta?.description && (
+                                            <span className="text-muted-foreground text-[11px] truncate">— {meta.description}</span>
+                                        )}
+                                    </li>
+                                )
+                            })}
+                        </ul>
+                    )}
+                </div>
+            )}
+        </li>
+    )
+}

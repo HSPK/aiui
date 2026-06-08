@@ -11,6 +11,7 @@ export type ParsedEvent =
         result: { call_id: string; name: string; content: string; is_error: boolean; source?: string }
     }
     | { type: 'tool_error'; message: string; serverName?: string }
+    | { type: 'message_meta'; messageId?: string; generationId?: string }
     | { type: 'done' }
     | { type: 'error'; message: string }
 
@@ -54,6 +55,18 @@ export class SSEParser {
             // for MCP tool execution. These ride on the same SSE channel
             // as the chat-completion chunks so the FE can render result
             // bubbles in real time.
+            if (this.currentEvent === "aiui_message_meta") {
+                this.currentEvent = null
+                try {
+                    const data = JSON.parse(dataStr)
+                    events.push({
+                        type: 'message_meta',
+                        messageId: typeof data?.message_id === "string" ? data.message_id : undefined,
+                        generationId: typeof data?.generation_id === "string" ? data.generation_id : undefined,
+                    })
+                } catch { /* ignore */ }
+                continue
+            }
             if (this.currentEvent === "aiui_tool_result") {
                 this.currentEvent = null
                 try {

@@ -262,6 +262,14 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
                     }
 
                     lastGenerationId = result.logId;
+                    // Surface the per-round message + generation id over
+                    // SSE — response headers were emitted before any
+                    // forwardGeneration call, so this is the only path
+                    // to tell the FE which row + log to wire actions to.
+                    emitEvent("aiui_message_meta", {
+                        message_id: assistantMessageId,
+                        generation_id: result.logId,
+                    });
 
                     // The gateway already opened the upstream connection
                     // and is streaming chat-completion-shaped SSE. Strip

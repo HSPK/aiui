@@ -72,6 +72,18 @@ export class StreamClient {
                             callbacks.onContent(accumulatedContent, accumulatedReasoning)
                             break
 
+                        case 'message_meta':
+                            // Per-round id update from the orchestrator —
+                            // headers are sent before the gateway logId
+                            // exists, so this is the only path. Latest
+                            // wins (final round's gen id is what the
+                            // user-visible message points at).
+                            callbacks.onComplete(
+                                event.messageId ?? null,
+                                event.generationId ?? null,
+                            )
+                            break
+
                         case 'tool_call_delta':
                             callbacks.onToolEvent({ type: 'tool_call_delta', call: event.call })
                             break
