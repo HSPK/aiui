@@ -4,7 +4,7 @@ import { messages } from "@/lib/api";
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Check, Copy, ChevronDown, ChevronRight, ThumbsUp, ThumbsDown, Info, RotateCcw, AlertCircle, FileText } from "lucide-react"
+import { Check, Copy, ChevronDown, ChevronRight, ThumbsUp, ThumbsDown, Info, RotateCcw, AlertCircle } from "lucide-react"
 import { cn, formatMessageTime } from "@/lib/utils"
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -18,123 +18,10 @@ import { extractText, type ContentPart } from "@/lib/schemas/content"
 import type { Message, AssembledToolCall } from "@/components/playground/chat/types"
 import { useTypewriter } from "@/components/playground/chat/use-typewriter"
 import { ToolCallsList } from "@/components/playground/tool-calls-list"
+import { markdownComponents } from "./_parts/chat-markdown"
+import { AttachmentsView } from "./_parts/attachments"
 
 import { toast } from "sonner"
-import { CodeBlock, InlineCode } from "./code-block"
-
-// Markdown components with full GFM support (tables, lists, checkboxes, etc.)
-const markdownComponents = {
-    pre: ({ children }: any) => <>{children}</>,
-    code: ({ node, inline, className, children, ...props }: any) => {
-        const match = /language-(\w+)/.exec(className || '')
-        const codeString = String(children).replace(/\n$/, '')
-
-        if (!inline && match) {
-            return <CodeBlock language={match[1]} value={codeString} />
-        }
-
-        if (!inline && codeString.includes('\n')) {
-            return <CodeBlock language="text" value={codeString} />
-        }
-
-        return <InlineCode {...props}>{children}</InlineCode>
-    },
-    // Table styling
-    table: ({ children }: any) => (
-        <div className="my-4 overflow-x-auto rounded-lg border border-border">
-            <table className="w-full border-collapse text-sm">{children}</table>
-        </div>
-    ),
-    thead: ({ children }: any) => (
-        <thead className="bg-muted/50">{children}</thead>
-    ),
-    tbody: ({ children }: any) => (
-        <tbody className="divide-y divide-border">{children}</tbody>
-    ),
-    tr: ({ children }: any) => (
-        <tr className="border-b border-border last:border-0">{children}</tr>
-    ),
-    th: ({ children }: any) => (
-        <th className="px-4 py-2 text-left font-semibold text-foreground border-r border-border last:border-r-0">{children}</th>
-    ),
-    td: ({ children }: any) => (
-        <td className="px-4 py-2 text-muted-foreground border-r border-border last:border-r-0">{children}</td>
-    ),
-    // List styling
-    ul: ({ children, className }: any) => {
-        // Check if it's a task list (contains checkboxes)
-        const isTaskList = className?.includes('contains-task-list')
-        return (
-            <ul className={cn(
-                "my-2 ml-4",
-                isTaskList ? "list-none space-y-1" : "list-disc space-y-1"
-            )}>{children}</ul>
-        )
-    },
-    ol: ({ children }: any) => (
-        <ol className="my-2 ml-4 list-decimal space-y-1">{children}</ol>
-    ),
-    li: ({ children, className }: any) => {
-        const isTaskItem = className?.includes('task-list-item')
-        return (
-            <li className={cn(
-                "leading-relaxed",
-                isTaskItem && "flex items-start gap-2 list-none"
-            )}>{children}</li>
-        )
-    },
-    // Task list checkbox
-    input: ({ type, checked, ...props }: any) => {
-        if (type === 'checkbox') {
-            return (
-                <input
-                    type="checkbox"
-                    checked={checked}
-                    readOnly
-                    className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-primary"
-                    {...props}
-                />
-            )
-        }
-        return <input type={type} {...props} />
-    },
-    // Blockquote styling
-    blockquote: ({ children }: any) => (
-        <blockquote className="my-3 border-l-4 border-primary/30 pl-4 italic text-muted-foreground">{children}</blockquote>
-    ),
-    // Horizontal rule
-    hr: () => <hr className="my-4 border-border" />,
-    // Links
-    a: ({ href, children }: any) => (
-        <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2 hover:text-primary/80">{children}</a>
-    ),
-    // Strikethrough (GFM)
-    del: ({ children }: any) => (
-        <del className="text-muted-foreground line-through">{children}</del>
-    ),
-    // Strong/Bold
-    strong: ({ children }: any) => (
-        <strong className="font-semibold text-foreground">{children}</strong>
-    ),
-    // Emphasis/Italic
-    em: ({ children }: any) => (
-        <em className="italic">{children}</em>
-    ),
-    // Headings
-    h1: ({ children }: any) => <h1 className="mt-6 mb-3 text-2xl font-bold">{children}</h1>,
-    h2: ({ children }: any) => <h2 className="mt-5 mb-2 text-xl font-bold">{children}</h2>,
-    h3: ({ children }: any) => <h3 className="mt-4 mb-2 text-lg font-semibold">{children}</h3>,
-    h4: ({ children }: any) => <h4 className="mt-3 mb-1 text-base font-semibold">{children}</h4>,
-    h5: ({ children }: any) => <h5 className="mt-2 mb-1 text-sm font-semibold">{children}</h5>,
-    h6: ({ children }: any) => <h6 className="mt-2 mb-1 text-sm font-medium text-muted-foreground">{children}</h6>,
-    // Paragraph — emitted as <div> rather than <p> because
-    // react-markdown wraps mixed inline + block content (e.g. text +
-    // a fenced code block inside a list item) in <p>, and our
-    // CodeBlock renders as a <div>. A block-level <div>/<pre> inside
-    // an HTML <p> is invalid and triggers a React hydration error.
-    p: ({ children }: any) => <div className="mb-2 last:mb-0 leading-relaxed">{children}</div>,
-}
-
 interface ChatMessageProps {
     message: Message
     provider?: string
@@ -546,60 +433,5 @@ ChatMessage.displayName = "ChatMessage"
 // AttachmentsView — renders image_url and file parts that came with a
 // user message. Read-only (no remove); for editing flow back to the
 // chat input.
-// =============================================================================
-
-function AttachmentsView({ parts }: { parts: ContentPart[] }) {
-    if (parts.length === 0) return null
-    return (
-        <div className="not-prose mb-2 flex flex-wrap gap-2">
-            {parts.map((p, i) => {
-                if (p.type === "image_url") {
-                    return <ImageAttachment key={i} url={p.image_url.url} />
-                }
-                if (p.type === "file") {
-                    return (
-                        <FileAttachment
-                            key={i}
-                            filename={p.file.filename}
-                            dataUrl={p.file.file_data}
-                            mime={p.file.mime_type}
-                        />
-                    )
-                }
-                return null
-            })}
-        </div>
-    )
-}
-
-function ImageAttachment({ url }: { url: string }) {
-    return (
-        <a href={url} target="_blank" rel="noreferrer" className="inline-block">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-                src={url}
-                alt="attachment"
-                className="max-h-64 max-w-xs rounded-md border bg-muted/30 object-contain"
-            />
-        </a>
-    )
-}
-
-function FileAttachment({ filename, dataUrl, mime }: { filename: string; dataUrl: string; mime?: string }) {
-    return (
-        <a
-            href={dataUrl}
-            download={filename}
-            className="inline-flex items-center gap-2 rounded-md border bg-muted/30 px-2 py-1.5 text-xs hover:bg-muted/50 transition-colors max-w-[260px]"
-            title={mime ? `${filename} (${mime})` : filename}
-        >
-            <span className="flex h-7 w-7 items-center justify-center rounded bg-muted shrink-0">
-                <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-            </span>
-            <span className="truncate">{filename}</span>
-        </a>
-    )
-}
-
-// ---- Tool call rendering — see `tool-calls-list.tsx`. ----
-
+// AttachmentsView, ImageAttachment, FileAttachment — see _parts/attachments.tsx
+// Tool call rendering — see tool-calls-list.tsx
