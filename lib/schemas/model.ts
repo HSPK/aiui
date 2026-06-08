@@ -18,6 +18,9 @@ export const modelDTOSchema = z.object({
     default_params: z.record(z.string(), z.unknown()),
     /** Capability id (chat | embedding | image | audio.* | rerank | ...). */
     type: z.string(),
+    /** Pinned upstream API variant id; null = gateway auto-selects via
+     *  capability.variantPreference + meta.supported_apis. */
+    api_variant_id: z.string().nullable(),
     pricing: pricingSchema.nullable(),
     output_dimension: z.number().int().nullable(),
     context_window: z.number().int().nullable(),
@@ -45,6 +48,8 @@ export const modelCreateSchema = z.object({
     provider_id: z.string().trim().min(1, "provider_id is required"),
     upstream_model_id: z.string().trim().min(1, "upstream_model_id is required"),
     type: z.string().trim().min(1).optional(),
+    /** Optional pinned variant id. Empty / null = auto. */
+    api_variant_id: z.string().trim().nullable().optional(),
     default_params: z.record(z.string(), z.unknown()).optional(),
     context_window: z.number().int().nullable().optional(),
     max_tokens: z.number().int().nullable().optional(),

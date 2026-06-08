@@ -8,7 +8,7 @@ import type {
     UpstreamApiId,
 } from "@/lib/schemas/adapter";
 import type { UpstreamApiVariant } from "../api-variants";
-import { defaultSelectVariantId } from "../api-variants";
+import { defaultSelectVariantId, getVariant } from "../api-variants";
 
 /**
  * ProviderAdapter — the *transport* layer. One adapter per upstream
@@ -130,14 +130,27 @@ export function resolveAdapter(provider: Provider): ProviderAdapter {
 }
 
 /** Convenience: resolve the variant id an adapter would use for this
- *  (capability, model). Falls back to the shared default selector when
- *  the adapter doesn't customize selection. */
+ *  (capability, model).
+ *
+ *  Precedence:
+ *   1. `model.apiVariantId` — admin pin from the model edit form, when
+ *      it points at a registered variant that actually serves this
+ *      capability.
+ *   2. `adapter.selectVariant` — per-adapter custom selector.
+ *   3. `defaultSelectVariantId` — capability preference chain + model's
+ *      `meta.supported_apis`.
+ */
 export function resolveVariantId(
     adapter: ProviderAdapter,
     capability: CapabilityHandler,
     model: Model,
     meta: NormalizedModelMeta | null,
 ): UpstreamApiId {
+    const pinned = model.apiVariantId;
+    if (pinned) {
+        const v = getVariant(pinned as UpstreamApiId);
+        if (v && v.capability === capability.id) return v.id;
+    }
     if (adapter.selectVariant) return adapter.selectVariant(capability, model, meta);
     return defaultSelectVariantId(capability, meta);
 }

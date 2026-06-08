@@ -116,6 +116,11 @@ export function variantsForCapability(capabilityId: string): UpstreamApiVariant[
     return byCapability.get(capabilityId) ?? [];
 }
 
+/** All registered variants — used by `/api/variants` and the admin UI. */
+export function listVariants(): UpstreamApiVariant[] {
+    return Array.from(byId.values());
+}
+
 /** Default selector used by ProviderAdapter.selectVariant when an adapter
  *  doesn't override.
  *

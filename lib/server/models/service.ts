@@ -64,6 +64,7 @@ function discoveredToDTO(d: DiscoveredModel, provider: Provider | undefined): Mo
         http_proxy: null,
         default_params: {},
         type: d.capability,
+        api_variant_id: null,
         pricing: null,
         output_dimension: null,
         context_window: d.meta.context_window ?? null,
@@ -213,6 +214,7 @@ export async function createModel(input: ModelCreateInput): Promise<ModelDTO> {
         maxRetries: input.max_retries ?? 2,
         httpProxy: input.http_proxy ?? null,
         enabled: input.enabled ?? true,
+        apiVariantId: input.api_variant_id?.trim() || null,
         discoveredMetadata: snapshotted ?? null,
     }).run();
 
@@ -256,6 +258,10 @@ export async function updateModel(idOrName: string, input: ModelUpdateInput): Pr
     if (input.max_retries !== undefined) updates.maxRetries = input.max_retries;
     if (input.http_proxy !== undefined) updates.httpProxy = input.http_proxy ?? null;
     if (input.enabled !== undefined) updates.enabled = !!input.enabled;
+    if (input.api_variant_id !== undefined) {
+        const v = input.api_variant_id?.trim();
+        updates.apiVariantId = v ? v : null;
+    }
     if (input.discovered_metadata !== undefined) updates.discoveredMetadata = input.discovered_metadata;
 
     updates.updatedAt = new Date().toISOString();

@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Copy, Pencil, Trash2 } from "lucide-react"
@@ -30,23 +29,20 @@ import { capabilityLabel } from "./capability-label"
 
 interface Props {
     models: ModelDTO[]
-    /** Admin: per-row Delete handler. Edit is always a direct link (no
-     *  callback) so it can be middle-clicked / opened in a new tab. */
+    /** Admin: per-row Edit handler. Opens the popup form. For discovered
+     *  rows the parent should open the popup in "create" mode so the
+     *  admin saves a new override pre-filled with the discovered defaults. */
+    onEdit?: (model: ModelDTO) => void
+    /** Admin: per-row Delete handler. */
     onDelete?: (model: ModelDTO) => void
-    /** When set, edit links carry `?from=<href>` so cancel returns here.
-     *  Defaults to the current pathname. */
-    backHref?: string
 }
 
 /** Table of models. Row click navigates to the per-model dashboard.
- *  Per-row Edit is a direct link to /models/<name>/edit (1 click, no
- *  popups, opens-in-new-tab works). Delete sits beside it and triggers
- *  the parent's confirm dialog. */
-export function ModelsTable({ models, onDelete, backHref }: Props) {
+ *  Admin Edit / Delete are direct icon buttons (one click, no dropdown). */
+export function ModelsTable({ models, onEdit, onDelete }: Props) {
     const router = useRouter()
-    const showActions = !!onDelete
+    const showActions = !!onEdit || !!onDelete
     const columnCount = showActions ? 7 : 6
-    const fromParam = backHref ? `?from=${encodeURIComponent(backHref)}` : ""
 
     return (
         <DataTableShell>
@@ -139,21 +135,21 @@ export function ModelsTable({ models, onDelete, backHref }: Props) {
                                     onClick={(e) => e.stopPropagation()}
                                 >
                                     <div className="flex items-center justify-end gap-1">
-                                        <Button
-                                            asChild
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-7 w-7"
-                                            title={model.is_discovered ? "Promote to override" : "Edit"}
-                                        >
-                                            <Link
-                                                href={`/models/${encodeURIComponent(model.name)}/edit${fromParam}`}
-                                                onClick={(e) => e.stopPropagation()}
+                                        {onEdit && (
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-7 w-7"
+                                                title={model.is_discovered ? "Promote to override" : "Edit"}
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    onEdit(model)
+                                                }}
                                             >
                                                 <Pencil className="h-3.5 w-3.5" />
-                                            </Link>
-                                        </Button>
-                                        {!model.is_discovered && (
+                                            </Button>
+                                        )}
+                                        {onDelete && !model.is_discovered && (
                                             <Button
                                                 variant="ghost"
                                                 size="icon"
@@ -161,7 +157,7 @@ export function ModelsTable({ models, onDelete, backHref }: Props) {
                                                 title="Delete"
                                                 onClick={(e) => {
                                                     e.stopPropagation()
-                                                    onDelete?.(model)
+                                                    onDelete(model)
                                                 }}
                                             >
                                                 <Trash2 className="h-3.5 w-3.5" />

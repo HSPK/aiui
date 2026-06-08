@@ -82,6 +82,11 @@ export const models = sqliteTable("models", {
     maxRetries: integer("max_retries").notNull().default(2),
     httpProxy: text("http_proxy", { mode: "json" }).$type<Record<string, string> | null>(),
     enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    /** Pinned upstream API variant id (e.g. "chat.completions" / "responses").
+     *  When set, overrides the gateway's per-request variant selection
+     *  for this model. When null, the gateway picks via
+     *  capability.variantPreference + model.meta.supported_apis. */
+    apiVariantId: text("api_variant_id"),
     /** Verbatim entry from the upstream /models endpoint at last discovery.
      *  Adapter-specific shape, persisted for the admin UI's raw-metadata
      *  panel and for re-running extractModelMeta when adapter logic changes. */

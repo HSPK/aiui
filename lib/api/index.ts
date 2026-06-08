@@ -14,6 +14,7 @@ export { gateway } from "./gateway";
 export { capabilities } from "./capabilities";
 export { preferences } from "./preferences";
 export { adapters } from "./adapters";
+export { variants } from "./variants";
 export { stats } from "./stats";
 
 export { ApiError, fetcher, rawFetch, withQuery, API_BASE } from "./client";

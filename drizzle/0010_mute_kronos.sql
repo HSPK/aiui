@@ -1,0 +1,1 @@
+ALTER TABLE `models` ADD `api_variant_id` text;

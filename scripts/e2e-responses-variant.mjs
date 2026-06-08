@@ -399,6 +399,80 @@ try {
         detail?.content?.choices?.[0]?.message?.content,
     );
 
+    // -------------------------------------------------------------------
+    // model.api_variant_id pin: create an override that forces this model
+    // to use chat.completions even though the model declares responses
+    // support (and the capability prefers responses). The pin must win.
+    // -------------------------------------------------------------------
+    const providersListRes = await fetch(`${BASE}/api/providers`, { headers: { Cookie: cookie } });
+    const respProvider = (await providersListRes.json()).data?.find((p) => p.name === "respstub");
+    expect("provider listed for override creation", !!respProvider);
+
+    const createRes = await fetch(`${BASE}/api/models`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({
+            name: "gpt-resp-pinned",
+            provider_id: respProvider.id,
+            upstream_model_id: "gpt-resp",
+            type: "chat",
+            api_variant_id: "chat.completions",
+        }),
+    });
+    const created = (await createRes.json()).data;
+    expect(
+        "override created with api_variant_id=chat.completions",
+        createRes.status === 200 && created?.api_variant_id === "chat.completions",
+        `api_variant_id=${created?.api_variant_id}`,
+    );
+
+    // Hit the gateway under the pinned override — should land on
+    // /chat/completions instead of /responses.
+    lastRequest = null;
+    const pinnedReq = await fetch(`${BASE}/api/v1/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({
+            model: "gpt-resp-pinned",
+            messages: [{ role: "user", content: "hi" }],
+        }),
+    });
+    expect("pinned request 200", pinnedReq.status === 200);
+    expect(
+        "pinned model routed to /chat/completions (override wins over capability preference)",
+        lastRequest?.url === "/v1/chat/completions",
+        `url=${lastRequest?.url}`,
+    );
+
+    // Update the pin to null and verify the auto-preference kicks back in.
+    const updateRes = await fetch(`${BASE}/api/models/${encodeURIComponent(created.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({ api_variant_id: null }),
+    });
+    const updated = (await updateRes.json()).data;
+    expect(
+        "PATCH cleared api_variant_id",
+        updateRes.status === 200 && updated?.api_variant_id === null,
+        `api_variant_id=${updated?.api_variant_id}`,
+    );
+
+    lastRequest = null;
+    const autoReq = await fetch(`${BASE}/api/v1/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({
+            model: "gpt-resp-pinned",
+            messages: [{ role: "user", content: "hi" }],
+        }),
+    });
+    expect("auto request 200", autoReq.status === 200);
+    expect(
+        "with pin cleared, auto-preference picks /responses again",
+        lastRequest?.url === "/v1/responses",
+        `url=${lastRequest?.url}`,
+    );
+
 } catch (err) {
     console.error("Test threw:", err);
 } finally {

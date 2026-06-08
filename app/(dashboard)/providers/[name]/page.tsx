@@ -24,13 +24,19 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ProviderIcon } from "@/components/ProviderIcon"
 import { ModelsTable } from "@/components/providers/models-table"
+import { ModelFormDialog } from "@/components/providers/model-form-dialog"
 import { ProviderHealthPill } from "@/components/providers/provider-health-pill"
+
+type ModelDialogState = {
+    open: boolean
+    mode: "create" | "edit"
+    model?: ModelDTO | null
+}
 
 export default function ProviderDetailPage() {
     const params = useParams()
     const router = useRouter()
     const slug = decodeURIComponent(String(params.name ?? ""))
-    const backHref = `/providers/${encodeURIComponent(slug)}`
 
     const { user } = useAuth()
     const isAdmin = user?.role === "admin"
@@ -39,6 +45,11 @@ export default function ProviderDetailPage() {
     const { data: models, isLoading: isLoadingModels } = providers.useModels(slug)
 
     const [deleting, setDeleting] = React.useState<ModelDTO | null>(null)
+    const [modelDialog, setModelDialog] = React.useState<ModelDialogState>({
+        open: false,
+        mode: "create",
+        model: null,
+    })
 
     const refreshMutation = providers.useReload({
         onSuccess: () => toast.success("Refreshed model list"),
@@ -195,9 +206,11 @@ export default function ProviderDetailPage() {
                                 size="sm"
                                 variant="secondary"
                                 onClick={() =>
-                                    router.push(
-                                        `/models/new?provider_id=${encodeURIComponent(provider.id)}&from=${encodeURIComponent(backHref)}`,
-                                    )
+                                    setModelDialog({
+                                        open: true,
+                                        mode: "create",
+                                        model: null,
+                                    })
                                 }
                             >
                                 <Plus className="h-3.5 w-3.5 mr-1" />
@@ -214,8 +227,13 @@ export default function ProviderDetailPage() {
                         <div className="border rounded-xl bg-card shadow-sm overflow-hidden">
                             <ModelsTable
                                 models={models}
+                                onEdit={isAdmin ? (m) =>
+                                    setModelDialog({
+                                        open: true,
+                                        mode: m.is_discovered ? "create" : "edit",
+                                        model: m,
+                                    }) : undefined}
                                 onDelete={isAdmin ? setDeleting : undefined}
-                                backHref={backHref}
                             />
                         </div>
                     ) : (
@@ -247,6 +265,14 @@ export default function ProviderDetailPage() {
                     destructive
                     isLoading={deleteMutation.isPending}
                     onConfirm={() => deleting && deleteMutation.mutate(deleting.id)}
+                />
+
+                <ModelFormDialog
+                    open={modelDialog.open}
+                    onOpenChange={(open) => setModelDialog((s) => ({ ...s, open }))}
+                    mode={modelDialog.mode}
+                    model={modelDialog.model}
+                    defaultProviderId={provider.id}
                 />
             </div>
         </div>

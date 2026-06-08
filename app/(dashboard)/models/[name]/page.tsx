@@ -47,6 +47,7 @@ import {
 } from "@/components/dashboard/shared"
 import { ProviderIcon } from "@/components/ProviderIcon"
 import { ModelConfigPanel } from "@/components/models/model-config-panel"
+import { ModelFormDialog } from "@/components/providers/model-form-dialog"
 
 export default function ModelDashboardPage() {
     const params = useParams()
@@ -55,6 +56,7 @@ export default function ModelDashboardPage() {
     const isAdmin = user?.role === "admin"
     const modelName = decodeURIComponent(String(params.name ?? ""))
     const [days, setDays] = React.useState(14)
+    const [modelDialog, setModelDialog] = React.useState(false)
     const { data, isLoading, isFetching, error } = stats.useModel(modelName, { days })
     const { data: modelDetail } = modelsApi.useGet(modelName)
     const { data: providerDetail } = providers.useGet(modelDetail?.provider_id ?? null)
@@ -104,7 +106,6 @@ export default function ModelDashboardPage() {
     )
 
     const hasData = trend.some((t) => t.requests > 0)
-    const editHref = `/models/${encodeURIComponent(modelName)}/edit?from=${encodeURIComponent(`/models/${encodeURIComponent(modelName)}`)}`
 
     return (
         <div className="h-full overflow-y-auto">
@@ -155,16 +156,24 @@ export default function ModelDashboardPage() {
                                                 Try
                                             </Button>
                                         )}
-                                        {isAdmin && modelDetail && (
+                                        {isAdmin && modelDetail && !modelDetail.is_discovered && (
                                             <Button
                                                 size="sm"
                                                 variant="outline"
-                                                asChild
+                                                onClick={() => setModelDialog(true)}
                                             >
-                                                <Link href={editHref}>
-                                                    <Pencil className="mr-1.5 h-3.5 w-3.5" />
-                                                    {modelDetail.is_discovered ? "Override" : "Edit"}
-                                                </Link>
+                                                <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                                                Edit
+                                            </Button>
+                                        )}
+                                        {isAdmin && modelDetail?.is_discovered && (
+                                            <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => setModelDialog(true)}
+                                            >
+                                                <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                                                Override
                                             </Button>
                                         )}
                                     </div>
@@ -491,6 +500,13 @@ export default function ModelDashboardPage() {
                     </Card>
                 </div>
             </div>
+
+            <ModelFormDialog
+                open={modelDialog}
+                onOpenChange={setModelDialog}
+                mode={modelDetail?.is_discovered ? "create" : "edit"}
+                model={modelDetail ?? null}
+            />
         </div>
     )
 }

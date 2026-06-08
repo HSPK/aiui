@@ -1,11 +1,10 @@
 "use client"
 
-import { useRouter } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 import { Loader2, Sparkles } from "lucide-react"
 
-import { capabilities, models, providers } from "@/lib/api"
+import { capabilities, models, providers, variants } from "@/lib/api"
 import type { ModelCreateInput, ModelDTO } from "@/lib/schemas/model"
 
 import { Button } from "@/components/ui/button"
@@ -23,25 +22,30 @@ import {
 
 interface Props {
     mode: "create" | "edit"
-    /** In create mode: optional seed values (e.g. a discovered model being
+    /** In create mode: optional seed (e.g. a discovered model being
      *  promoted). In edit mode: the row being edited. */
     model?: ModelDTO | null
+    /** Locks the provider field on create. Always locked in edit mode
+     *  and discovered-promote mode. */
     defaultProviderId?: string
-    /** Where to navigate after a successful save / cancel. Defaults to the
-     *  model's detail page on save and `router.back()` on cancel. */
-    successHref?: string
-    cancelHref?: string
+    onSaved?: (saved: ModelDTO | null) => void
+    onCancel?: () => void
 }
 
-export function ModelForm({ mode, model, defaultProviderId, successHref, cancelHref }: Props) {
-    const router = useRouter()
+/** "Pinned variant = auto" sentinel. Radix Select forbids empty-string
+ *  values, so we use a marker and translate it to null on submit. */
+const VARIANT_AUTO = "__auto__"
+
+export function ModelForm({ mode, model, defaultProviderId, onSaved, onCancel }: Props) {
     const { data: providerList } = providers.useList()
     const { data: capabilityList } = capabilities.useList()
+    const { data: variantList } = variants.useList()
 
     const [name, setName] = useState("")
     const [providerId, setProviderId] = useState<string>("")
     const [upstreamModelId, setUpstreamModelId] = useState("")
     const [type, setType] = useState<string>("chat")
+    const [apiVariantId, setApiVariantId] = useState<string>(VARIANT_AUTO)
     const [contextWindow, setContextWindow] = useState("")
     const [maxTokens, setMaxTokens] = useState("")
     const [outputDim, setOutputDim] = useState("")
@@ -56,12 +60,18 @@ export function ModelForm({ mode, model, defaultProviderId, successHref, cancelH
         [mode, model?.is_discovered],
     )
 
+    // Provider is locked in edit (existing row) and in discovered-promote
+    // (provider is determined by the source discovery entry). Only pure
+    // create lets the admin pick freely.
+    const providerLocked = mode === "edit" || isOverride
+
     useEffect(() => {
         if (model) {
             setName(model.name)
             setProviderId(model.provider_id ?? "")
             setUpstreamModelId(model.model_id ?? model.name)
             setType(model.type ?? "chat")
+            setApiVariantId(model.api_variant_id ?? VARIANT_AUTO)
             setContextWindow(model.context_window?.toString() ?? "")
             setMaxTokens(model.max_tokens?.toString() ?? "")
             setOutputDim(model.output_dimension?.toString() ?? "")
@@ -73,6 +83,7 @@ export function ModelForm({ mode, model, defaultProviderId, successHref, cancelH
             setProviderId(defaultProviderId ?? "")
             setUpstreamModelId("")
             setType("chat")
+            setApiVariantId(VARIANT_AUTO)
             setContextWindow("")
             setMaxTokens("")
             setOutputDim("")
@@ -83,22 +94,10 @@ export function ModelForm({ mode, model, defaultProviderId, successHref, cancelH
         setParseError(null)
     }, [mode, model, defaultProviderId])
 
-    const navigateAway = (saved?: ModelDTO | null) => {
-        if (successHref) {
-            router.push(successHref)
-            return
-        }
-        if (saved?.name) {
-            router.push(`/models/${encodeURIComponent(saved.name)}`)
-            return
-        }
-        router.back()
-    }
-
     const createMutation = models.useCreate({
         onSuccess: (saved) => {
             toast.success(isOverride ? "Override saved" : "Model created")
-            navigateAway(saved)
+            onSaved?.(saved)
         },
         onError: (e) => toast.error(e.message || "Create failed"),
     })
@@ -106,7 +105,7 @@ export function ModelForm({ mode, model, defaultProviderId, successHref, cancelH
     const updateMutation = models.useUpdate({
         onSuccess: (saved) => {
             toast.success("Model updated")
-            navigateAway(saved ?? null)
+            onSaved?.(saved ?? null)
         },
         onError: (e) => toast.error(e.message || "Update failed"),
     })
@@ -131,6 +130,7 @@ export function ModelForm({ mode, model, defaultProviderId, successHref, cancelH
             provider_id: providerId,
             upstream_model_id: upstreamModelId.trim(),
             type,
+            api_variant_id: apiVariantId === VARIANT_AUTO ? null : apiVariantId,
             default_params: params,
             context_window: contextWindow ? Number(contextWindow) : null,
             max_tokens: maxTokens ? Number(maxTokens) : null,
@@ -139,7 +139,9 @@ export function ModelForm({ mode, model, defaultProviderId, successHref, cancelH
             enabled,
         }
 
-        // Snapshot the raw upstream entry when promoting a discovered model.
+        // When promoting a discovered model into an override, snapshot the
+        // raw upstream entry so the gateway can re-project metadata even
+        // when the discovery cache is cold.
         if (isOverride && model?.meta?.raw != null) {
             payload.discovered_metadata = model.meta.raw
         }
@@ -152,15 +154,27 @@ export function ModelForm({ mode, model, defaultProviderId, successHref, cancelH
     }
 
     const isLoading = createMutation.isPending || updateMutation.isPending
-    const title = isOverride ? "Create override" : mode === "create" ? "Add model" : "Edit model"
     const submitLabel = isOverride ? "Save override" : mode === "create" ? "Create" : "Save"
+
+    // Variants registered for the chosen capability — Radix select needs
+    // the candidate set up-front so the value resolves correctly.
+    const variantsForCapability = useMemo(
+        () => (variantList ?? []).filter((v) => v.capability === type),
+        [variantList, type],
+    )
+    const selectedProvider = useMemo(
+        () => (providerList ?? []).find((p) => p.id === providerId),
+        [providerList, providerId],
+    )
 
     return (
         <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="flex items-center gap-2">
-                {isOverride && <Sparkles className="h-4 w-4 text-primary" />}
-                <h2 className="text-base font-semibold tracking-tight">{title}</h2>
-            </div>
+            {isOverride && (
+                <div className="flex items-center gap-2 text-xs text-primary">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span>Promoting a discovered model into a DB-backed override.</span>
+                </div>
+            )}
 
             <div className="grid sm:grid-cols-2 gap-3">
                 <Field label="Display name" htmlFor="m-name">
@@ -184,17 +198,29 @@ export function ModelForm({ mode, model, defaultProviderId, successHref, cancelH
             </div>
 
             <div className="grid sm:grid-cols-2 gap-3">
-                <Field label="Provider">
-                    <Select value={providerId} onValueChange={setProviderId}>
-                        <SelectTrigger className="h-9 text-sm">
-                            <SelectValue placeholder="Select provider" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {(providerList ?? []).map((p) => (
-                                <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+                <Field
+                    label="Provider"
+                    hint={providerLocked ? "Provider cannot be changed after creation." : undefined}
+                >
+                    {providerLocked ? (
+                        <Input
+                            value={selectedProvider?.name ?? providerId}
+                            readOnly
+                            disabled
+                            className="h-9 text-sm font-mono bg-muted/40"
+                        />
+                    ) : (
+                        <Select value={providerId} onValueChange={setProviderId}>
+                            <SelectTrigger className="h-9 text-sm">
+                                <SelectValue placeholder="Select provider" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {(providerList ?? []).map((p) => (
+                                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    )}
                 </Field>
                 <Field label="Capability">
                     <Select value={type} onValueChange={setType}>
@@ -210,6 +236,34 @@ export function ModelForm({ mode, model, defaultProviderId, successHref, cancelH
                     </Select>
                 </Field>
             </div>
+
+            {variantsForCapability.length > 1 && (
+                <Field
+                    label="Pinned upstream API"
+                    hint="Override the gateway's automatic variant pick. Leave on Auto unless you need to force a specific wire shape."
+                >
+                    <Select value={apiVariantId} onValueChange={setApiVariantId}>
+                        <SelectTrigger className="h-9 text-sm">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value={VARIANT_AUTO}>Auto (capability preference)</SelectItem>
+                            {variantsForCapability.map((v) => (
+                                <SelectItem key={v.id} value={v.id}>
+                                    <span className="font-mono text-xs">{v.id}</span>
+                                </SelectItem>
+                            ))}
+                            {/* Allow saving an unregistered id so legacy / future pins still load. */}
+                            {apiVariantId !== VARIANT_AUTO &&
+                                !variantsForCapability.some((v) => v.id === apiVariantId) && (
+                                    <SelectItem value={apiVariantId}>
+                                        <span className="font-mono text-xs">{apiVariantId}</span>
+                                    </SelectItem>
+                                )}
+                        </SelectContent>
+                    </Select>
+                </Field>
+            )}
 
             <div className="grid sm:grid-cols-3 gap-3">
                 <Field label="Context window" htmlFor="m-ctx">
@@ -232,7 +286,7 @@ export function ModelForm({ mode, model, defaultProviderId, successHref, cancelH
                     id="m-params"
                     value={defaultParams}
                     onChange={(e) => setDefaultParams(e.target.value)}
-                    rows={6}
+                    rows={5}
                     className="text-xs font-mono"
                 />
                 {parseError && <span className="text-xs text-destructive">{parseError}</span>}
@@ -243,12 +297,12 @@ export function ModelForm({ mode, model, defaultProviderId, successHref, cancelH
                 <Switch id="m-enabled" checked={enabled} onCheckedChange={setEnabled} />
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t">
+            <div className="flex items-center justify-end gap-2 pt-2">
                 <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => (cancelHref ? router.push(cancelHref) : router.back())}
+                    onClick={onCancel}
                     disabled={isLoading}
                 >
                     Cancel
@@ -265,16 +319,19 @@ export function ModelForm({ mode, model, defaultProviderId, successHref, cancelH
 function Field({
     label,
     htmlFor,
+    hint,
     children,
 }: {
     label: string
     htmlFor?: string
+    hint?: string
     children: React.ReactNode
 }) {
     return (
         <div className="grid gap-1.5 min-w-0">
             <Label htmlFor={htmlFor} className="text-xs">{label}</Label>
             {children}
+            {hint && <p className="text-[11px] text-muted-foreground leading-snug">{hint}</p>}
         </div>
     )
 }
