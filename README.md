@@ -1,198 +1,154 @@
 <div align="center">
 
-# Loom
+<h1>Loom</h1>
 
-**A self-hosted dev portal that weaves LLM providers, MCP tools, and a playground into one OpenAI-compatible surface.**
+**One self-hosted process that ties your LLM providers, MCP tools, request logs, and a polished playground together.**
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Node 20+](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)](#requirements)
-[![npm](https://img.shields.io/npm/v/@hspk/loom.svg)](https://www.npmjs.com/package/@hspk/loom)
+[![npm](https://img.shields.io/npm/v/@hspk/loom?style=flat-square&color=4338ca&label=%40hspk%2Floom)](https://www.npmjs.com/package/@hspk/loom)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
+[![Node 20+](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg?style=flat-square)](#requirements)
+[![Docs](https://img.shields.io/badge/docs-mkdocs-success?style=flat-square)](https://hspk.github.io/loom)
+
+<sub>Single binary · SQLite-only state · Forensic-grade per-request logs · Multi-modal under one auth · MCP native</sub>
 
 </div>
 
 ---
 
-Spin up a unified `/v1/*` endpoint for OpenAI, Azure, Foundry, DeepSeek, vLLM, Ollama — whatever speaks the OpenAI protocol — and get a polished playground, request logs, MCP tool integration, and per-key access control for free. One binary. One SQLite file. No external services.
+## The pitch
+
+Most "AI gateway" tools force you to choose:
+
+- A **reverse proxy** that ships zero UI and pushes logs to a paid SaaS — _you end up with no way to inspect what your team is doing._
+- A **pretty playground** with no gateway protocol — _your apps still talk to providers directly, so your logs, your auth, and your usage caps live in three different places._
+- A **distributed system** that needs Redis, Postgres, and a worker fleet — _you spend a weekend wiring infrastructure before you can answer "what did Bob ask GPT-4 yesterday?"_
+
+Loom is what happens when one process owns all of it. **One Node binary, one SQLite file, one auth model, one log table.** That's it.
 
 ```bash
-npx @hspk/loom init     # interactive setup wizard
-npx @hspk/loom start    # boots http://localhost:3000
+npx @hspk/loom init      # interactive setup wizard
+npx @hspk/loom start     # boots http://localhost:3000
 ```
 
-## Why Loom
+You get a gateway, a playground, MCP tool dispatch, and per-request forensics — without standing up a fleet.
 
-- **Drop-in OpenAI gateway.** Point any OpenAI SDK at your Loom URL and it works. Chat, completions, embeddings, rerank, images, speech, transcription, MCP-driven tool calls — all behind one API key.
-- **Provider catalog auto-discovered.** Loom hits each provider's `/models` endpoint on demand. No model YAML to maintain. Override display names, deployment IDs, or default params per-model in the admin UI.
-- **MCP, properly.** First-class support for the Model Context Protocol: register stdio or HTTP servers, browse the auto-discovered tool catalog, watch the chat playground execute them and stream the results back into the conversation.
-- **Built-in playground.** Real conversations against any of your registered models with cost / latency / TTFT counters, request inspector, conversation forking, and tool-call timelines.
-- **Single binary, single file.** Ships as one Next.js binary backed by SQLite (WAL mode). No Redis. No Postgres. No separate worker. Move your gateway by copying one `.db` file.
-- **Audit trail by default.** Every request is logged with prompt summary, token counts, TTFT, total latency, error class. Browse, filter, export.
-- **Encrypted at rest.** Provider API keys are AES-256-GCM encrypted with a master key you control. MCP server configs containing secrets get the same treatment.
+---
 
-## Quick start
+## What's different about Loom
 
-### 1. Install
+> If a feature exists in every "AI gateway" repo on GitHub, it's not listed here.
+
+### 🪶 Truly local
+
+One Node process. One SQLite file. **No Redis, no Postgres, no message queue, no background workers.** `data/loom.db` is your installation — copy it to move, back it up to snapshot, delete it to reset. The full state of your gateway is in one file you can `scp` anywhere.
+
+### 🔬 Every request, every byte, recorded
+
+Loom doesn't just count tokens — it captures the **full request and full response** of every call (streamed responses are reassembled from the wire). Search, replay, export. Filter by user, by model, by API key, by status, by free-text in the prompt body. Audit with `sqlite3`, no telemetry pipeline required.
 
 ```bash
-# global install — recommended for self-hosting
+sqlite3 data/loom.db '
+  SELECT user, model, count(*) AS n, avg(total_latency_ms) AS avg_ms
+  FROM generation_logs
+  WHERE created_at > datetime("now", "-7 days")
+  GROUP BY user, model ORDER BY n DESC LIMIT 10;
+'
+```
+
+Most gateways either drop logs or charge per event. Loom files them next to the data they describe.
+
+### 🎛️ Same auth, every modality
+
+Chat, embeddings, rerank, image generation, text-to-speech, transcription — **all behind the same API key, the same per-user caps, the same dashboard**. Want to issue Alice a key that can call `gpt-4o-mini` for chat but only `text-embedding-3-small` for vectors? One row. Want the audit log to span every modality? One table.
+
+Most products do chat-only and tell you to "build your own" for the rest.
+
+### 🔌 MCP as a first-class citizen
+
+Register a Model Context Protocol server once, in the admin UI. From that point on:
+
+- Tools surface automatically in every chat request
+- The model's tool calls are dispatched, executed, and fed back **inside the gateway** — no client-side glue
+- The full tool-call trail is persisted in the same log row as the parent message
+- The playground renders the trail inline with collapsible inspection
+
+Stdio and HTTP transports both work. Encrypted-at-rest configs for secrets in `env` / headers. Auto-evict on transport close. Process cleanup on `SIGINT/SIGTERM`.
+
+### 🧪 A playground that uses your real providers
+
+The chat playground is **not a sandbox**. It hits the same `/api/v1/*` endpoints, the same providers, the same MCP servers, gated by the same auth as your applications. What you see while iterating is exactly what your services will see in production — with side-by-side multi-model streaming, per-conversation settings, conversation branching, and live TTFT / token / latency counters baked in.
+
+### 🛠️ Built to extend
+
+The codebase is structured around the principle that **a new feature should be one file plus one registration line**. Adding a new upstream protocol (Anthropic-native, Bedrock, …) doesn't touch the gateway core — it's one adapter in `lib/server/adapters/<id>.ts` and an import. Same for new modalities, new MCP transports, new CLI subcommands, new admin pages. See [Architecture](docs/architecture.md) for the full picture.
+
+---
+
+## 30-second quickstart
+
+```bash
+# Install
 npm install -g @hspk/loom
 
-# or run on demand without installing
-npx @hspk/loom <command>
-bunx @hspk/loom <command>
-```
-
-### 2. Initialize
-
-```bash
+# Interactive setup — picks providers, generates master_key, writes config
 loom init
-```
 
-A guided wizard asks you:
+# Start the server
+loom start
 
-- Where the config file should live (project / user / custom path)
-- Admin username + password (or reference an env var)
-- Your first provider (OpenAI / Azure OpenAI / Azure AI Foundry / skip)
-- Port and hostname
-- Whether to start the server immediately
-
-It writes an `loom.config.yaml` with a freshly generated `master_key` and `chmod 600` permissions.
-
-Need a non-interactive run for CI / Docker?
-
-```bash
-loom init --yes --force         # writes a default template
-loom init --print > config.yaml # dumps the template to stdout
-```
-
-### 3. Run
-
-```bash
-loom start              # production server
-loom start -p 4000      # custom port
-loom dev                # hot-reloading dev mode
-```
-
-Visit <http://localhost:3000>, log in with the admin credentials, drop in a real API key, and start chatting.
-
-### 4. Call the gateway
-
-```bash
-# Generate an API key in /settings/api-keys, then:
+# Issue a key in /settings/api-keys, then:
 curl http://localhost:3000/api/v1/chat/completions \
   -H "Authorization: Bearer sk-loom-..." \
   -H "Content-Type: application/json" \
-  -d '{
-    "model": "gpt-4o-mini",
-    "messages": [{"role": "user", "content": "Hello"}],
-    "stream": true
-  }'
+  -d '{ "model": "gpt-4o-mini", "messages": [{"role":"user","content":"Hello"}], "stream": true }'
 ```
 
-Or use any OpenAI SDK:
+Any OpenAI SDK works as a drop-in:
 
 ```python
 from openai import OpenAI
 client = OpenAI(base_url="http://localhost:3000/api/v1", api_key="sk-loom-...")
 ```
 
-## Surface area
-
-| Endpoint                     | What it does                                         |
-| ---------------------------- | ---------------------------------------------------- |
-| `POST /api/v1/chat/completions` | Streaming + non-streaming chat                    |
-| `POST /api/v1/embeddings`       | Embedding vectors                                 |
-| `POST /api/v1/rerank`           | Document reranking                                |
-| `POST /api/v1/images/generations` | Image generation                                |
-| `POST /api/v1/audio/speech`     | Text-to-speech                                    |
-| `POST /api/v1/audio/transcriptions` | Speech-to-text                                |
-| `GET  /api/v1/models`           | Live model catalog (discovered from providers)    |
-
-Every request enforces the per-user API key, applies provider/model default params, accepts tool definitions for MCP integration, logs to SQLite, and returns the upstream payload verbatim.
-
-## MCP integration
-
-Loom speaks the Model Context Protocol both as a registry and as a runtime:
-
-1. Register an MCP server (stdio process or HTTP endpoint) in the admin UI
-2. Loom probes the server, caches its tool / resource / prompt catalog, and exposes it inline in every chat request
-3. When the LLM calls a tool, Loom dispatches to the right MCP server, captures the result, feeds it back into the conversation, and persists the entire tool-call trail with the assistant message
-
-Built-in catalog of probe-verified MCP server presets covers filesystem, git, web search, code execution, academic databases (PubMed, Google Scholar, ArXiv), Notion, Qdrant, Playwright, Pandoc, and more.
-
-## Configuration
-
-`loom.config.yaml` is the single source of truth. Search order:
-
-1. `$LOOM_CONFIG_PATH`
-2. `./loom.config.{yaml,yml,json}`
-3. `./.config/loom.{yaml,yml,json}`
-4. `$XDG_CONFIG_HOME/loom.{yaml,yml,json}` (or `~/.config/...`)
-
-```yaml
-master_key: <32-byte hex>     # AES-256-GCM key for provider secrets
-admin:
-  username: admin
-  password: ${LOOM_ADMIN_PASSWORD}
-server:
-  port: 3000
-database:
-  path: ./data/loom.db        # default: <cwd>/data/loom.db
-providers:
-  - name: openai
-    base_url: https://api.openai.com/v1
-    api_key: ${OPENAI_API_KEY}
-```
-
-`${ENV_VAR}` interpolation works in every string field. Environment variables that are already set always win — so production deployments can override anything via secret injection.
-
-## Architecture
-
-Loom is single-binary by design: **Next.js 16 (App Router) + React 19 + Drizzle ORM + better-sqlite3.** No separate backend service.
-
-| Layer            | Lives in                              | Responsibility                                          |
-| ---------------- | ------------------------------------- | ------------------------------------------------------- |
-| HTTP / SSE       | `app/api/**/route.ts`                 | OpenAI-compatible gateway + admin CRUD + Playground BE |
-| Services         | `lib/server/<domain>/`                | Business logic, one folder per domain                  |
-| Adapters         | `lib/server/adapters/`                | Per-protocol-variant URL/header/field rules            |
-| Capabilities     | `lib/server/capabilities/`            | One file per modality (chat, embed, rerank, …)         |
-| Schemas          | `lib/schemas/*.ts`                    | Zod wire types — single source of truth                |
-| MCP runtime      | `lib/server/mcp/`                     | Client pool, tool routing, transport lifecycle         |
-| Storage          | `lib/server/db/`                      | SQLite + WAL + auto-migrations on boot                 |
-| CLI              | `bin/loom.ts` + `lib/cli/`            | citty + @clack/prompts                                 |
-| Web UI           | `app/(dashboard)/**` + `components/**` | shadcn/ui + TanStack Query                           |
-
-Adding a new provider protocol variant = one file under `lib/server/adapters/` + one line of registration. Adding a new modality = one file under `lib/server/capabilities/` + one Route Handler. The core gateway never branches on provider type.
+---
 
 ## Requirements
 
 - **Node.js ≥ 20**
-- A modern OS that can run a native better-sqlite3 binding (Linux / macOS / Windows)
-- An API key from at least one upstream provider
+- An OS that can run a native `better-sqlite3` build (Linux / macOS / Windows)
+- An API key from at least one upstream LLM provider
 
-## Development
+---
+
+## Documentation
+
+Full documentation lives in [`docs/`](docs/) and is published to **<https://hspk.github.io/loom>** (mkdocs material).
+
+- [Getting started](docs/guide/getting-started.md)
+- [Configuration](docs/guide/configuration.md)
+- [Providers](docs/guide/providers.md)
+- [MCP integration](docs/guide/mcp.md)
+- [Playground walkthrough](docs/guide/playground.md)
+- [Request logs](docs/guide/logs.md)
+- [CLI reference](docs/reference/cli.md)
+- [API reference](docs/reference/api.md)
+- [Environment variables](docs/reference/env-vars.md)
+- [Architecture](docs/architecture.md)
+- [Development](docs/development.md)
+
+To build the docs site locally:
 
 ```bash
-git clone https://github.com/HSPK/loom.git
-cd loom
-bun install
-bun run dev      # http://localhost:3000 with hot reload
-bun run build    # production build
-bun run lint
+pip install mkdocs-material
+mkdocs serve
 ```
 
-Database migrations are generated by Drizzle Kit:
+---
 
-```bash
-bunx drizzle-kit generate    # after editing lib/server/db/schema.ts
-```
+## Status
 
-Migrations run automatically on server boot.
+Loom is under active development. The public surface (HTTP API, CLI flags, config file shape) is stabilising but may shift before `1.0`. Pin a specific version in production until then.
 
 ## License
 
-MIT © HSPK and contributors. See [LICENSE](LICENSE).
-
-## Contributing
-
-Issues and pull requests are welcome. Please read the [design principles](.github/copilot-instructions.md) before opening a PR — Loom is built around a "minimum churn for new features" philosophy and most changes can be expressed as one new file + one registration line.
+[MIT](LICENSE) — © HSPK and contributors. Issues and pull requests welcome.

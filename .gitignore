@@ -54,11 +54,4 @@ next-env.d.ts
 /.config/loom.yaml
 /.config/loom.yml
 /.config/loom.json
-# legacy aiui.* names (kept ignored so old dev files don't accidentally commit)
-/aiui.config.yaml
-/aiui.config.yml
-/aiui.config.json
-/.config/aiui.yaml
-/.config/aiui.yml
-/.config/aiui.json
 
