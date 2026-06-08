@@ -2,5 +2,10 @@
 # safety net for things that match an included pattern but shouldn't
 # ship.
 
-# Build cache — huge, never needed at runtime.
+# Dev / build artifacts not needed by `next start`
 .next/cache
+.next/dev
+.next/trace
+.next/diagnostics
+.next/build
+.next/types

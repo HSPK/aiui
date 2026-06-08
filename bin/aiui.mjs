@@ -648,19 +648,19 @@ var init_main = __esm({
     init_start();
     main = defineCommand4({
       meta: {
-        name: "aiui",
+        name: "loom",
         version: "0.1.0",
-        description: "Industrial-grade AI gateway (Next.js + SQLite, OpenAI-compatible)"
+        description: "Weave LLM providers, MCP tools, and a playground into one OpenAI-compatible surface."
       },
       subCommands: {
         start: startCommand,
         dev: devCommand,
         init: initCommand
       },
-      // No subcommand → fall through to `start` so `aiui` and
-      // `aiui -p 4000` Just Work. (citty calls main.run() AFTER the
+      // No subcommand → fall through to `start` so `loom` and
+      // `loom -p 4000` Just Work. (citty calls main.run() AFTER the
       // matched subcommand, so we can't use `run` here — that would
-      // double-execute on every `aiui init` / `aiui dev`.)
+      // double-execute on every `loom init` / `loom dev`.)
       default: "start"
     });
   }

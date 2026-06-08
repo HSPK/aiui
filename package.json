@@ -1,7 +1,7 @@
 {
-  "name": "aiui",
+  "name": "@hspk/loom",
   "version": "0.1.0",
-  "description": "Industrial-grade AI gateway with built-in playground, OpenAI-compatible (Next.js + SQLite).",
+  "description": "A self-hosted dev portal that weaves LLM providers, MCP tools, and a playground into one OpenAI-compatible surface.",
   "keywords": [
     "ai",
     "ai-gateway",
@@ -11,6 +11,7 @@
     "model-context-protocol",
     "llm",
     "playground",
+    "self-hosted",
     "nextjs"
   ],
   "license": "MIT",
@@ -38,6 +39,7 @@
     "LICENSE"
   ],
   "bin": {
+    "loom": "./bin/aiui.mjs",
     "aiui": "./bin/aiui.mjs"
   },
   "scripts": {
