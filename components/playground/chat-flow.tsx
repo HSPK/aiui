@@ -37,7 +37,7 @@ export function ChatFlow({ conversationId }: { conversationId: string }) {
 
     const [selectedGenerationId, setSelectedGenerationId] = React.useState<string | null>(null)
 
-    const { configRef, callbacksRef, historyLimit } = useChatConfig(conversationId)
+    const { configRef, callbacksRef, historyLimit, systemPrompt } = useChatConfig(conversationId)
     const { buildConfigForModel } = useModelConfigs(conversationId)
     const { selectedSiblings, onSelectSibling } = useSiblingNavigation()
 
@@ -91,8 +91,8 @@ export function ChatFlow({ conversationId }: { conversationId: string }) {
     )
 
     const buildPerModelConfig = React.useCallback(
-        (modelId: string) => buildConfigForModel(modelId, historyLimit),
-        [buildConfigForModel, historyLimit]
+        (modelId: string) => buildConfigForModel(modelId, historyLimit, systemPrompt),
+        [buildConfigForModel, historyLimit, systemPrompt]
     )
 
     const onFormSubmit = React.useCallback(

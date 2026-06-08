@@ -13,10 +13,14 @@ import { cn } from "@/lib/utils"
 
 export interface ChatInputConfig {
     historyLimit: number
+    systemPrompt: string
+    singleModelMode: boolean
 }
 
 export interface ChatInputCallbacks {
     onHistoryLimitChange: (value: number) => void
+    onSystemPromptChange: (value: string) => void
+    onSingleModelModeChange: (value: boolean) => void
 }
 
 interface ChatInputProps {
@@ -281,7 +285,11 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
                 <ModelChipsWithConfig
                     conversationId={conversationId}
                     historyLimit={configRef.current?.historyLimit ?? 20}
+                    systemPrompt={configRef.current?.systemPrompt ?? ""}
+                    singleModelMode={configRef.current?.singleModelMode ?? false}
                     onHistoryLimitChange={callbacksRef.current?.onHistoryLimitChange ?? (() => { })}
+                    onSystemPromptChange={callbacksRef.current?.onSystemPromptChange ?? (() => { })}
+                    onSingleModelModeChange={callbacksRef.current?.onSingleModelModeChange ?? (() => { })}
                 />
             </div>
 

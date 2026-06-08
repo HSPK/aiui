@@ -99,6 +99,9 @@ export function ConnectedModelSelector({ conversationId }: { conversationId: str
     const modelCount = usePlaygroundStore(
         (s) => s.settings[conversationId]?.modelIds?.length ?? 0
     )
+    const singleModelMode = usePlaygroundStore(
+        (s) => s.settings[conversationId]?.singleModelMode ?? false
+    )
 
     const { data: modelsData, isLoading } = models.useList(undefined, {
         staleTime: 5 * 60 * 1000,
@@ -196,6 +199,13 @@ export function ConnectedModelSelector({ conversationId }: { conversationId: str
         (name: string) => {
             const current =
                 usePlaygroundStore.getState().getSettings(conversationId).modelIds ?? []
+            // Single-model mode: any pick replaces the selection with
+            // just that one model and closes the dropdown.
+            if (singleModelMode) {
+                updateSettings(conversationId, { modelIds: [name] })
+                setOpen(false)
+                return
+            }
             const isSelected = current.includes(name)
             if (isSelected) {
                 if (current.length > 1) {
@@ -205,7 +215,7 @@ export function ConnectedModelSelector({ conversationId }: { conversationId: str
                 updateSettings(conversationId, { modelIds: [...current, name] })
             }
         },
-        [conversationId, updateSettings]
+        [conversationId, updateSettings, singleModelMode]
     )
 
     const selectedIds = open

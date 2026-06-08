@@ -9,6 +9,8 @@ import { usePlaygroundStore, type ModelConfig } from "@/lib/stores/playground-st
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+import { Textarea } from "@/components/ui/textarea"
 import {
     Popover,
     PopoverContent,
@@ -20,18 +22,26 @@ import { ModelConfigPopover, DEFAULT_MODEL_CONFIG } from "./model-config-popover
 interface ModelChipsWithConfigProps {
     conversationId: string
     historyLimit: number
+    systemPrompt: string
+    singleModelMode: boolean
     onHistoryLimitChange: (value: number) => void
+    onSystemPromptChange: (value: string) => void
+    onSingleModelModeChange: (value: boolean) => void
 }
 
 const EMPTY_MODEL_IDS: string[] = []
 const EMPTY_CONFIGS: Record<string, ModelConfig> = {}
 
-/** Selected models row — each chip opens a per-model config popover.
- *  Global settings popover holds history limit. */
+/** Selected model chips + global settings popover (history limit,
+ *  system prompt, single-model toggle). */
 export const ModelChipsWithConfig = React.memo(function ModelChipsWithConfig({
     conversationId,
     historyLimit,
+    systemPrompt,
+    singleModelMode,
     onHistoryLimitChange,
+    onSystemPromptChange,
+    onSingleModelModeChange,
 }: ModelChipsWithConfigProps) {
     const { data: modelsData } = models.useList(undefined, { staleTime: 5 * 60 * 1000 })
 
@@ -78,12 +88,18 @@ export const ModelChipsWithConfig = React.memo(function ModelChipsWithConfig({
         [conversationId, updateSettings]
     )
 
+    // Local state for the popover inputs so typing doesn't trigger a
+    // store write on every keystroke. Flushed on blur / close.
     const [localHistory, setLocalHistory] = React.useState(historyLimit)
-    const [historyOpen, setHistoryOpen] = React.useState(false)
+    const [localSystem, setLocalSystem] = React.useState(systemPrompt)
+    const [popoverOpen, setPopoverOpen] = React.useState(false)
 
     React.useEffect(() => {
-        if (historyOpen) setLocalHistory(historyLimit)
-    }, [historyOpen, historyLimit])
+        if (popoverOpen) {
+            setLocalHistory(historyLimit)
+            setLocalSystem(systemPrompt)
+        }
+    }, [popoverOpen, historyLimit, systemPrompt])
 
     if (selectedModelIds.length === 0) return null
 
@@ -101,37 +117,54 @@ export const ModelChipsWithConfig = React.memo(function ModelChipsWithConfig({
                 />
             ))}
 
-            <Popover open={historyOpen} onOpenChange={setHistoryOpen}>
+            <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
                 <PopoverTrigger asChild>
                     <Button
                         type="button"
                         variant="ghost"
                         size="icon"
                         className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                        title="Conversation settings"
                     >
                         <Settings2 className="h-3.5 w-3.5" />
                     </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-60 p-3" align="start" side="top">
-                    <div className="space-y-3">
-                        <h4 className="text-xs font-medium text-muted-foreground">Global Settings</h4>
-                        <div className="space-y-2">
-                            <Label className="text-xs">History Limit</Label>
+                <PopoverContent className="w-80 p-3" align="start" side="top">
+                    <div className="space-y-4">
+                        <div className="flex items-center justify-between gap-2">
+                            <Label htmlFor="cs-single" className="text-xs">Single model</Label>
+                            <Switch
+                                id="cs-single"
+                                checked={singleModelMode}
+                                onCheckedChange={onSingleModelModeChange}
+                            />
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <Label htmlFor="cs-history" className="text-xs">History limit</Label>
                             <Input
+                                id="cs-history"
                                 type="number"
-                                min={0}
+                                min={1}
                                 max={100}
                                 value={localHistory}
-                                onChange={(e) => {
-                                    const val = parseInt(e.target.value) || 0
-                                    setLocalHistory(val)
-                                    onHistoryLimitChange(val)
-                                }}
+                                onChange={(e) => setLocalHistory(parseInt(e.target.value) || 1)}
+                                onBlur={() => onHistoryLimitChange(localHistory)}
                                 className="h-8 text-xs"
                             />
-                            <p className="text-[10px] text-muted-foreground">
-                                Max messages to include in context
-                            </p>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <Label htmlFor="cs-system" className="text-xs">System prompt</Label>
+                            <Textarea
+                                id="cs-system"
+                                value={localSystem}
+                                onChange={(e) => setLocalSystem(e.target.value)}
+                                onBlur={() => onSystemPromptChange(localSystem)}
+                                rows={5}
+                                className="text-xs font-mono"
+                                placeholder="(empty = use account default)"
+                            />
                         </div>
                     </div>
                 </PopoverContent>

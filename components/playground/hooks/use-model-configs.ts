@@ -9,7 +9,7 @@ export interface UseModelConfigsReturn {
     getModelConfig: (modelId: string) => ModelConfig
     updateModelConfig: (modelId: string, config: ModelConfig) => void
     removeModelConfig: (modelId: string) => void
-    buildConfigForModel: (modelId: string, globalHistoryLimit?: number) => Record<string, unknown>
+    buildConfigForModel: (modelId: string, globalHistoryLimit?: number, systemPrompt?: string) => Record<string, unknown>
 }
 
 const EMPTY_CONFIGS: Record<string, ModelConfig> = {}
@@ -51,10 +51,15 @@ export function useModelConfigs(conversationId: string): UseModelConfigsReturn {
     )
 
     const buildConfigForModel = React.useCallback(
-        (modelId: string, globalHistoryLimit?: number): Record<string, unknown> => {
+        (modelId: string, globalHistoryLimit?: number, systemPrompt?: string): Record<string, unknown> => {
             const config = getModelConfig(modelId)
             const result: Record<string, unknown> = { stream: true }
-            if (globalHistoryLimit !== undefined) result.conv_history_limit = globalHistoryLimit
+            // history_limit is the canonical field name on the playground
+            // schema; the old `conv_history_limit` was a silent drop (server
+            // only accepts `history_limit` or legacy `conv_histrory_limit`).
+            if (globalHistoryLimit !== undefined) result.history_limit = globalHistoryLimit
+            const trimmedSystem = systemPrompt?.trim()
+            if (trimmedSystem) result.system = trimmedSystem
             if (config.temperature !== undefined) result.temperature = config.temperature
             if (config.maxTokens !== undefined) result.max_tokens = config.maxTokens
             if (config.topP !== undefined) result.top_p = config.topP

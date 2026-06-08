@@ -297,6 +297,53 @@ try {
         Array.isArray(lastChatBody?.messages?.[0]?.content) &&
             lastChatBody?.messages?.[0]?.content?.[1]?.image_url?.url === TINY_PNG,
     );
+
+    // -------------------------------------------------------------------
+    // 5. system prompt + history_limit propagate from playground POST
+    // -------------------------------------------------------------------
+    const conv2 = crypto.randomUUID();
+    // Seed three prior turns so history_limit is observable.
+    for (let i = 0; i < 3; i++) {
+        await fetch(`${BASE}/api/playground/chat`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Cookie: cookie },
+            body: JSON.stringify({
+                conversation_id: conv2,
+                model: "stub-vision",
+                content: `turn ${i}`,
+                stream: false,
+            }),
+        }).then((r) => r.text());
+    }
+
+    lastChatBody = null;
+    const tunedRes = await fetch(`${BASE}/api/playground/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({
+            conversation_id: conv2,
+            model: "stub-vision",
+            content: "next turn",
+            system: "Be concise and helpful.",
+            history_limit: 2,
+            stream: false,
+        }),
+    });
+    expect("tuned POST 200", tunedRes.status === 200);
+    await tunedRes.text();
+
+    const sysMsg = lastChatBody?.messages?.find((m) => m.role === "system");
+    expect(
+        "system prompt becomes first messages[] entry on upstream",
+        sysMsg?.content === "Be concise and helpful." && lastChatBody?.messages?.[0] === sysMsg,
+        `messages[0]=${JSON.stringify(lastChatBody?.messages?.[0])}`,
+    );
+    const nonSystemMsgs = (lastChatBody?.messages ?? []).filter((m) => m.role !== "system");
+    expect(
+        "history_limit caps the non-system messages at 2",
+        nonSystemMsgs.length === 2,
+        `count=${nonSystemMsgs.length}`,
+    );
 } catch (err) {
     console.error("Test threw:", err);
 } finally {

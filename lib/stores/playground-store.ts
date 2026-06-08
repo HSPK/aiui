@@ -28,6 +28,10 @@ export interface ChatSettings {
     modelConfigs?: Record<string, ModelConfig>;
     systemPrompt?: string;
     historyLimit?: number;
+    /** When true, the model picker is single-select: choosing a model
+     *  replaces the current selection and closes the dropdown. When
+     *  false (default), modelIds is a multi-select set. */
+    singleModelMode?: boolean;
 }
 
 export const EMPTY_SETTINGS: ChatSettings = Object.freeze({});
