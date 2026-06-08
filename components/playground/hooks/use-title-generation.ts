@@ -4,6 +4,7 @@ import * as React from "react"
 import { useQueryClient } from "@tanstack/react-query"
 
 import { conversations, gateway, preferences } from "@/lib/api"
+import { extractText } from "@/lib/schemas/content"
 import type { ConversationDTO } from "@/lib/schemas/conversation"
 import type { Paginated } from "@/lib/schemas/common"
 import type { Message } from "@/components/playground/chat/types"
@@ -72,8 +73,8 @@ export function useTitleGeneration({
         gateway
             .generateTitle({
                 model: summaryModel,
-                user: userMsg.content,
-                assistant: assistantMsg.content,
+                user: extractText(userMsg.content),
+                assistant: extractText(assistantMsg.content),
             })
             .then((title) => {
                 conversations.updateTitle(conversationId, title).catch(() => {

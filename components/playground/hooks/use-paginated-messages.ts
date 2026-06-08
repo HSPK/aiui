@@ -13,15 +13,17 @@ interface UsePaginatedMessagesOptions {
 }
 
 /** Convert a server `MessageDTO` to the FE-canonical `Message`. Single
- *  conversion point — wire format `content` is OpenAI-style
- *  `[{type:"text", text:"…"}]` array; hook/store shape is plain string. */
+ *  conversion point — wire format `content` may be a string or an array
+ *  of content parts (OpenAI multimodal shape); we pass either through
+ *  verbatim so multimodal renders and round-trips. */
 export function transformMessage(m: MessageDTO): Message {
     const raw = m.content
-    let content: string
+    let content: Message["content"]
     if (typeof raw === "string") {
         content = raw
-    } else if (Array.isArray(raw) && typeof raw[0]?.text === "string") {
-        content = raw[0].text
+    } else if (Array.isArray(raw)) {
+        // Trust the array — chat-completion content parts.
+        content = raw as Message["content"]
     } else if (raw == null) {
         content = ""
     } else {

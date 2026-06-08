@@ -3,7 +3,8 @@
 import { useEffect, useState, useRef, useCallback, startTransition } from "react"
 import { toast } from "sonner"
 import { useChatStream } from "./chat"
-import type { Message, ChatOptions } from "./chat"
+import type { Message, ChatOptions, MessageContent } from "./chat"
+import { extractText, hasAttachments } from "@/lib/schemas/content"
 
 export { type Message } from "./chat"
 
@@ -63,11 +64,12 @@ export function usePlaygroundChat({
     }, [stopAll])
 
     const handleSubmit = useCallback(async (
-        inputText: string,
+        inputContent: MessageContent,
         options?: ChatOptions
     ) => {
-        const userContent = inputText?.trim()
-        if (!userContent || isLoadingRef.current) return
+        const hasText = extractText(inputContent).trim().length > 0
+        const hasAtt = hasAttachments(inputContent)
+        if ((!hasText && !hasAtt) || isLoadingRef.current) return
 
         const models = options?.models
         if (!models?.length) {
@@ -91,7 +93,7 @@ export function usePlaygroundChat({
         const userMsg: Message = {
             id: userMsgId,
             role: "user",
-            content: userContent,
+            content: inputContent,
             parent_id: userParentId,
             created_at: new Date()
         }
@@ -105,7 +107,7 @@ export function usePlaygroundChat({
         try {
             await streamMultiple({
                 userMessageId: userMsgId,
-                userContent,
+                userContent: inputContent,
                 parentMessageId: userParentId,
                 models,
                 config: options?.config,

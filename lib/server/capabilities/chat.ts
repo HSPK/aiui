@@ -1,5 +1,6 @@
 import "server-only";
 import { registerCapability } from "./index";
+import { extractText, type MessageContent } from "@/lib/schemas/content";
 
 registerCapability({
     id: "chat",
@@ -14,19 +15,11 @@ registerCapability({
         /^(gpt|chatgpt|o\d|claude|gemini|llama|qwen|deepseek-(chat|r1|reasoner|v\d)|mistral|mixtral|grok|yi|baichuan|moonshot|kimi|hunyuan|glm|spark|abab|step|doubao|ernie)/i.test(id) ||
         /-(chat|instruct)\b/i.test(id),
     summarizeInput: (body) => {
-        const messages = (body as { messages?: Array<{ role?: string; content?: unknown }> }).messages;
+        const messages = (body as { messages?: Array<{ role?: string; content?: MessageContent }> }).messages;
         if (!Array.isArray(messages) || messages.length === 0) return "";
         const lastUser = [...messages].reverse().find((m) => m?.role === "user");
         const target = lastUser ?? messages[messages.length - 1];
-        const content = target?.content;
-        let text = "";
-        if (typeof content === "string") text = content;
-        else if (Array.isArray(content)) {
-            text = content
-                .map((p) => (typeof p === "string" ? p : (p as { text?: string })?.text ?? ""))
-                .filter(Boolean)
-                .join(" ");
-        }
-        return text.slice(0, 200);
+        // Text-only summary; attachments don't contribute.
+        return extractText(target?.content ?? "").slice(0, 200);
     },
 });

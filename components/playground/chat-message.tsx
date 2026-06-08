@@ -4,7 +4,7 @@ import { messages } from "@/lib/api";
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Check, Copy, ChevronDown, ChevronRight, ThumbsUp, ThumbsDown, Info, RotateCcw, AlertCircle } from "lucide-react"
+import { Check, Copy, ChevronDown, ChevronRight, ThumbsUp, ThumbsDown, Info, RotateCcw, AlertCircle, FileText } from "lucide-react"
 import { cn, formatMessageTime } from "@/lib/utils"
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -14,6 +14,7 @@ import { ProviderIcon } from "@/components/ProviderIcon"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { preferences } from "@/lib/api"
 import { defaultUserPreferences } from "@/lib/schemas/preferences"
+import { extractText, type ContentPart } from "@/lib/schemas/content"
 import type { Message } from "@/components/playground/chat/types"
 import { useTypewriter } from "@/components/playground/chat/use-typewriter"
 
@@ -188,10 +189,14 @@ export const ChatMessage = React.memo(({
         }
     }, [initialRating])
 
-    // Content is always a string by `Message` contract — wire-format
-    // conversion happens once at the server boundary in
-    // `usePaginatedMessages.transformMessage`, never round-tripped.
-    const displayContent = content ?? ""
+    // Content can be a plain string OR a multimodal ContentPart[]. Split
+    // into the text view (markdown + typewriter operate on text) and the
+    // attachment parts rendered separately above the text.
+    const displayContent = extractText(content ?? "")
+    const attachmentParts = React.useMemo<ContentPart[]>(() => {
+        if (!Array.isArray(content)) return []
+        return content.filter((p) => p.type !== "text") as ContentPart[]
+    }, [content])
 
     const typewriterEnabled = renderMode === "typewriter" && role === "assistant"
     const animatedContent = useTypewriter(displayContent, {
@@ -391,6 +396,9 @@ export const ChatMessage = React.memo(({
                             isUserBubble && "bg-primary text-primary-foreground [&_strong]:text-primary-foreground [&_a]:text-primary-foreground [&_a]:underline",
                             showCursor && visibleContent && "typing-active"
                         )}>
+                            {attachmentParts.length > 0 && (
+                                <AttachmentsView parts={attachmentParts} />
+                            )}
                             <ReactMarkdown
                                 remarkPlugins={[remarkMath, remarkGfm]}
                                 rehypePlugins={[rehypeKatex]}
@@ -503,3 +511,62 @@ export const ChatMessage = React.memo(({
     )
 })
 ChatMessage.displayName = "ChatMessage"
+
+// =============================================================================
+// AttachmentsView — renders image_url and file parts that came with a
+// user message. Read-only (no remove); for editing flow back to the
+// chat input.
+// =============================================================================
+
+function AttachmentsView({ parts }: { parts: ContentPart[] }) {
+    if (parts.length === 0) return null
+    return (
+        <div className="not-prose mb-2 flex flex-wrap gap-2">
+            {parts.map((p, i) => {
+                if (p.type === "image_url") {
+                    return <ImageAttachment key={i} url={p.image_url.url} />
+                }
+                if (p.type === "file") {
+                    return (
+                        <FileAttachment
+                            key={i}
+                            filename={p.file.filename}
+                            dataUrl={p.file.file_data}
+                            mime={p.file.mime_type}
+                        />
+                    )
+                }
+                return null
+            })}
+        </div>
+    )
+}
+
+function ImageAttachment({ url }: { url: string }) {
+    return (
+        <a href={url} target="_blank" rel="noreferrer" className="inline-block">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+                src={url}
+                alt="attachment"
+                className="max-h-64 max-w-xs rounded-md border bg-muted/30 object-contain"
+            />
+        </a>
+    )
+}
+
+function FileAttachment({ filename, dataUrl, mime }: { filename: string; dataUrl: string; mime?: string }) {
+    return (
+        <a
+            href={dataUrl}
+            download={filename}
+            className="inline-flex items-center gap-2 rounded-md border bg-muted/30 px-2 py-1.5 text-xs hover:bg-muted/50 transition-colors max-w-[260px]"
+            title={mime ? `${filename} (${mime})` : filename}
+        >
+            <span className="flex h-7 w-7 items-center justify-center rounded bg-muted shrink-0">
+                <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+            </span>
+            <span className="truncate">{filename}</span>
+        </a>
+    )
+}

@@ -1,7 +1,9 @@
 import { z } from "zod";
+import { messageContentSchema } from "./content";
 
 export const playgroundChatSchema = z.object({
-    message: z.string().min(1, "`message` is required"),
+    /** Multimodal — string for plain text, array for text + attachments. */
+    content: messageContentSchema,
     model: z.string().min(1, "`model` is required"),
     conversation_id: z.string().optional(),
     parent_message_id: z.string().nullable().optional(),

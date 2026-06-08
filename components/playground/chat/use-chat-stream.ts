@@ -3,19 +3,18 @@
 import { useRef, useCallback } from "react"
 import { StreamClient } from "./stream-client"
 import { ThrottledUpdater } from "./throttled-updater"
-import type { Message, StreamConfig } from "./types"
+import type { Message, MessageContent, StreamConfig } from "./types"
 
 type SetMessages = React.Dispatch<React.SetStateAction<Message[]>>
-/** Avoids adding new `any` — borrows the existing one from StreamConfig. */
 type ModelConfig = StreamConfig['additionalConfig']
 
 type StreamParams = {
     userMessageId: string
-    userContent: string
+    userContent: MessageContent
     parentMessageId?: string
     models: string[]
-    config?: ModelConfig // Deprecated: global config fallback
-    getModelConfig?: (modelId: string) => ModelConfig // Per-model config
+    config?: ModelConfig
+    getModelConfig?: (modelId: string) => ModelConfig
 }
 
 export function useChatStream(
@@ -30,10 +29,9 @@ export function useChatStream(
         clientsRef.current = []
     }, [])
 
-    /** Shared by initial fan-out and per-message retry. */
     const streamOne = useCallback(async (params: {
         userMessageId: string
-        userContent: string
+        userContent: MessageContent
         parentMessageId?: string
         assistantMsgId: string
         model: string
@@ -53,7 +51,7 @@ export function useChatStream(
                 {
                     conversationId,
                     model: params.model,
-                    message: params.userContent,
+                    content: params.userContent,
                     userMessageId: params.userMessageId,
                     // Upsert key — same id across retries replaces the row server-side.
                     assistantMessageId: params.assistantMsgId,
@@ -138,7 +136,7 @@ export function useChatStream(
      */
     const retryFailedMessage = useCallback(async (
         failedMessage: Message,
-        userContent: string,
+        userContent: MessageContent,
         getModelConfig?: (modelId: string) => ModelConfig
     ): Promise<void> => {
         if (!failedMessage.model_id || !failedMessage.parent_id) return

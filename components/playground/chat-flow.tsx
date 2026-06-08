@@ -96,9 +96,9 @@ export function ChatFlow({ conversationId }: { conversationId: string }) {
     )
 
     const onFormSubmit = React.useCallback(
-        (inputText: string) => {
+        (input: import("@/lib/schemas/content").MessageContent) => {
             const modelIds = getModelIds()
-            handleSubmit(inputText, {
+            handleSubmit(input, {
                 models: modelIds.length > 0 ? modelIds : ["gpt-3.5-turbo"],
                 getModelConfig: buildPerModelConfig,
                 contextMessageId: contextAssistantIdRef.current,

@@ -6,17 +6,7 @@ import { forwardGeneration, resolveModel } from "../gateway";
 import { forbidden } from "../response";
 import type { SessionUser } from "../auth";
 import type { PlaygroundChatInput } from "@/lib/schemas/playground";
-
-function asContentText(content: unknown): string {
-    if (typeof content === "string") return content;
-    if (Array.isArray(content)) {
-        return content
-            .map((p) => (typeof p === "string" ? p : (p as { text?: string })?.text ?? ""))
-            .filter(Boolean)
-            .join("\n");
-    }
-    return "";
-}
+import { extractText, type MessageContent } from "@/lib/schemas/content";
 
 /**
  * Send a playground chat turn. Persists the user message + assistant
@@ -28,6 +18,16 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
     // Fail fast with a sensible 4xx if the model is bad before we touch the DB.
     await resolveModel(body.model);
 
+    // Normalize the incoming content into a stable array form for
+    // persistence — bare strings become a single text part, arrays stay
+    // verbatim. The wire shape on the upstream call uses the same array
+    // (chat-completions accepts it; the responses variant translates).
+    const userContent: Array<{ type: string; [k: string]: unknown }> =
+        typeof body.content === "string"
+            ? [{ type: "text", text: body.content }]
+            : (body.content as Array<{ type: string; [k: string]: unknown }>);
+    const userText = extractText(body.content);
+
     const conversationId = body.conversation_id ?? randomUUID();
     const now = new Date().toISOString();
 
@@ -38,10 +38,13 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
         db.update(schema.conversations).set({ updatedAt: now })
             .where(eq(schema.conversations.id, conversationId)).run();
     } else {
+        // Title from the user's text portion only — attachments don't
+        // make for good titles.
+        const titleText = (userText.trim() || "New Chat").slice(0, 40);
         db.insert(schema.conversations).values({
             id: conversationId,
             userId: user.id,
-            title: body.message.slice(0, 40) || "New Chat",
+            title: titleText,
             config: { model: body.model },
             createdAt: now,
             updatedAt: now,
@@ -56,7 +59,7 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
             id: userMessageId,
             conversationId,
             role: "user",
-            content: [{ type: "text", text: body.message }],
+            content: userContent,
             parentId: body.parent_message_id ?? null,
             isActive: true,
             createdAt: now,
@@ -77,9 +80,18 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
         .all();
     recent.reverse();
 
-    const messages: Array<{ role: string; content: string }> = [];
+    const messages: Array<{ role: string; content: MessageContent }> = [];
     if (body.system?.trim()) messages.push({ role: "system", content: body.system });
-    for (const m of recent) messages.push({ role: m.role, content: asContentText(m.content) });
+    for (const m of recent) {
+        // Stored content is unknown — pass it through verbatim when it's
+        // already in canonical shape; otherwise fall back to flattening.
+        const c = m.content as MessageContent | unknown;
+        if (typeof c === "string" || Array.isArray(c)) {
+            messages.push({ role: m.role, content: c as MessageContent });
+        } else {
+            messages.push({ role: m.role, content: extractText(c as MessageContent) });
+        }
+    }
 
     const reqBody: Record<string, unknown> = {
         model: body.model,

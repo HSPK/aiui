@@ -26,7 +26,7 @@ export class StreamClient {
                 body: JSON.stringify({
                     conversation_id: config.conversationId,
                     model: config.model,
-                    message: config.message,
+                    content: config.content,
                     user_message_id: config.userMessageId,
                     assistant_message_id: config.assistantMessageId,
                     parent_message_id: config.parentMessageId ?? null,

@@ -1,9 +1,16 @@
 // Chat module types
 
+import type { MessageContent } from "@/lib/schemas/content"
+
+export type { MessageContent } from "@/lib/schemas/content"
+
 export type Message = {
     id: string
     role: "user" | "assistant" | "system"
-    content: string
+    /** Plain string for text-only turns; array for multimodal
+     *  (text + image_url + file parts). Same shape as the wire format,
+     *  so persistence and rendering round-trip without translation. */
+    content: MessageContent
     reasoning_content?: string
     model_id?: string
     parent_id?: string
@@ -21,7 +28,9 @@ export type Message = {
 export type StreamConfig = {
     conversationId?: string
     model: string
-    message: string
+    /** Multimodal — string or content-part array. Forwarded verbatim
+     *  to /api/playground/chat as `content`. */
+    content: MessageContent
     userMessageId: string
     /** Upsert id for the assistant slot (set on retry). */
     assistantMessageId?: string

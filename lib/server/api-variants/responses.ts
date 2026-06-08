@@ -83,7 +83,9 @@ function flattenContent(content: unknown): string {
 
 /** Translate a chat message into a Responses-API input item. The Responses
  *  API expects message items shaped like
- *  `{ type: "message", role, content: [{type: "input_text"|"output_text", text}] }`. */
+ *  `{ type: "message", role, content: [{type: "input_text"|"output_text", text}] }`.
+ *  Multimodal parts map to `input_image` / `input_file` (Responses
+ *  flavour) when present. */
 function chatMessageToInputItem(m: ChatMessage): Record<string, unknown> | null {
     const role = m.role;
     if (!role) return null;
@@ -101,9 +103,28 @@ function chatMessageToInputItem(m: ChatMessage): Record<string, unknown> | null 
         const parts = m.content
             .map((p) => {
                 if (typeof p === "string") return { type: partType, text: p };
-                const obj = p as { type?: string; text?: string; image_url?: unknown };
-                // Multi-modal: image_url passes through with its Responses-equivalent type.
-                if (obj?.image_url) return { type: "input_image", image_url: obj.image_url };
+                const obj = p as {
+                    type?: string;
+                    text?: string;
+                    image_url?: { url?: string; detail?: string } | string;
+                    file?: { filename?: string; file_data?: string; file_id?: string };
+                };
+                // image_url part — keep the same shape (Responses
+                // `input_image` accepts the same object).
+                if (obj?.type === "image_url" || obj?.image_url) {
+                    return { type: "input_image", image_url: obj.image_url };
+                }
+                // file part — chat-completion's
+                // `{type:"file", file:{filename, file_data}}` maps to
+                // Responses' `{type:"input_file", filename, file_data}`.
+                if (obj?.type === "file" || obj?.file) {
+                    const f = obj.file ?? {};
+                    const out: Record<string, unknown> = { type: "input_file" };
+                    if (f.filename) out.filename = f.filename;
+                    if (f.file_data) out.file_data = f.file_data;
+                    if (f.file_id) out.file_id = f.file_id;
+                    return out;
+                }
                 if (typeof obj?.text === "string") return { type: partType, text: obj.text };
                 return null;
             })
