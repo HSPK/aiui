@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { Inbox } from "lucide-react"
 
 import {
     Table,
@@ -107,18 +108,21 @@ export function DataTableCell({
 
 export function DataTableEmpty({
     colSpan,
-    children,
+    children: _children,
 }: {
     colSpan: number
-    children: React.ReactNode
+    children?: React.ReactNode
 }) {
+    void _children
     return (
-        <TableRow>
+        <TableRow className="hover:bg-transparent">
             <TableCell
                 colSpan={colSpan}
-                className="h-full min-h-[200px] text-center text-muted-foreground align-middle"
+                className="h-48 text-center align-middle text-muted-foreground/40"
             >
-                {children}
+                <div className="flex items-center justify-center">
+                    <Inbox className="h-8 w-8" aria-label="empty" />
+                </div>
             </TableCell>
         </TableRow>
     )

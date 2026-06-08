@@ -87,3 +87,38 @@ export type McpHttpConfig = z.infer<typeof mcpHttpConfigSchema>;
 export type McpServerDTO = z.infer<typeof mcpServerDTOSchema>;
 export type McpServerCreateInput = z.infer<typeof mcpServerCreateSchema>;
 export type McpServerUpdateInput = z.infer<typeof mcpServerUpdateSchema>;
+
+// ---- Preset catalogue ----
+
+/** A one-click preset entry — describes a popular MCP server's transport
+ *  + base config. The FE form pre-fills from this; the admin then fills
+ *  in any required secrets / paths and saves. `slots` lists fields the
+ *  preset can't pre-fill (API keys, allowed paths) so the FE can hint at
+ *  them. */
+export const mcpPresetSchema = z.object({
+    id: z.string(),
+    name: z.string(),
+    description: z.string(),
+    transport: mcpTransportSchema,
+    /** Stdio: `{command, args, env, cwd?}`. Http: `{url, headers?}`.
+     *  Placeholder strings for secrets / paths use `<UPPERCASE>` so it's
+     *  obvious in the form which fields still need filling. */
+    config: z.record(z.string(), z.unknown()),
+    /** Slot descriptors — fields the user has to fill in. Keys are
+     *  dot-paths into config (e.g. `env.GITHUB_TOKEN`, `args[2]`). */
+    slots: z
+        .array(
+            z.object({
+                path: z.string(),
+                label: z.string(),
+                /** "secret" hides on display, "path" suggests filesystem
+                 *  browser hint, "text" is plain. */
+                kind: z.enum(["secret", "path", "text"]),
+            }),
+        )
+        .default([]),
+    /** Source URL (npm / GitHub repo) for documentation. */
+    homepage: z.string().optional(),
+});
+
+export type McpPreset = z.infer<typeof mcpPresetSchema>;

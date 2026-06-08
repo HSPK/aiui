@@ -2,10 +2,10 @@
 
 import * as React from "react"
 import { toast } from "sonner"
-import { Loader2 } from "lucide-react"
+import { Loader2, Sparkles } from "lucide-react"
 
 import { mcpServers } from "@/lib/api"
-import type { McpServerCreateInput, McpServerDTO } from "@/lib/schemas/mcp"
+import type { McpPreset, McpServerCreateInput, McpServerDTO } from "@/lib/schemas/mcp"
 
 import {
     Dialog,
@@ -18,6 +18,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
 import {
     Tabs,
     TabsContent,
@@ -71,6 +78,12 @@ export function McpFormDialog({ open, onOpenChange, mode, server }: Props) {
     const [http, setHttp] = React.useState<HttpFields>(DEFAULT_HTTP)
     const [enabled, setEnabled] = React.useState(true)
     const [error, setError] = React.useState<string | null>(null)
+    const [presetId, setPresetId] = React.useState<string>("")
+
+    // Only show the preset picker in create mode — editing an existing
+    // row would clobber whatever the admin has already configured.
+    const { data: presets } = mcpServers.usePresets()
+    const showPresets = mode === "create" && !server
 
     React.useEffect(() => {
         if (!open) return
@@ -95,7 +108,27 @@ export function McpFormDialog({ open, onOpenChange, mode, server }: Props) {
             setEnabled(true)
         }
         setError(null)
+        setPresetId("")
     }, [open, server])
+
+    /** Hydrate the form from a preset. Wipes the prior config so the
+     *  admin doesn't end up with a frankenstein merge. Slot values
+     *  (`<UPPERCASE>` placeholders) are kept verbatim — the admin then
+     *  edits them in the env / args textareas. */
+    const applyPreset = React.useCallback((p: McpPreset) => {
+        setName(p.name)
+        setDescription(p.description ?? "")
+        setTransport(p.transport)
+        setEnabled(true)
+        setError(null)
+        if (p.transport === "stdio") {
+            setStdio(parseStdioConfig(p.config ?? {}))
+            setHttp(DEFAULT_HTTP)
+        } else {
+            setHttp(parseHttpConfig(p.config ?? {}))
+            setStdio(DEFAULT_STDIO)
+        }
+    }, [])
 
     const createMutation = mcpServers.useCreate({
         onSuccess: () => {
@@ -173,6 +206,39 @@ export function McpFormDialog({ open, onOpenChange, mode, server }: Props) {
                     <DialogTitle>{title}</DialogTitle>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
+                    {showPresets && (presets ?? []).length > 0 && (
+                        <div className="rounded-md border border-dashed bg-muted/30 p-2">
+                            <div className="flex items-center gap-2">
+                                <Sparkles className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                                <Label className="text-xs shrink-0">Import preset</Label>
+                                <Select
+                                    value={presetId}
+                                    onValueChange={(id) => {
+                                        setPresetId(id)
+                                        const p = (presets ?? []).find((x) => x.id === id)
+                                        if (p) applyPreset(p)
+                                    }}
+                                >
+                                    <SelectTrigger className="h-8 text-xs flex-1">
+                                        <SelectValue placeholder="Pick a well-known MCP server…" />
+                                    </SelectTrigger>
+                                    <SelectContent className="max-h-[360px]">
+                                        {(presets ?? []).map((p) => (
+                                            <SelectItem key={p.id} value={p.id}>
+                                                <div className="flex items-baseline gap-2">
+                                                    <span className="font-mono text-xs">{p.name}</span>
+                                                    <span className="text-[10px] text-muted-foreground truncate">
+                                                        {p.description}
+                                                    </span>
+                                                </div>
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+                    )}
+
                     <Field label="Name" htmlFor="m-name">
                         <Input
                             id="m-name"
