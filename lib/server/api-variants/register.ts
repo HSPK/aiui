@@ -11,3 +11,4 @@ import "./images-generations";
 import "./audio-speech";
 import "./audio-transcriptions";
 import "./rerank";
+import "./videos";

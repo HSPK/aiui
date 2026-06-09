@@ -21,6 +21,7 @@ export const upstreamApiIdSchema = z.enum([
     "audio.speech",       // POST /v1/audio/speech
     "audio.transcriptions", // POST /v1/audio/transcriptions
     "rerank",             // POST /v1/rerank (Cohere/Jina shape)
+    "videos",             // POST /v1/videos (OpenAI Sora) — multipart, async polling
 ]);
 export type UpstreamApiId = z.infer<typeof upstreamApiIdSchema>;
 

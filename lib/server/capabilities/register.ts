@@ -13,3 +13,4 @@ import "./image";
 import "./audio-speech";
 import "./audio-transcription";
 import "./rerank";
+import "./video";

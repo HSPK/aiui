@@ -113,6 +113,7 @@ export const openaiAdapter: ProviderAdapter = {
                 : cap === "audio.speech" ? "audio.speech"
                 : cap === "audio.transcription" ? "audio.transcriptions"
                 : cap === "rerank" ? "rerank"
+                : cap === "video" ? "videos"
                 : "chat.completions",
             ],
             capabilities: {
