@@ -1,7 +1,7 @@
 "use client"
 
-import { logs } from "@/lib/api";
-import { useState } from "react"
+import { logs } from "@/lib/api/logs";
+import { useMemo, useState } from "react"
 import { capabilityLabel } from "@/components/providers/capability-label"
 
 import {
@@ -25,6 +25,7 @@ import { useTheme } from "next-themes"
 
 import { CopyButton, JsonActionButtons, sanitizeForJsonView } from "./_parts/json-tools"
 import { ContentViewer } from "./_parts/content-viewer"
+import { ImageGallery } from "./_parts/image-gallery"
 import { RequestPreview } from "./_parts/message-preview"
 
 const ReactJson = dynamic(() => import('react-json-view'), { ssr: false })
@@ -38,6 +39,20 @@ interface LogDetailsProps {
 export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
     const { resolvedTheme } = useTheme()
     const { data: log, isLoading } = logs.useGet(open ? logId : null)
+
+    // Memoise the sanitized JSON projections — for legacy logs that
+    // pre-date the server-side `sanitizeBodyForLog`, these blobs can
+    // be multi-MB and the recursive walk is non-trivial. Without the
+    // memo every render of the Sheet (parent state churn, theme
+    // change, …) re-walks both trees.
+    const sanitizedKwargs = useMemo(
+        () => sanitizeForJsonView(log?.generation_kwargs || {}) as object,
+        [log?.generation_kwargs],
+    )
+    const sanitizedGeneration = useMemo(
+        () => sanitizeForJsonView(log?.generation || {}) as object,
+        [log?.generation],
+    )
 
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>
@@ -147,11 +162,19 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                                 fallback={log.input_summary ?? (typeof log.input === "string" ? log.input : null)}
                                 colorClass="bg-blue-500"
                             />
-                            <ContentViewer
-                                title="Completion"
-                                content={log.output}
-                                colorClass="bg-green-500"
-                            />
+                            {log.capability === "image" ? (
+                                <ImageGallery
+                                    title="Generated images"
+                                    colorClass="bg-pink-500"
+                                    generation={log.generation}
+                                />
+                            ) : (
+                                <ContentViewer
+                                    title="Completion"
+                                    content={log.output}
+                                    colorClass="bg-green-500"
+                                />
+                            )}
                         </div>
 
                         {/* Technical Details */}
@@ -171,7 +194,7 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                                 <AccordionContent className="pb-4">
                                     <div className="p-4 bg-muted/30 rounded-md border text-sm">
                                         <ReactJson
-                                            src={sanitizeForJsonView(log.generation_kwargs || {}) as object}
+                                            src={sanitizedKwargs}
                                             name={false}
                                             collapsed={false}
                                             displayDataTypes={false}
@@ -198,7 +221,7 @@ export function LogDetails({ logId, open, onOpenChange }: LogDetailsProps) {
                                 <AccordionContent className="pb-4">
                                     <div className="p-4 bg-muted/30 rounded-md border text-sm">
                                         <ReactJson
-                                            src={sanitizeForJsonView(log?.generation || {}) as object}
+                                            src={sanitizedGeneration}
                                             name={false}
                                             displayDataTypes={false}
                                             enableClipboard={false}

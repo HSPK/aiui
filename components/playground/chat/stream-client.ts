@@ -15,8 +15,7 @@ export class StreamClient {
         this.abortController = new AbortController()
         const parser = new SSEParser()
 
-        let accumulatedContent = ""
-        let accumulatedReasoning = ""
+        let reader: ReadableStreamDefaultReader<Uint8Array> | null = null
 
         try {
             const res = await fetch(`${API_BASE}/playground/chat`, {
@@ -54,7 +53,7 @@ export class StreamClient {
                 throw new Error("No response body")
             }
 
-            const reader = res.body.getReader()
+            reader = res.body.getReader()
             const decoder = new TextDecoder()
 
             while (true) {
@@ -67,9 +66,11 @@ export class StreamClient {
                 for (const event of events) {
                     switch (event.type) {
                         case 'content':
-                            accumulatedContent += event.content
-                            accumulatedReasoning += event.reasoning || ""
-                            callbacks.onContent(accumulatedContent, accumulatedReasoning)
+                            // Emit deltas directly — the downstream
+                            // ThrottledUpdater accumulates. Sending the
+                            // accumulated string here used to force a
+                            // re-slice in the hook (double accumulation).
+                            callbacks.onContent(event.content, event.reasoning || "")
                             break
 
                         case 'message_meta':
@@ -116,6 +117,16 @@ export class StreamClient {
             }
             callbacks.onError(err)
             throw err
+        } finally {
+            // Always release the stream lock so the underlying network
+            // connection can be reclaimed. Without this, a mid-stream
+            // throw (e.g. `case 'error'`) leaves the reader locked and
+            // the connection held until GC. cancel() is fire-and-forget;
+            // ignore errors (already-closed / aborted streams reject).
+            if (reader) {
+                try { await reader.cancel() } catch { /* ignore */ }
+                try { reader.releaseLock() } catch { /* ignore */ }
+            }
         }
     }
 

@@ -14,6 +14,11 @@ import { cn } from "@/lib/utils"
 import { logMarkdownComponents } from "./markdown"
 import { CopyButton } from "./json-tools"
 
+// Stable plugin arrays — see chat-message.tsx for the same rationale.
+// react-markdown rebuilds its unified processor when these change.
+const REMARK_PLUGINS = [remarkMath, remarkGfm] as const
+const REHYPE_PLUGINS = [rehypeKatex] as const
+
 /**
  * Renders one log column (Prompt / Completion / Reasoning) with
  * a Preview ↔ Raw toggle. Empty content shows a dashed-border
@@ -79,8 +84,8 @@ export function ContentViewer({
                     {viewMode === "preview" ? (
                         <div className="prose prose-sm dark:prose-invert max-w-none break-words leading-relaxed">
                             <ReactMarkdown
-                                remarkPlugins={[remarkMath, remarkGfm]}
-                                rehypePlugins={[rehypeKatex]}
+                                remarkPlugins={REMARK_PLUGINS as never}
+                                rehypePlugins={REHYPE_PLUGINS as never}
                                 components={logMarkdownComponents}
                             >
                                 {content}

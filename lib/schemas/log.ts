@@ -32,7 +32,6 @@ export const logListItemDTOSchema = z.object({
 export const logDetailDTOSchema = logListItemDTOSchema.extend({
     /** Full request body as it was sent upstream — JSON value. */
     input: z.unknown(),
-    content: z.unknown().nullable(),
     generation_kwargs: z.record(z.string(), z.unknown()),
     generation: z.record(z.string(), z.unknown()).nullable(),
     conversation_id: z.string().optional(),

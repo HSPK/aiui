@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Check, Copy, Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -14,11 +14,18 @@ import { cn } from "@/lib/utils"
 
 export function CopyButton({ text, className }: { text: string; className?: string }) {
     const [copied, setCopied] = useState(false)
+    // Hold the "Copied!" → "Copy" timer in a ref so unmount can clear
+    // it and we never queue a setState on a removed component.
+    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    useEffect(() => () => {
+        if (timerRef.current) clearTimeout(timerRef.current)
+    }, [])
     const handleCopy = async () => {
         try {
             await navigator.clipboard.writeText(text)
+            if (timerRef.current) clearTimeout(timerRef.current)
             setCopied(true)
-            setTimeout(() => setCopied(false), 2000)
+            timerRef.current = setTimeout(() => setCopied(false), 2000)
         } catch (err) {
             console.error("Failed to copy:", err)
         }
@@ -47,14 +54,19 @@ export function JsonActionButtons({
 }) {
     const jsonString = useMemo(() => JSON.stringify(data, null, 2), [data])
     const [copied, setCopied] = useState(false)
+    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    useEffect(() => () => {
+        if (timerRef.current) clearTimeout(timerRef.current)
+    }, [])
 
     const handleCopy = async (e: React.MouseEvent) => {
         e.stopPropagation()
         onClick?.(e)
         try {
             await navigator.clipboard.writeText(jsonString)
+            if (timerRef.current) clearTimeout(timerRef.current)
             setCopied(true)
-            setTimeout(() => setCopied(false), 2000)
+            timerRef.current = setTimeout(() => setCopied(false), 2000)
         } catch (err) {
             console.error("Failed to copy:", err)
         }
@@ -100,9 +112,22 @@ export function JsonActionButtons({
     )
 }
 
-/** Deep-walk a value and replace `data:<mime>;base64,…` strings longer
- *  than `limit` with a placeholder `[base64 image|file, N KB]`. Keeps
- *  the JSON viewer usable when the request body is multimodal. */
+/** Heuristic: a base64 blob is a long contiguous run of base64-safe
+ *  chars with no whitespace. We catch unprefixed b64 strings (image
+ *  generation `data[].b64_json`, audio `audio.data`, …) on top of the
+ *  `data:`-URI case so pre-feature logs render cleanly too. */
+function isBareBase64Blob(s: string): boolean {
+    if (s.length < 4096) return false
+    // First 96 chars should be base64-only; cheap probe instead of
+    // walking the entire string.
+    return /^[A-Za-z0-9+/=]+$/.test(s.slice(0, 96))
+}
+
+/** Deep-walk a value and replace base64 image / file blobs with a
+ *  short placeholder (`[base64 image png, ~N KB]`). Keeps the JSON
+ *  viewer usable for multimodal request bodies and pre-artifact log
+ *  responses. Post-artifact image logs already have b64 stripped
+ *  server-side so this is a no-op for those. */
 export function sanitizeForJsonView(value: unknown, limit = 200): unknown {
     if (typeof value === "string") {
         if (value.startsWith("data:") && value.length > limit) {
@@ -110,6 +135,10 @@ export function sanitizeForJsonView(value: unknown, limit = 200): unknown {
             const kb = Math.round(value.length / 1024)
             const kind = mime.startsWith("image/") ? "image" : "file"
             return `[base64 ${kind} ${mime}, ~${kb} KB]`
+        }
+        if (isBareBase64Blob(value)) {
+            const kb = Math.round(value.length / 1024)
+            return `[base64 blob, ~${kb} KB]`
         }
         return value
     }

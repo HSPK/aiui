@@ -9,6 +9,8 @@ export class ThrottledUpdater {
     private lastUpdateTime = 0
     private isFirstUpdate = true
     private pendingRAF: number | null = null
+    private pendingTimeout: ReturnType<typeof setTimeout> | null = null
+    private toolCallsDirty = false
 
     private accumulatedContent = ""
     private accumulatedReasoning = ""
@@ -63,6 +65,7 @@ export class ThrottledUpdater {
         if (delta.name) slot.name = delta.name
         if (delta.argumentsDelta) slot.arguments += delta.argumentsDelta
         this.toolCallsByIndex.set(delta.index, slot)
+        this.toolCallsDirty = true
         this.scheduleUpdate()
     }
 
@@ -91,6 +94,7 @@ export class ThrottledUpdater {
                 source: result.source,
             }
         }
+        this.toolCallsDirty = true
         this.scheduleUpdate()
     }
 
@@ -124,6 +128,10 @@ export class ThrottledUpdater {
             cancelAnimationFrame(this.pendingRAF)
             this.pendingRAF = null
         }
+        if (this.pendingTimeout !== null) {
+            clearTimeout(this.pendingTimeout)
+            this.pendingTimeout = null
+        }
         this.pendingUpdate = false
     }
 
@@ -143,10 +151,14 @@ export class ThrottledUpdater {
                 this.doUpdate(false)
             })
         } else {
-            // Schedule for later using RAF chain
+            // Schedule for later using RAF chain. Track the timeout id
+            // so dispose() can clear it — otherwise an unmount during
+            // the throttle window leaks the timer (the inner guard
+            // bails on dispose, but the timer itself still fires).
             this.pendingUpdate = true
             const delay = this.minInterval - timeSinceLastUpdate
-            setTimeout(() => {
+            this.pendingTimeout = setTimeout(() => {
+                this.pendingTimeout = null
                 if (!this.pendingUpdate) return
                 this.pendingRAF = requestAnimationFrame(() => {
                     this.pendingRAF = null
@@ -166,11 +178,15 @@ export class ThrottledUpdater {
             reasoning_content: this.accumulatedReasoning || undefined,
         }
 
-        if (this.toolCallsByIndex.size > 0) {
+        // Only re-build the tool_calls payload when something actually
+        // changed — most stream deltas are text-only so this skips an
+        // Array.from + sort + map per call.
+        if (this.toolCallsDirty && this.toolCallsByIndex.size > 0) {
             update.tool_calls = Array.from(this.toolCallsByIndex.values())
                 .sort((a, b) => a.index - b.index)
                 // eslint-disable-next-line @typescript-eslint/no-unused-vars
                 .map(({ index: _idx, ...rest }) => rest)
+            this.toolCallsDirty = false
         }
 
         if (includeIds) {

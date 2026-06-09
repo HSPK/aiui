@@ -74,7 +74,10 @@ export type ToolEvent =
     | { type: "tool_error"; message: string; serverName?: string }
 
 export type StreamCallbacks = {
-    onContent: (content: string, reasoning: string) => void
+    /** Per-chunk content delta — caller accumulates if needed.
+     *  Receiving accumulated strings here used to force a re-slice
+     *  downstream (double accumulation), so we just emit deltas. */
+    onContent: (deltaContent: string, deltaReasoning: string) => void
     onToolEvent: (event: ToolEvent) => void
     onComplete: (messageId: string | null, generationId: string | null) => void
     onError: (error: Error) => void

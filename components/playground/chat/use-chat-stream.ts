@@ -1,6 +1,6 @@
 // Chat Stream Hook - orchestrates streaming for multiple models
 
-import { useRef, useCallback } from "react"
+import { useRef, useCallback, useEffect } from "react"
 import { toast } from "sonner"
 import { StreamClient } from "./stream-client"
 import { ThrottledUpdater } from "./throttled-updater"
@@ -29,6 +29,19 @@ export function useChatStream(
     const stopAll = useCallback(() => {
         clientsRef.current.forEach(client => client.abort())
         clientsRef.current = []
+    }, [])
+
+    // Abort any in-flight streams on unmount. The chat page mounts
+    // <ChatFlow key={convId}> so switching conversations unmounts
+    // the entire subtree — without this, the previous conversation's
+    // streams keep running, holding HTTP connections + uselessly
+    // setState'ing into an unmounted component until the upstream
+    // completes (potentially minutes for tool-loop chats).
+    useEffect(() => {
+        return () => {
+            clientsRef.current.forEach(client => client.abort())
+            clientsRef.current = []
+        }
     }, [])
 
     const streamOne = useCallback(async (params: {
@@ -63,11 +76,10 @@ export function useChatStream(
                     additionalConfig: params.modelConfig
                 },
                 {
-                    onContent: (content, reasoning) => {
-                        updater.appendContent(
-                            content.slice(updater.getContent().content.length),
-                            reasoning.slice(updater.getContent().reasoning.length)
-                        )
+                    onContent: (deltaContent, deltaReasoning) => {
+                        // stream-client now emits deltas directly; just
+                        // forward them to the updater which accumulates.
+                        updater.appendContent(deltaContent, deltaReasoning)
                     },
                     onToolEvent: (ev) => {
                         if (ev.type === "tool_call_delta") {

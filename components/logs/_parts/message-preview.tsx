@@ -24,6 +24,10 @@ import { logMarkdownComponents } from "./markdown"
 import { ContentViewer } from "./content-viewer"
 import { CopyButton, sanitizeForJsonView } from "./json-tools"
 
+// Stable plugin arrays — see chat-message.tsx for rationale.
+const REMARK_PLUGINS = [remarkMath, remarkGfm] as const
+const REHYPE_PLUGINS = [rehypeKatex] as const
+
 /**
  * Chat-shaped prompt panel renderer. Walks the stored `messages[]`
  * array, rendering text + image previews + file chips per role, plus
@@ -175,8 +179,8 @@ function MessageRow({ message }: { message: ChatMessage }) {
             {text && !isToolRole && (
                 <div className="prose prose-sm dark:prose-invert max-w-none break-words leading-relaxed">
                     <ReactMarkdown
-                        remarkPlugins={[remarkMath, remarkGfm]}
-                        rehypePlugins={[rehypeKatex]}
+                        remarkPlugins={REMARK_PLUGINS as never}
+                        rehypePlugins={REHYPE_PLUGINS as never}
                         components={logMarkdownComponents}
                     >
                         {text}
@@ -246,6 +250,7 @@ function ImagePreview({ url }: { url: string }) {
                 src={url}
                 alt="image attachment"
                 className="max-h-32 max-w-[12rem] rounded border bg-muted/30 object-contain group-hover:opacity-80 transition"
+                loading="lazy"
             />
         </a>
     )
