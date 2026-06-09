@@ -85,7 +85,7 @@ try {
     const got1 = await get1.json();
     expect("GET ok (defaults)", get1.ok && got1.code === 0);
     expect("default_model is empty string", got1.data.default_model === "");
-    expect("user_name default = 'User'", got1.data.user_name === "User");
+    expect("user_name default = empty string", got1.data.user_name === "");
     expect("default_history_limit default = 10", got1.data.default_history_limit === 10);
 
     // PATCH — partial update

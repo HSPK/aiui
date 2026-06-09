@@ -389,14 +389,14 @@ try {
     });
     const detail = (await detailRes.json()).data;
     expect(
-        "persisted log content is chat-completion shaped",
-        detail?.content?.object === "chat.completion",
-        `object=${detail?.content?.object}`,
+        "persisted log generation is chat-completion shaped",
+        detail?.generation?.object === "chat.completion",
+        `object=${detail?.generation?.object}`,
     );
     expect(
-        "log content has accumulated chat message text",
-        detail?.content?.choices?.[0]?.message?.content === "hello responses",
-        detail?.content?.choices?.[0]?.message?.content,
+        "log generation has accumulated chat message text",
+        detail?.generation?.choices?.[0]?.message?.content === "hello responses",
+        detail?.generation?.choices?.[0]?.message?.content,
     );
 
     // -------------------------------------------------------------------
