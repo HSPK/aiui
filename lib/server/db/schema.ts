@@ -104,13 +104,16 @@ export const conversations = sqliteTable("conversations", {
     title: text("title").notNull().default("New Chat"),
     config: text("config", { mode: "json" }).$type<Record<string, unknown>>().default({}),
     groupId: text("group_id"),
-    searchText: text("search_text"),
     isDeleted: integer("is_deleted", { mode: "boolean" }).notNull().default(false),
     createdAt: text("created_at").notNull().default(now),
     updatedAt: text("updated_at").notNull().default(now),
 }, (t) => [
     index("conversations_user_idx").on(t.userId),
     index("conversations_updated_idx").on(t.updatedAt),
+    // Hot path: list endpoint filters by (user_id, is_deleted) and
+    // sorts by updated_at DESC. The composite index turns the scan
+    // into an index seek + ordered range read.
+    index("conversations_user_active_updated_idx").on(t.userId, t.isDeleted, t.updatedAt),
 ]);
 
 export const messages = sqliteTable("messages", {
@@ -122,7 +125,6 @@ export const messages = sqliteTable("messages", {
     modelId: text("model_id"),
     generationId: text("generation_id"),
     parentId: text("parent_id"),
-    meta: text("meta", { mode: "json" }).$type<Record<string, unknown> | null>(),
     isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
     rating: text("rating", { enum: ["up", "down"] }),
     feedback: text("feedback"),
@@ -132,6 +134,9 @@ export const messages = sqliteTable("messages", {
 }, (t) => [
     index("messages_conv_idx").on(t.conversationId),
     index("messages_parent_idx").on(t.parentId),
+    // Hot path: paginated message reads filter by (conversation_id,
+    // is_active) and sort by created_at — same scan-vs-seek win.
+    index("messages_conv_active_created_idx").on(t.conversationId, t.isActive, t.createdAt),
 ]);
 
 export const generationLogs = sqliteTable("generation_logs", {
@@ -144,7 +149,6 @@ export const generationLogs = sqliteTable("generation_logs", {
     inputSummary: text("input_summary"),
     output: text("output"),
     reason: text("reason"),
-    content: text("content", { mode: "json" }).$type<unknown>(),
     generationKwargs: text("generation_kwargs", { mode: "json" }).$type<Record<string, unknown>>().default({}),
     generation: text("generation", { mode: "json" }).$type<Record<string, unknown> | null>(),
     conversationId: text("conversation_id"),
@@ -163,6 +167,13 @@ export const generationLogs = sqliteTable("generation_logs", {
     index("gen_logs_status_idx").on(t.status),
     index("gen_logs_capability_idx").on(t.capability),
     index("gen_logs_created_idx").on(t.createdAt),
+    // Hot path: the logs list page filters by (user_id?, capability?,
+    // status?) + is_deleted=false and always sorts by created_at DESC.
+    // Composite indexes covering the common filter prefixes turn the
+    // scan-and-sort into a single index range read.
+    index("gen_logs_user_deleted_created_idx").on(t.userId, t.isDeleted, t.createdAt),
+    index("gen_logs_cap_deleted_created_idx").on(t.capability, t.isDeleted, t.createdAt),
+    index("gen_logs_status_deleted_created_idx").on(t.status, t.isDeleted, t.createdAt),
 ]);
 
 export const userPreferences = sqliteTable("user_preferences", {

@@ -18,7 +18,20 @@ function createDb() {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 
     const sqlite = new Database(DB_PATH);
+    // WAL: many concurrent readers + one writer never block on each other.
+    // NORMAL: fsync only on checkpoint (safe under WAL — at most lose the
+    // last checkpoint window on power-loss, never corrupt the DB).
+    // busy_timeout: wait up to 5s on a busy lock instead of throwing
+    // SQLITE_BUSY immediately — the common case is a checkpoint window.
+    // cache_size = -64000: 64 MB page cache (negative = KiB). Default
+    // is ~2 MB which is far too small for the log/messages tables.
+    // temp_store MEMORY: keep aggregate / sort scratch in RAM, not on
+    // disk — stats endpoint does several GROUP BYs that benefit.
     sqlite.pragma("journal_mode = WAL");
+    sqlite.pragma("synchronous = NORMAL");
+    sqlite.pragma("busy_timeout = 5000");
+    sqlite.pragma("cache_size = -64000");
+    sqlite.pragma("temp_store = MEMORY");
     sqlite.pragma("foreign_keys = ON");
 
     const db = drizzle(sqlite, { schema });

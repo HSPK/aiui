@@ -106,6 +106,34 @@
       "when": 1780906533105,
       "tag": "0014_daily_warhawk",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1780980940929,
+      "tag": "0015_typical_nightmare",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1780987556144,
+      "tag": "0016_melted_warpath",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1780991180144,
+      "tag": "0017_dapper_kabuki",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1780991701367,
+      "tag": "0018_melted_lily_hollister",
+      "breakpoints": true
     }
   ]
 }
