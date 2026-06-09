@@ -2,7 +2,7 @@
 
 import { useShallow } from "zustand/react/shallow"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
-import { preferences } from "@/lib/api"
+import { preferences } from "@/lib/api/preferences"
 import { defaultUserPreferences } from "@/lib/schemas/preferences"
 
 /** Derived per-conversation config — falls through to account defaults

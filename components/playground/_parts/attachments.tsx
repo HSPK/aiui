@@ -42,6 +42,7 @@ function ImageAttachment({ url }: { url: string }) {
                 src={url}
                 alt="attachment"
                 className="max-h-64 max-w-xs rounded-md border bg-muted/30 object-contain"
+                loading="lazy"
             />
         </a>
     )

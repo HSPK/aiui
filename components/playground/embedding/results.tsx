@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ArrowUpDown, Trophy } from "lucide-react"
+import { ArrowUpDown, LayoutGrid, Table as TableIcon, Trophy } from "lucide-react"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type {
@@ -11,39 +11,88 @@ import type {
 import { cn } from "@/lib/utils"
 
 /**
- * Results panel for the embedding playground: per-model card grid,
- * sortable by score / input order. Lives in its own file so the
- * visualisation can evolve (heatmap mode, t-SNE, etc.) without
- * touching the form orchestrator.
+ * Results panel for the embedding playground.
+ *
+ * Two views, toggled by the user:
+ *   - **Cards** (default for 1 model): per-model ranked list with
+ *     score bars — best at spot-checking a single model.
+ *   - **Table** (default for 2+ models): docs × models matrix with
+ *     per-cell heatmap shading — best at comparing models head-to-head.
+ *
+ * Table also highlights the winning model per row with a trophy.
  */
 
 export type SortMode = "score" | "original"
+export type ViewMode = "cards" | "table"
 
 export function ResultsSection({ result }: { result: PlaygroundEmbeddingResult }) {
     const [sort, setSort] = React.useState<SortMode>("score")
+    const [view, setView] = React.useState<ViewMode>(
+        result.results.length >= 2 ? "table" : "cards",
+    )
 
     return (
         <div className="space-y-3">
-            <div className="flex items-center justify-between">
-                <div className="text-xs text-muted-foreground">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="text-xs text-muted-foreground min-w-0">
                     Query: <span className="text-foreground font-medium">{result.query}</span>{" "}
                     · {result.documents.length} document{result.documents.length === 1 ? "" : "s"}
                     {" · "}
                     {result.results.length} model{result.results.length === 1 ? "" : "s"}
                 </div>
-                <SortToggle value={sort} onChange={setSort} />
+                <div className="flex items-center gap-2 shrink-0">
+                    <ViewToggle value={view} onChange={setView} />
+                    <SortToggle value={sort} onChange={setSort} />
+                </div>
             </div>
 
-            <div className="grid gap-3 lg:grid-cols-2">
-                {result.results.map((r) => (
-                    <ModelResultCard
-                        key={r.model}
-                        result={r}
-                        documents={result.documents}
-                        sort={sort}
-                    />
-                ))}
-            </div>
+            {view === "table" ? (
+                <ComparisonTable result={result} sort={sort} />
+            ) : (
+                <div className="grid gap-3 lg:grid-cols-2">
+                    {result.results.map((r) => (
+                        <ModelResultCard
+                            key={r.model}
+                            result={r}
+                            documents={result.documents}
+                            sort={sort}
+                        />
+                    ))}
+                </div>
+            )}
+        </div>
+    )
+}
+
+function ViewToggle({ value, onChange }: { value: ViewMode; onChange: (v: ViewMode) => void }) {
+    return (
+        <div className="inline-flex rounded-md border bg-card p-0.5 text-[11px]">
+            <button
+                type="button"
+                onClick={() => onChange("table")}
+                className={cn(
+                    "inline-flex items-center gap-1 rounded-sm px-2 py-1 transition-colors",
+                    value === "table"
+                        ? "bg-secondary text-secondary-foreground font-medium"
+                        : "text-muted-foreground hover:text-foreground",
+                )}
+            >
+                <TableIcon className="h-3 w-3" />
+                Table
+            </button>
+            <button
+                type="button"
+                onClick={() => onChange("cards")}
+                className={cn(
+                    "inline-flex items-center gap-1 rounded-sm px-2 py-1 transition-colors",
+                    value === "cards"
+                        ? "bg-secondary text-secondary-foreground font-medium"
+                        : "text-muted-foreground hover:text-foreground",
+                )}
+            >
+                <LayoutGrid className="h-3 w-3" />
+                Cards
+            </button>
         </div>
     )
 }
@@ -77,6 +126,149 @@ function SortToggle({ value, onChange }: { value: SortMode; onChange: (v: SortMo
                 Input order
             </button>
         </div>
+    )
+}
+
+function ComparisonTable({
+    result,
+    sort,
+}: {
+    result: PlaygroundEmbeddingResult
+    sort: SortMode
+}) {
+    // Build the docId → modelId → score lookup.
+    const modelMeta = React.useMemo(
+        () => result.results.map((r) => ({
+            model: r.model,
+            error: r.error,
+            dim: r.dim,
+            tokens: r.prompt_tokens,
+            elapsed: r.elapsed_ms,
+        })),
+        [result.results],
+    )
+
+    // For each document, the score from each model. Order by max-score
+    // (best overall doc first) when sort=score; otherwise input order.
+    const rows = React.useMemo(() => {
+        const arr = result.documents.map((doc, i) => {
+            const scores = result.results.map((r) => r.scores?.find((s) => s.index === i)?.score ?? null)
+            const validScores = scores.filter((s): s is number => s !== null)
+            const maxScore = validScores.length > 0 ? Math.max(...validScores) : -Infinity
+            const minScore = validScores.length > 0 ? Math.min(...validScores) : Infinity
+            const winner = scores.reduce<{ idx: number; score: number } | null>(
+                (best, s, idx) => (s != null && (!best || s > best.score) ? { idx, score: s } : best),
+                null,
+            )
+            return { index: i, doc, scores, maxScore, minScore, winner }
+        })
+        if (sort === "score") arr.sort((a, b) => b.maxScore - a.maxScore)
+        return arr
+    }, [result.documents, result.results, sort])
+
+    // Color scale uses each column's own min/max so models with
+    // different absolute ranges (normalised vs not) all visualise
+    // meaningfully against themselves.
+    const perColRange = React.useMemo(() => {
+        return modelMeta.map((_, j) => {
+            const colScores = rows.map((r) => r.scores[j]).filter((s): s is number => s != null)
+            if (colScores.length === 0) return { min: 0, max: 1 }
+            return { min: Math.min(...colScores), max: Math.max(...colScores) }
+        })
+    }, [rows, modelMeta])
+
+    return (
+        <Card>
+            <CardContent className="p-0 overflow-x-auto">
+                <table className="w-full text-xs">
+                    <thead>
+                        <tr className="border-b">
+                            <th className="text-left font-medium text-muted-foreground px-3 py-2 sticky left-0 bg-background">
+                                Document
+                            </th>
+                            {modelMeta.map((m) => (
+                                <th
+                                    key={m.model}
+                                    className="text-left font-medium px-3 py-2 min-w-[140px]"
+                                    title={`${m.dim ?? "?"} dim · ${m.tokens ?? "—"} tokens · ${m.elapsed}ms`}
+                                >
+                                    <div className="font-mono truncate max-w-[180px]" title={m.model}>
+                                        {m.model}
+                                    </div>
+                                    <div className="text-[10px] text-muted-foreground/70 font-normal tabular-nums">
+                                        {m.dim ?? "?"}d · {m.elapsed}ms
+                                    </div>
+                                </th>
+                            ))}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.map((r) => (
+                            <tr key={r.index} className="border-b last:border-b-0 hover:bg-muted/20">
+                                <td className="px-3 py-2 align-top sticky left-0 bg-background group-hover:bg-muted/20">
+                                    <div className="flex items-start gap-1.5">
+                                        <span className="text-muted-foreground/60 shrink-0 tabular-nums text-[10px] mt-0.5">
+                                            #{r.index + 1}
+                                        </span>
+                                        <span
+                                            className="max-w-[300px] truncate text-foreground"
+                                            title={r.doc}
+                                        >
+                                            {r.doc}
+                                        </span>
+                                    </div>
+                                </td>
+                                {r.scores.map((score, j) => {
+                                    const range = perColRange[j]
+                                    const norm = score == null
+                                        ? 0
+                                        : (score - range.min) / Math.max(0.001, range.max - range.min)
+                                    const isWinner = r.winner?.idx === j
+                                    if (score == null) {
+                                        return (
+                                            <td key={j} className="px-3 py-2 text-muted-foreground/40 italic">
+                                                —
+                                            </td>
+                                        )
+                                    }
+                                    return (
+                                        <td
+                                            key={j}
+                                            className="px-3 py-2 relative tabular-nums"
+                                            title={score.toString()}
+                                        >
+                                            <div
+                                                aria-hidden
+                                                className="absolute inset-y-0 left-0 bg-primary/15"
+                                                style={{ width: `${Math.max(2, norm * 100)}%` }}
+                                            />
+                                            <div className={cn(
+                                                "relative inline-flex items-center gap-1 font-medium",
+                                                isWinner && "text-primary",
+                                            )}>
+                                                {isWinner && <Trophy className="h-3 w-3" />}
+                                                {score.toFixed(3)}
+                                            </div>
+                                        </td>
+                                    )
+                                })}
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+                {modelMeta.some((m) => m.error) && (
+                    <div className="border-t bg-destructive/5 px-3 py-2 text-[11px] text-destructive space-y-1">
+                        {modelMeta
+                            .filter((m) => m.error)
+                            .map((m) => (
+                                <div key={m.model} className="font-mono">
+                                    <span className="font-semibold">{m.model}:</span> {m.error}
+                                </div>
+                            ))}
+                    </div>
+                )}
+            </CardContent>
+        </Card>
     )
 }
 

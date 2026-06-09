@@ -15,10 +15,12 @@ import {
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
-import { conversations } from "@/lib/api"
+import { conversations } from "@/lib/api/conversations"
 import type { ConversationDTO } from "@/lib/schemas/conversation"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
+import { useModalityStore } from "@/lib/stores/modality-store"
 import { Button } from "@/components/ui/button"
+import { Sheet, SheetContent } from "@/components/ui/sheet"
 import {
     Tooltip,
     TooltipContent,
@@ -96,6 +98,8 @@ export function ConversationSidebar() {
 
     const [searchInput, setSearchInput] = React.useState("")
     const [debouncedSearch, setDebouncedSearch] = React.useState("")
+    const mobileSheetOpen = useModalityStore((s) => s.chatHistoryOpen)
+    const setMobileSheetOpen = useModalityStore((s) => s.setChatHistoryOpen)
     React.useEffect(() => {
         const t = setTimeout(() => setDebouncedSearch(searchInput.trim()), 220)
         return () => clearTimeout(t)
@@ -169,168 +173,234 @@ export function ConversationSidebar() {
     }, [router, activeId])
 
     const handleRename = React.useCallback(
-        (id: string, newTitle: string) => renameMutation.mutate({ id, data: { title: newTitle } }),
+        (conv: ConversationDTO, newTitle: string) =>
+            renameMutation.mutate({ id: conv.id, data: { title: newTitle } }),
         [renameMutation]
     )
 
-    if (!isOpen) {
+    const handleDeleteRequest = React.useCallback((conv: ConversationDTO) => {
+        setPendingDelete(conv)
+    }, [])
+
+    // Desktop list never closes the sheet; mobile passes a closer.
+    // Stable identity per shell instance so memoised rows skip
+    // re-renders when only sibling state (search/pagination) changes.
+    const handleOpenDesktop = React.useCallback(
+        (conv: ConversationDTO) => handleOpen(conv),
+        [handleOpen],
+    )
+    const handleOpenMobile = React.useCallback(
+        (conv: ConversationDTO) => {
+            handleOpen(conv)
+            setMobileSheetOpen(false)
+        },
+        [handleOpen, setMobileSheetOpen],
+    )
+
+    const trimmedSearch = debouncedSearch
+    const showEmpty = !isLoading && convList.length === 0
+
+    // Shared body: search + new + collapse header + scrollable list.
+    // Used by both the desktop inline sidebar and the mobile Sheet so
+    // styling stays in lock-step and there's a single source of truth.
+    // Plain render function (NOT a React component) — defining a
+    // closure-captured component inside the parent would mount a new
+    // identity on every parent render, throwing away its subtree state.
+    function renderBody({ onItemPick, compact }: { onItemPick?: () => void; compact: boolean }) {
+        const onOpenForRows = onItemPick ? handleOpenMobile : handleOpenDesktop
         return (
-            <div className="flex h-full w-11 flex-col items-center border-r bg-background py-2 shrink-0">
+        <>
+            <div className={cn(
+                "flex items-center gap-1 border-b shrink-0",
+                compact ? "px-2 h-10" : "px-3 h-14",
+            )}>
+                <div className="relative flex-1 min-w-0">
+                    <Search className={cn(
+                        "absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground/70 pointer-events-none",
+                        compact ? "h-3.5 w-3.5" : "h-4 w-4",
+                    )} />
+                    <input
+                        type="text"
+                        value={searchInput}
+                        onChange={(e) => setSearchInput(e.target.value)}
+                        placeholder="Search chats"
+                        className={cn(
+                            "w-full rounded-md border bg-background pl-7 pr-7",
+                            "placeholder:text-muted-foreground/60",
+                            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:border-ring",
+                            compact ? "h-7 text-xs" : "h-10 text-sm",
+                        )}
+                    />
+                    {searchInput && (
+                        <button
+                            type="button"
+                            onClick={() => setSearchInput("")}
+                            className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-muted text-muted-foreground"
+                            title="Clear search"
+                        >
+                            <X className={compact ? "h-3 w-3" : "h-4 w-4"} />
+                        </button>
+                    )}
+                </div>
                 <TooltipProvider delayDuration={300}>
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={toggleSidebar}
-                                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                onClick={() => {
+                                    handleNewChat()
+                                    onItemPick?.()
+                                }}
+                                className={cn(
+                                    "shrink-0 text-muted-foreground hover:text-foreground",
+                                    compact ? "h-7 w-7" : "h-10 w-10",
+                                )}
+                                disabled={!activeId}
                             >
-                                <PanelLeft className="h-4 w-4" />
+                                <SquarePen className={compact ? "h-3.5 w-3.5" : "h-5 w-5"} />
                             </Button>
                         </TooltipTrigger>
-                        <TooltipContent side="right">Show history</TooltipContent>
+                        <TooltipContent side="bottom">New chat</TooltipContent>
                     </Tooltip>
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => router.push("/playground/chat")}
-                                className="h-8 w-8 mt-1 text-muted-foreground hover:text-foreground"
-                            >
-                                <SquarePen className="h-4 w-4" />
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="right">New chat</TooltipContent>
-                    </Tooltip>
-                </TooltipProvider>
-            </div>
-        )
-    }
-
-    const trimmedSearch = debouncedSearch
-    const showEmpty = !isLoading && convList.length === 0
-
-    return (
-        <>
-            <div className="flex h-full w-72 flex-col border-r bg-background shrink-0">
-                {/* Header: search + new + collapse */}
-                <div className="flex items-center gap-1.5 border-b px-2 py-2 shrink-0">
-                    <div className="relative flex-1 min-w-0">
-                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/70 pointer-events-none" />
-                        <input
-                            type="text"
-                            value={searchInput}
-                            onChange={(e) => setSearchInput(e.target.value)}
-                            placeholder="Search chats"
-                            className={cn(
-                                "h-8 w-full rounded-md border bg-background pl-7 pr-7 text-sm",
-                                "placeholder:text-muted-foreground/60",
-                                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:border-ring"
-                            )}
-                        />
-                        {searchInput && (
-                            <button
-                                type="button"
-                                onClick={() => setSearchInput("")}
-                                className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-muted text-muted-foreground"
-                                title="Clear search"
-                            >
-                                <X className="h-3.5 w-3.5" />
-                            </button>
-                        )}
-                    </div>
-                    <TooltipProvider delayDuration={300}>
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={handleNewChat}
-                                    className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
-                                    disabled={!activeId}
-                                >
-                                    <SquarePen className="h-4 w-4" />
-                                </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom">New chat</TooltipContent>
-                        </Tooltip>
+                    {compact && (
                         <Tooltip>
                             <TooltipTrigger asChild>
                                 <Button
                                     variant="ghost"
                                     size="icon"
                                     onClick={toggleSidebar}
-                                    className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
                                 >
-                                    <PanelLeftClose className="h-4 w-4" />
+                                    <PanelLeftClose className="h-3.5 w-3.5" />
                                 </Button>
                             </TooltipTrigger>
                             <TooltipContent side="bottom">Collapse</TooltipContent>
                         </Tooltip>
-                    </TooltipProvider>
-                </div>
+                    )}
+                </TooltipProvider>
+            </div>
 
-                {/* List */}
-                <div className="flex-1 overflow-y-auto">
-                    {isLoading ? (
-                        <ListSkeleton />
-                    ) : showEmpty ? (
-                        <div className="px-3 py-12 text-center">
-                            <MessageSquare className="h-8 w-8 mx-auto mb-3 text-muted-foreground/30" />
-                            {trimmedSearch ? (
-                                <>
-                                    <p className="text-sm text-muted-foreground">No matches</p>
-                                    <p className="text-xs text-muted-foreground/70 mt-1">
-                                        No chats match &ldquo;{trimmedSearch}&rdquo;
-                                    </p>
-                                </>
-                            ) : (
-                                <>
-                                    <p className="text-sm text-muted-foreground">No conversations</p>
-                                    <p className="text-xs text-muted-foreground/70 mt-1">
-                                        <button
-                                            type="button"
-                                            onClick={() => router.push("/playground/chat")}
-                                            className="text-primary hover:underline"
-                                        >
-                                            Start a new chat
-                                        </button>{" "}
-                                        to see it here
-                                    </p>
-                                </>
+            <div className="flex-1 overflow-y-auto">
+                {isLoading ? (
+                    <ListSkeleton />
+                ) : showEmpty ? (
+                    <div className={compact ? "px-3 py-12 text-center" : "px-4 py-16 text-center"}>
+                        <MessageSquare className={cn(
+                            "mx-auto mb-3 text-muted-foreground/30",
+                            compact ? "h-8 w-8" : "h-10 w-10",
+                        )} />
+                        {trimmedSearch ? (
+                            <>
+                                <p className={cn("text-muted-foreground mb-1", compact ? "text-sm" : "text-base")}>
+                                    No matches
+                                </p>
+                                <p className={cn("text-muted-foreground/70", compact ? "text-xs" : "text-sm")}>
+                                    Try a different search term
+                                </p>
+                            </>
+                        ) : (
+                            <>
+                                <p className={cn("text-muted-foreground mb-1", compact ? "text-sm" : "text-base")}>
+                                    No conversations yet
+                                </p>
+                                <p className={cn("text-muted-foreground/70", compact ? "text-xs" : "text-sm")}>
+                                    Start a new chat to see it here
+                                </p>
+                            </>
+                        )}
+                    </div>
+                ) : (
+                    <div className={compact ? "px-2 py-2 space-y-3" : "px-3 py-3 space-y-4"}>
+                        {groups.map((group) => (
+                            <div key={group.key}>
+                                <div className={cn(
+                                    "pb-1 font-semibold uppercase tracking-wider text-muted-foreground/60",
+                                    compact ? "px-2 text-[10px]" : "px-3 text-[11px]",
+                                )}>
+                                    {group.label}
+                                </div>
+                                <div className="space-y-0.5">
+                                    {group.items.map((conv) => (
+                                        <ConversationItem
+                                            key={conv.id}
+                                            conv={conv}
+                                            isSelected={activeId === conv.id}
+                                            onOpen={onOpenForRows}
+                                            onDeleteRequest={handleDeleteRequest}
+                                            onRename={handleRename}
+                                            compact={compact}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                        <div ref={observerTarget} className="h-6 flex justify-center items-center">
+                            {isFetchingNextPage && (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
                             )}
                         </div>
-                    ) : (
-                        <div className="px-2 py-2 space-y-3">
-                            {groups.map((group) => (
-                                <div key={group.key}>
-                                    <div className="px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-                                        {group.label}
-                                    </div>
-                                    <div className="space-y-0.5">
-                                        {group.items.map((conv) => (
-                                            <ConversationItem
-                                                key={conv.id}
-                                                conv={conv}
-                                                isSelected={activeId === conv.id}
-                                                onOpen={() => handleOpen(conv)}
-                                                onDeleteRequest={() => setPendingDelete(conv)}
-                                                onRename={(t) => handleRename(conv.id, t)}
-                                            />
-                                        ))}
-                                    </div>
-                                </div>
-                            ))}
-                            <div ref={observerTarget} className="h-6 flex justify-center items-center">
-                                {isFetchingNextPage && (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                                )}
-                            </div>
-                        </div>
-                    )}
-                </div>
+                    </div>
+                )}
             </div>
+        </>
+        )
+    }
+
+    return (
+        <>
+            {/* Desktop: inline sidebar, w-72 or w-10 collapsed rail */}
+            {isOpen ? (
+                <div className="hidden md:flex h-full w-72 flex-col border-r bg-background shrink-0">
+                    {renderBody({ compact: true })}
+                </div>
+            ) : (
+                <div className="hidden md:flex h-full w-10 flex-col items-center border-r bg-background py-1 shrink-0">
+                    <TooltipProvider delayDuration={300}>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={toggleSidebar}
+                                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                >
+                                    <PanelLeft className="h-3.5 w-3.5" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="right">Show history</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => router.push("/playground/chat")}
+                                    className="h-7 w-7 mt-0.5 text-muted-foreground hover:text-foreground"
+                                >
+                                    <SquarePen className="h-3.5 w-3.5" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="right">New chat</TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                </div>
+            )}
+
+            {/* Mobile: Sheet with bigger touch targets. The trigger
+             *  lives in the topbar (rendered contextually when on the
+             *  chat page) — a floating button on top of the messages
+             *  felt visually out of place. Sheet open state lives in
+             *  the modality store so the topbar can flip it. */}
+            <Sheet open={mobileSheetOpen} onOpenChange={setMobileSheetOpen}>
+                <SheetContent
+                    side="left"
+                    hideClose
+                    className="w-80 max-w-[85vw] p-0 flex flex-col"
+                >
+                    {renderBody({ compact: false, onItemPick: () => setMobileSheetOpen(false) })}
+                </SheetContent>
+            </Sheet>
 
             <ConfirmDialog
                 open={!!pendingDelete}

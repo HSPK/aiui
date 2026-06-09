@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useQueryClient } from "@tanstack/react-query"
 
-import { conversations } from "@/lib/api"
+import { conversations } from "@/lib/api/conversations"
 import type { Message } from "@/components/playground/chat/types"
 
 interface UseMessageSyncOptions {

@@ -6,9 +6,10 @@ import type { ModelDTO } from "@/lib/schemas/model"
 export const CAPABILITY_HEURISTIC: Record<string, RegExp> = {
     embedding: /\b(embedding|embed|bge|gte|m3e|e5|cohere-embed|text-embedding|nomic-embed|jina-embed)/i,
     rerank: /\b(rerank|reranker|cohere-rerank)/i,
-    image: /\b(dall-?e|stable-?diffusion|sd-?xl|flux|midjourney|imagen|kandinsky)/i,
+    image: /\b(dall-?e|stable-?diffusion|sd-?xl|flux|midjourney|imagen|kandinsky|gpt-image)/i,
     "audio.speech": /\b(tts|speech|polly|elevenlabs|cosyvoice)/i,
     "audio.transcription": /\b(whisper|stt|transcribe|asr|conformer|paraformer)/i,
+    video: /\b(sora|veo|kling|runway|gen-?\d|luma|pika|wan|hailuo|cogvideo|mochi|hunyuan-video)/i,
     chat: /\b(gpt|claude|gemini|llama|mistral|qwen|deepseek|yi-|glm-|moonshot|kimi|phi-?|grok|hunyuan|step-)/i,
 }
 

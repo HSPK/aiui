@@ -1,11 +1,10 @@
 "use client"
 
 import * as React from "react"
+import dynamic from "next/dynamic"
 import { Check, Copy } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter"
-import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism"
 import { useTheme } from "next-themes"
 
 interface CodeBlockProps {
@@ -14,8 +13,36 @@ interface CodeBlockProps {
     className?: string
 }
 
-// Create theme variants
-const createCustomTheme = (baseTheme: any, isDark: boolean) => ({
+/**
+ * react-syntax-highlighter + the Prism theme bundles add ~120 KB
+ * gzipped — pulling that into every chat render is wasteful when many
+ * messages have no code blocks at all. Dynamic-loading the heavy
+ * highlighter keeps the chat bundle lean; until the chunk arrives we
+ * show a plain monospace fallback so the message is readable
+ * immediately, then upgrade in-place.
+ */
+const SyntaxHighlighter = dynamic(
+    () => import("react-syntax-highlighter").then((m) => m.Prism),
+    { ssr: false, loading: () => null },
+)
+
+// Theme tokens loaded the same way so the initial paint doesn't pay
+// for them either.
+function useHighlighterTheme(isDark: boolean): Record<string, React.CSSProperties> | null {
+    const [theme, setTheme] = React.useState<Record<string, React.CSSProperties> | null>(null)
+    React.useEffect(() => {
+        let cancelled = false
+        import("react-syntax-highlighter/dist/esm/styles/prism").then((m) => {
+            if (cancelled) return
+            const base = isDark ? m.oneDark : m.oneLight
+            setTheme(createCustomTheme(base))
+        })
+        return () => { cancelled = true }
+    }, [isDark])
+    return theme
+}
+
+const createCustomTheme = (baseTheme: Record<string, React.CSSProperties>): Record<string, React.CSSProperties> => ({
     ...baseTheme,
     'pre[class*="language-"]': {
         ...baseTheme['pre[class*="language-"]'],
@@ -37,16 +64,18 @@ export const CodeBlock = React.memo(({ language, value, className }: CodeBlockPr
     const [copied, setCopied] = React.useState(false)
     const { resolvedTheme } = useTheme()
     const isDark = resolvedTheme === "dark"
+    const customTheme = useHighlighterTheme(isDark)
 
-    const customTheme = React.useMemo(() =>
-        createCustomTheme(isDark ? oneDark : oneLight, isDark),
-        [isDark]
-    )
+    const copyTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+    React.useEffect(() => () => {
+        if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+    }, [])
 
     const onCopy = React.useCallback(() => {
         navigator.clipboard.writeText(value)
+        if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
         setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
+        copyTimerRef.current = setTimeout(() => setCopied(false), 2000)
     }, [value])
 
     // Normalize language name
@@ -113,28 +142,35 @@ export const CodeBlock = React.memo(({ language, value, className }: CodeBlockPr
                     )}
                 </Button>
             </div>
-            {/* Code content */}
+            {/* Code content — show plain monospace until the highlighter
+                chunk lands, then swap in the colourised render. */}
             <div className="overflow-x-auto scrollbar-thin p-3 w-full min-w-0">
-                <SyntaxHighlighter
-                    language={normalizedLanguage}
-                    style={customTheme}
-                    customStyle={{
-                        margin: 0,
-                        padding: 0,
-                        background: 'transparent',
-                        fontSize: '12px',
-                    }}
-                    codeTagProps={{
-                        style: {
+                {customTheme ? (
+                    <SyntaxHighlighter
+                        language={normalizedLanguage}
+                        style={customTheme}
+                        customStyle={{
+                            margin: 0,
+                            padding: 0,
+                            background: 'transparent',
                             fontSize: '12px',
-                            fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
-                        }
-                    }}
-                    wrapLines={false}
-                    wrapLongLines={false}
-                >
-                    {value}
-                </SyntaxHighlighter>
+                        }}
+                        codeTagProps={{
+                            style: {
+                                fontSize: '12px',
+                                fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+                            }
+                        }}
+                        wrapLines={false}
+                        wrapLongLines={false}
+                    >
+                        {value}
+                    </SyntaxHighlighter>
+                ) : (
+                    <pre className="m-0 p-0 text-[12px] leading-[1.5] font-mono text-foreground/85">
+                        <code>{value}</code>
+                    </pre>
+                )}
             </div>
         </div>
     )

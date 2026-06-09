@@ -1,6 +1,6 @@
 "use client"
 
-import { messages } from "@/lib/api";
+import { messages } from "@/lib/api/conversations";
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -12,7 +12,7 @@ import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { ProviderIcon } from "@/components/ProviderIcon"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { preferences } from "@/lib/api"
+import { preferences } from "@/lib/api/preferences"
 import { defaultUserPreferences } from "@/lib/schemas/preferences"
 import { extractText, type ContentPart } from "@/lib/schemas/content"
 import type { Message, AssembledToolCall } from "@/components/playground/chat/types"
@@ -22,6 +22,16 @@ import { markdownComponents } from "./_parts/chat-markdown"
 import { AttachmentsView } from "./_parts/attachments"
 
 import { toast } from "sonner"
+
+// Module-level stable arrays for ReactMarkdown plugins. Without
+// these, `remarkPlugins={[...]}` and `rehypePlugins={[...]}` would
+// allocate fresh arrays on every render, and react-markdown would
+// rebuild its unified processor (re-parse the whole document) on
+// each stream delta. The plugins themselves never change at
+// runtime, so freeze them once.
+const REMARK_PLUGINS = [remarkMath, remarkGfm] as const
+const REHYPE_PLUGINS = [rehypeKatex] as const
+
 interface ChatMessageProps {
     message: Message
     provider?: string
@@ -61,11 +71,21 @@ export const ChatMessage = React.memo(({
     const { role, content, reasoning_content, model_id, created_at, generation_id, rating: initialRating, error: messageError } = message
     const messageDate = created_at
     const [copied, setCopied] = React.useState(false)
+    // Tracks the 2s "Copied!" → "Copy" timer so we can clear it on
+    // unmount and avoid a setState-after-unmount no-op when the user
+    // navigates away mid-toast.
+    const copyTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+    React.useEffect(() => () => {
+        if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+    }, [])
     const [isReasoningOpen, setIsReasoningOpen] = React.useState(true)
     const [rating, setRating] = React.useState<"up" | "down" | "none">(
         (initialRating as "up" | "down" | "none") || "none"
     )
     const [isRating, setIsRating] = React.useState(false)
+    // Mobile-only: per-message actions toolbar visibility. Desktop
+    // uses hover (no state needed). Tap the bubble body to toggle.
+    const [showActionsMobile, setShowActionsMobile] = React.useState(false)
     const { data: userPrefsServer } = preferences.useGet()
     const userPrefs = userPrefsServer ?? defaultUserPreferences
     const userName = userPrefs.user_name?.trim() || "User"
@@ -125,8 +145,9 @@ export const ChatMessage = React.memo(({
 
     const onCopy = React.useCallback(() => {
         navigator.clipboard.writeText(displayContent)
+        if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
         setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
+        copyTimerRef.current = setTimeout(() => setCopied(false), 2000)
     }, [displayContent])
 
     const handleRate = React.useCallback(async (newRating: "up" | "down") => {
@@ -169,9 +190,37 @@ export const ChatMessage = React.memo(({
     const showHeader = isPlain
     const isUserBubble = isBubble && role === "user"
 
+    // Mobile tap-to-toggle handler — ignore taps that originated from
+    // interactive elements (links, buttons, code blocks with own copy
+    // affordance, native-text-selection long-press doesn't fire onClick).
+    const handleBubbleTap = React.useCallback(
+        (e: React.MouseEvent) => {
+            // Sibling-pick uses onSelect; preserve that contract.
+            if (onSelect) {
+                onSelect()
+                if (isSibling) return
+            }
+            const target = e.target as HTMLElement
+            if (target.closest("a, button, input, select, textarea, pre, code, [role=button], summary")) {
+                return
+            }
+            setShowActionsMobile((v) => !v)
+        },
+        [onSelect, isSibling],
+    )
+
+    // Container opacity contract:
+    //   - Mobile: hidden by default; visible when user taps the bubble
+    //     OR when there's a sticky rating (so a rated message keeps
+    //     showing its filled thumb).
+    //   - Desktop: hover-driven via `group-hover`; sticky rating forces
+    //     always-visible there too.
+    const hasStickyAction = rating === "up" || rating === "down"
+    const actionsVisible = showActionsMobile || hasStickyAction
+
     return (
         <div
-            onClick={onSelect}
+            onClick={handleBubbleTap}
             className={cn(
                 "group relative transition-all m-0.5",
                 !isSibling && "flex w-full",
@@ -256,8 +305,8 @@ export const ChatMessage = React.memo(({
                                 "text-xs text-muted-foreground"
                             )}>
                                 <ReactMarkdown
-                                    remarkPlugins={[remarkMath, remarkGfm]}
-                                    rehypePlugins={[rehypeKatex]}
+                                    remarkPlugins={REMARK_PLUGINS as never}
+                                    rehypePlugins={REHYPE_PLUGINS as never}
                                     components={markdownComponents}
                                 >
                                     {reasoning_content}
@@ -314,8 +363,8 @@ export const ChatMessage = React.memo(({
                                 <AttachmentsView parts={attachmentParts} />
                             )}
                             <ReactMarkdown
-                                remarkPlugins={[remarkMath, remarkGfm]}
-                                rehypePlugins={[rehypeKatex]}
+                                remarkPlugins={REMARK_PLUGINS as never}
+                                rehypePlugins={REHYPE_PLUGINS as never}
                                 components={markdownComponents}
                             >
                                 {visibleContent}
@@ -331,21 +380,29 @@ export const ChatMessage = React.memo(({
                 </div>
             </div>
 
-            {/* Message Actions - position depends on layout variant. Hidden for
-                empty user bubbles (no rating/regenerate to surface). */}
-            <div className={cn(
-                "absolute bottom-0 translate-y-1/2 flex items-center gap-1.5 z-10",
-                isSibling && "left-4",
-                !isSibling && isPlain && "left-[4.5rem]",
-                !isSibling && isMinimal && "left-4",
-                !isSibling && isBubble && !isUserBubble && "left-4",
-                !isSibling && isUserBubble && "right-4"
-            )}>
-                {/* Copy button - always visible on mobile, hover on desktop */}
+            {/* Message Actions. Mobile: hidden by default, tap the
+                bubble to reveal (long-press text still triggers native
+                copy/select). Desktop: hover reveals via `group-hover`.
+                Sticky rated state overrides — the rating thumb keeps
+                showing so users can tell at a glance what they voted. */}
+            <div
+                className={cn(
+                    "absolute bottom-0 translate-y-1/2 flex items-center gap-1.5 z-10 transition-opacity duration-150",
+                    isSibling && "left-4",
+                    !isSibling && isPlain && "left-[4.5rem]",
+                    !isSibling && isMinimal && "left-4",
+                    !isSibling && isBubble && !isUserBubble && "left-4",
+                    !isSibling && isUserBubble && "right-4",
+                    actionsVisible
+                        ? "opacity-100 pointer-events-auto"
+                        : "opacity-0 pointer-events-none sm:pointer-events-auto sm:group-hover:opacity-100",
+                )}
+                onClick={(e) => e.stopPropagation()}
+            >
                 <Button
                     variant="ghost"
                     size="sm"
-                    className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground bg-background border border-border/50 shadow-sm rounded-md hover:bg-muted/50 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150"
+                    className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground bg-background border border-border/50 shadow-sm rounded-md hover:bg-muted/50"
                     onClick={onCopy}
                     title="Copy"
                 >
@@ -363,10 +420,10 @@ export const ChatMessage = React.memo(({
                             variant="ghost"
                             size="sm"
                             className={cn(
-                                "h-6 w-6 p-0 rounded-md border border-border/50 shadow-sm transition-opacity duration-150",
+                                "h-6 w-6 p-0 rounded-md border border-border/50 shadow-sm",
                                 rating === "up"
-                                    ? "text-green-500 bg-green-500/10 hover:bg-green-500/20 border-green-500/30 opacity-100"
-                                    : "text-muted-foreground hover:text-foreground bg-background hover:bg-muted/50 sm:opacity-0 sm:group-hover:opacity-100"
+                                    ? "text-green-500 bg-green-500/10 hover:bg-green-500/20 border-green-500/30"
+                                    : "text-muted-foreground hover:text-foreground bg-background hover:bg-muted/50"
                             )}
                             onClick={() => handleRate("up")}
                             disabled={isRating}
@@ -378,10 +435,10 @@ export const ChatMessage = React.memo(({
                             variant="ghost"
                             size="sm"
                             className={cn(
-                                "h-6 w-6 p-0 rounded-md border border-border/50 shadow-sm transition-opacity duration-150",
+                                "h-6 w-6 p-0 rounded-md border border-border/50 shadow-sm",
                                 rating === "down"
-                                    ? "text-red-500 bg-red-500/10 hover:bg-red-500/20 border-red-500/30 opacity-100"
-                                    : "text-muted-foreground hover:text-foreground bg-background hover:bg-muted/50 sm:opacity-0 sm:group-hover:opacity-100"
+                                    ? "text-red-500 bg-red-500/10 hover:bg-red-500/20 border-red-500/30"
+                                    : "text-muted-foreground hover:text-foreground bg-background hover:bg-muted/50"
                             )}
                             onClick={() => handleRate("down")}
                             disabled={isRating}
@@ -397,7 +454,7 @@ export const ChatMessage = React.memo(({
                     <Button
                         variant="ghost"
                         size="sm"
-                        className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground bg-background border border-border/50 shadow-sm rounded-md hover:bg-muted/50 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150"
+                        className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground bg-background border border-border/50 shadow-sm rounded-md hover:bg-muted/50"
                         onClick={(e) => {
                             e.stopPropagation()
                             onRegenerate()
@@ -408,12 +465,12 @@ export const ChatMessage = React.memo(({
                     </Button>
                 )}
 
-                {/* View generation details - only show on hover */}
+                {/* View generation details */}
                 {generation_id && onViewGeneration && (
                     <Button
                         variant="ghost"
                         size="sm"
-                        className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground bg-background border border-border/50 shadow-sm rounded-md hover:bg-muted/50 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-150"
+                        className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground bg-background border border-border/50 shadow-sm rounded-md hover:bg-muted/50"
                         onClick={(e) => {
                             e.stopPropagation()
                             handleViewGeneration()

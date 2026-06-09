@@ -1,6 +1,6 @@
 "use client"
 
-import { models } from "@/lib/api";
+import { models } from "@/lib/api/models";
 import * as React from "react"
 import { Bot } from "lucide-react"
 import { cn, formatRelativeDate, normalizeDate } from "@/lib/utils"
@@ -171,6 +171,15 @@ export const MessageList = React.memo(({
         let lastDate: string | null = null
         const seenParentIds = new Set<string>()
 
+        // Precompute the position of the last `role: "user"` message
+        // so the per-message "is anything after me a user turn?" check
+        // is O(1) instead of an O(n) slice+some(). Without this, a chat
+        // with many sibling groups is O(n²) per render.
+        let lastUserIndex = -1
+        for (let i = messages.length - 1; i >= 0; i--) {
+            if (messages[i].role === 'user') { lastUserIndex = i; break }
+        }
+
         messages.forEach((m, index) => {
             // For assistant messages with siblings, only render selected one
             if (m.role === 'assistant' && m.parent_id) {
@@ -191,7 +200,7 @@ export const MessageList = React.memo(({
 
                     // Check if this is the latest message group (no user messages after it)
                     // We only allow selection on the head of the conversation
-                    const hasNextUserMessage = messages.slice(index + 1).some(msg => msg.role === 'user')
+                    const hasNextUserMessage = lastUserIndex > index
                     const canSelect = !hasNextUserMessage
 
                     if (currentDate !== lastDate) {

@@ -3,7 +3,9 @@
 import * as React from "react"
 import { useQueryClient } from "@tanstack/react-query"
 
-import { conversations, gateway, preferences } from "@/lib/api"
+import { conversations } from "@/lib/api/conversations"
+import { gateway } from "@/lib/api/gateway"
+import { preferences } from "@/lib/api/preferences"
 import { extractText } from "@/lib/schemas/content"
 import type { ConversationDTO } from "@/lib/schemas/conversation"
 import type { Paginated } from "@/lib/schemas/common"

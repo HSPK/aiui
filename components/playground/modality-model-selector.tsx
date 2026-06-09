@@ -3,7 +3,7 @@
 import * as React from "react"
 import { Bot, ChevronDown, Search } from "lucide-react"
 
-import { models } from "@/lib/api"
+import { models } from "@/lib/api/models"
 import { cn } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
 import {

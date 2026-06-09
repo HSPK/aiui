@@ -22,22 +22,27 @@ import { Skeleton } from "@/components/ui/skeleton"
 
 /**
  * Single conversation row in the sidebar list — display + inline
- * rename + delete dropdown. Extracted from conversation-sidebar so
- * row-level visual / interaction tweaks (drag handles, multi-select,
- * etc.) localize here.
+ * rename + delete dropdown. Wrapped in React.memo so the parent's
+ * shallow re-renders (typing in search box, scroll-driven pagination)
+ * skip rows whose data hasn't changed. Callbacks must be stable refs
+ * (useCallback in parent) for the memo to actually win.
  */
-export function ConversationItem({
+export const ConversationItem = React.memo(function ConversationItem({
     conv,
     isSelected,
     onOpen,
     onDeleteRequest,
     onRename,
+    compact = true,
 }: {
     conv: ConversationDTO
     isSelected: boolean
-    onOpen: () => void
-    onDeleteRequest: () => void
-    onRename: (newTitle: string) => void
+    onOpen: (conv: ConversationDTO) => void
+    onDeleteRequest: (conv: ConversationDTO) => void
+    onRename: (conv: ConversationDTO, newTitle: string) => void
+    /** Desktop sidebar (`true`, default) uses tight padding + text-sm.
+     *  Mobile Sheet (`false`) uses bigger touch targets + text-base. */
+    compact?: boolean
 }) {
     const [isEditing, setIsEditing] = React.useState(false)
     const [editTitle, setEditTitle] = React.useState(conv.title)
@@ -61,7 +66,7 @@ export function ConversationItem({
 
     const handleSaveEdit = () => {
         const trimmed = editTitle.trim()
-        if (trimmed && trimmed !== conv.title) onRename(trimmed)
+        if (trimmed && trimmed !== conv.title) onRename(conv, trimmed)
         setIsEditing(false)
     }
 
@@ -78,12 +83,14 @@ export function ConversationItem({
     const handleDelete = (e: React.MouseEvent) => {
         e.stopPropagation()
         setDropdownOpen(false)
-        onDeleteRequest()
+        onDeleteRequest(conv)
     }
+
+    const handleRowClick = () => onOpen(conv)
 
     if (isEditing) {
         return (
-            <div className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5">
+            <div className="flex items-center gap-1.5 rounded-md px-2 py-1.5">
                 <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground/70" />
                 <input
                     ref={inputRef}
@@ -114,9 +121,10 @@ export function ConversationItem({
 
     return (
         <div
-            onClick={onOpen}
+            onClick={handleRowClick}
             className={cn(
-                "group/item relative flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm cursor-pointer transition-colors",
+                "group/item relative flex items-center gap-2 rounded-md cursor-pointer transition-colors",
+                compact ? "px-2 py-1.5 text-sm" : "px-3 h-11 text-base",
                 isSelected
                     ? "bg-secondary text-secondary-foreground"
                     : "text-foreground/80 hover:bg-muted hover:text-foreground",
@@ -128,31 +136,36 @@ export function ConversationItem({
                     <button
                         onClick={(e) => e.stopPropagation()}
                         className={cn(
-                            "shrink-0 p-0.5 rounded transition-opacity",
+                            "shrink-0 rounded transition-opacity inline-flex items-center justify-center",
                             "hover:bg-black/10 dark:hover:bg-white/10",
-                            dropdownOpen ? "opacity-100" : "opacity-0 group-hover/item:opacity-100",
+                            compact ? "p-0.5" : "h-9 w-9",
+                            // Touch devices have no hover — always show
+                            // the menu trigger when not compact.
+                            compact
+                                ? (dropdownOpen ? "opacity-100" : "opacity-0 group-hover/item:opacity-100")
+                                : "opacity-100",
                         )}
                     >
-                        <MoreHorizontal className="h-4 w-4" />
+                        <MoreHorizontal className={compact ? "h-4 w-4" : "h-5 w-5"} />
                     </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-36">
-                    <DropdownMenuItem onClick={handleStartEdit}>
-                        <Pencil className="h-3.5 w-3.5 mr-2" />
+                <DropdownMenuContent align="end" className="w-40">
+                    <DropdownMenuItem onClick={handleStartEdit} className={compact ? "" : "h-11 text-base"}>
+                        <Pencil className={compact ? "h-3.5 w-3.5 mr-2" : "h-4 w-4 mr-3"} />
                         Rename
                     </DropdownMenuItem>
                     <DropdownMenuItem
                         onClick={handleDelete}
-                        className="text-destructive focus:text-destructive"
+                        className={cn("text-destructive focus:text-destructive", compact ? "" : "h-11 text-base")}
                     >
-                        <Trash2 className="h-3.5 w-3.5 mr-2" />
+                        <Trash2 className={compact ? "h-3.5 w-3.5 mr-2" : "h-4 w-4 mr-3"} />
                         Delete
                     </DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>
         </div>
     )
-}
+})
 
 /** Width-varied skeleton rows used while the conversation list is
  *  loading. Lives next to ConversationItem since they share the row
@@ -160,11 +173,11 @@ export function ConversationItem({
 export function ListSkeleton() {
     const widths = [78, 62, 90, 55, 70, 84]
     return (
-        <div className="space-y-2 px-3 pt-3">
+        <div className="space-y-2 px-2 pt-3">
             <Skeleton className="h-3 w-16" />
             <div className="space-y-1">
                 {widths.map((w, i) => (
-                    <div key={i} className="px-2.5 py-1.5">
+                    <div key={i} className="px-2 py-1.5">
                         <Skeleton className="h-3.5" style={{ width: `${w}%` }} />
                     </div>
                 ))}

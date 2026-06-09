@@ -300,7 +300,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="rounded-full h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                        className="rounded-full h-10 w-10 md:h-8 md:w-8 shrink-0 text-muted-foreground hover:text-foreground"
                         title="Attach files (images / PDFs / text)"
                         onClick={() => fileInputRef.current?.click()}
                     >
@@ -328,7 +328,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
                         }
                         disabled={blockedByFailedTail}
                         className={cn(
-                            "min-h-[32px] max-h-[240px] border-0 focus-visible:outline-none resize-none p-0 py-[6px] bg-transparent flex-1 text-sm leading-[20px]",
+                            "min-h-[40px] md:min-h-[32px] max-h-[240px] border-0 focus-visible:outline-none resize-none p-0 py-[10px] md:py-[6px] bg-transparent flex-1 text-base md:text-sm leading-5",
                             blockedByFailedTail && "cursor-not-allowed text-muted-foreground",
                         )}
                         onKeyDown={handleKeyDown}
@@ -346,7 +346,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
                                     e.preventDefault()
                                     onStopRef.current()
                                 }}
-                                className="h-8 w-8 rounded-full ml-1 bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                                className="h-10 w-10 md:h-8 md:w-8 rounded-full ml-1 bg-secondary text-secondary-foreground hover:bg-secondary/80"
                             >
                                 <div className="h-2.5 w-2.5 bg-current rounded-[1px]" />
                             </Button>
@@ -354,7 +354,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
                             <Button
                                 type="submit"
                                 size="icon"
-                                className="h-8 w-8 rounded-full ml-1 bg-primary text-primary-foreground"
+                                className="h-10 w-10 md:h-8 md:w-8 rounded-full ml-1 bg-primary text-primary-foreground"
                             >
                                 <ArrowUp className="h-5 w-5" />
                             </Button>

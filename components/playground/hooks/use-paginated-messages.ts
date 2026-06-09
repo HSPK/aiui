@@ -1,7 +1,8 @@
 import * as React from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 
-import { ApiError, conversations } from "@/lib/api"
+import { conversations } from "@/lib/api/conversations"
+import { ApiError } from "@/lib/api/client"
 import type { Message } from "@/components/playground/chat/types"
 import type { MessageDTO } from "@/lib/schemas/conversation"
 

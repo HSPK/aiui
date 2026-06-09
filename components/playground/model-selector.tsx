@@ -4,7 +4,8 @@ import * as React from "react"
 import * as ReactDOM from "react-dom"
 import { Layers, Search, Bot } from "lucide-react"
 
-import { models, preferences } from "@/lib/api"
+import { models } from "@/lib/api/models"
+import { preferences } from "@/lib/api/preferences"
 import { cn } from "@/lib/utils"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
 import { Button } from "@/components/ui/button"
@@ -16,6 +17,11 @@ import {
     TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { ProviderIcon } from "@/components/ProviderIcon"
+
+/** Stable empty-array reference — selectors must return identical
+ *  values across renders for the React subscription to skip re-renders.
+ *  `[] !== []`, so we share one frozen array. */
+const EMPTY_MODELS: readonly string[] = Object.freeze<string[]>([])
 
 const ModelItem = React.memo(
     ({
@@ -224,9 +230,14 @@ export function ConnectedModelSelector({ conversationId }: { conversationId: str
         [conversationId, updateSettings, singleModelMode]
     )
 
-    const selectedIds = open
-        ? usePlaygroundStore.getState().getSettings(conversationId).modelIds ?? []
-        : []
+    // Subscribe to the conversation's settings so the dropdown's
+    // checkmarks stay live when the user changes models elsewhere
+    // (e.g. via the chips above). Using getState() here would freeze
+    // the value at first render.
+    const settingsModelIds = usePlaygroundStore(
+        (s) => s.settings[conversationId]?.modelIds ?? EMPTY_MODELS,
+    )
+    const selectedIds = open ? settingsModelIds : EMPTY_MODELS
     const selectedSet = React.useMemo(() => new Set(selectedIds), [selectedIds])
 
     const handleToggleSingleMode = React.useCallback(() => {

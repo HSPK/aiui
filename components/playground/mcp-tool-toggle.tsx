@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { Wrench } from "lucide-react"
 
-import { mcpServers } from "@/lib/api"
+import { mcpServers } from "@/lib/api/mcp"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
