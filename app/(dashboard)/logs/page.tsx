@@ -1,11 +1,11 @@
 "use client"
 
-import { logs } from "@/lib/api";
+import { logs } from "@/lib/api/logs";
 import type { LogFilterParams } from "@/lib/schemas/log";
-import { useState, useCallback } from "react"
+import { useMemo, useState, useCallback } from "react"
 
 import { LogsTable } from "@/components/logs/logs-table"
-import { LogDetails } from "@/components/logs/log-details"
+import { LogDetails } from "@/components/logs/log-details-lazy"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import {
@@ -37,15 +37,16 @@ export default function LogsPage() {
     const [selectedLogId, setSelectedLogId] = useState<string | null>(null)
     const [isDetailOpen, setIsDetailOpen] = useState(false)
 
-    // Build query params
-    const queryParams: LogFilterParams = {
+    // Build query params — memoize so the React Query cache key is
+    // stable across renders that don't actually change a filter.
+    const queryParams: LogFilterParams = useMemo(() => ({
         page: table.page,
         page_size: table.pageSize,
         sort: table.sort,
         user_id: activeFilters.userId || null,
         model_name: activeFilters.modelName || null,
         status: status === "all" ? null : status,
-    }
+    }), [table.page, table.pageSize, table.sort, activeFilters.userId, activeFilters.modelName, status])
 
     const { data, isLoading, isFetching, refetch } = logs.useList(queryParams)
 

@@ -13,7 +13,8 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
-import { models as modelsApi, providers } from "@/lib/api"
+import { models as modelsApi } from "@/lib/api/models"
+import { providers } from "@/lib/api/providers"
 import { useAuth } from "@/context/auth-context"
 import type { ModelDTO } from "@/lib/schemas/model"
 

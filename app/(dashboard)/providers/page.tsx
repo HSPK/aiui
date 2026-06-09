@@ -1,6 +1,8 @@
 "use client"
 
-import { models, providers } from "@/lib/api";
+import * as React from "react"
+import { models } from "@/lib/api/models";
+import { providers } from "@/lib/api/providers";
 import type { ProviderDTO } from "@/lib/schemas/provider";
 import type { ModelDTO } from "@/lib/schemas/model";
 
@@ -45,44 +47,43 @@ export default function ProvidersPage() {
         enabled: activeTab === "models",
     })
 
-    const getSortedProviders = (items: ProviderDTO[]) => {
-        const p = [...items]
+    // Sorting + filtering memoised so typing in the search box doesn't
+    // re-walk the list per keystroke. Cheap for small N but worth
+    // doing right — the same component handles 1k+ provider deployments.
+    const filteredProviders = React.useMemo(() => {
+        if (!providerList) return []
+        const q = searchQuery.toLowerCase()
+        const filtered = providerList.filter((p) =>
+            p.provider_name.toLowerCase().includes(q) ||
+            (p.proxy || "").toLowerCase().includes(q)
+        )
         if (sortOrder === "name") {
-            p.sort((a, b) => a.provider_name.localeCompare(b.provider_name))
+            filtered.sort((a, b) => a.provider_name.localeCompare(b.provider_name))
         } else if (sortOrder === "models") {
-            p.sort((a, b) => (b.n_models || 0) - (a.n_models || 0))
+            filtered.sort((a, b) => (b.n_models || 0) - (a.n_models || 0))
         }
-        return p
-    }
+        return filtered
+    }, [providerList, searchQuery, sortOrder])
 
-    const getSortedModels = (items: ModelDTO[]) => {
-        const m = [...items]
+    const filteredModels = React.useMemo(() => {
+        if (!modelList) return []
+        const q = searchQuery.toLowerCase()
+        const filtered = modelList.filter((m) =>
+            m.name.toLowerCase().includes(q) ||
+            (m.model_id || "").toLowerCase().includes(q) ||
+            (m.provider || "").toLowerCase().includes(q)
+        )
         if (sortOrder === "name") {
-            m.sort((a, b) => a.name.localeCompare(b.name))
+            filtered.sort((a, b) => a.name.localeCompare(b.name))
         } else if (sortOrder === "type") {
-            m.sort((a, b) => a.type.localeCompare(b.type))
+            filtered.sort((a, b) => a.type.localeCompare(b.type))
         } else if (sortOrder === "provider") {
-            m.sort((a, b) => (a.provider || "").localeCompare(b.provider || ""))
+            filtered.sort((a, b) => (a.provider || "").localeCompare(b.provider || ""))
         } else if (sortOrder === "context") {
-            m.sort((a, b) => (b.context_window || 0) - (a.context_window || 0))
+            filtered.sort((a, b) => (b.context_window || 0) - (a.context_window || 0))
         }
-        return m
-    }
-
-    const filteredProviders = providerList
-        ? getSortedProviders(providerList).filter(p =>
-            p.provider_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            (p.proxy || "").toLowerCase().includes(searchQuery.toLowerCase())
-        )
-        : []
-
-    const filteredModels = modelList
-        ? getSortedModels(modelList).filter(m =>
-            m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            (m.model_id || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-            (m.provider || "").toLowerCase().includes(searchQuery.toLowerCase())
-        )
-        : []
+        return filtered
+    }, [modelList, searchQuery, sortOrder])
 
     // providers' `invalidates: ["models"]` in the resource descriptor cascades
     // these mutations to the models cache automatically.

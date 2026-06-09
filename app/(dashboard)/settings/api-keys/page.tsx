@@ -1,6 +1,6 @@
 "use client"
 
-import { apiKeys } from "@/lib/api";
+import { apiKeys } from "@/lib/api/apikeys";
 import type { ApiKeyDTO } from "@/lib/schemas/apikey";
 import { useState } from "react"
 

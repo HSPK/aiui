@@ -6,7 +6,7 @@ import { useQueryClient } from "@tanstack/react-query"
 
 import { ChatFlow } from "@/components/playground/chat-flow"
 import { ConversationSidebar } from "@/components/playground/conversation-sidebar"
-import { conversations } from "@/lib/api"
+import { conversations } from "@/lib/api/conversations"
 import type { Message } from "@/components/playground/chat/types"
 
 const INITIAL_PAGE_SIZE = 20

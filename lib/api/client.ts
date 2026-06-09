@@ -61,10 +61,17 @@ export async function fetcher<T>(path: string, options?: FetcherOptions): Promis
  * through credentials: include + 401 handling.
  */
 export async function rawFetch(path: string, options?: FetcherOptions): Promise<Response> {
-    const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        ...(options?.headers as Record<string, string>),
-    };
+    const body = options?.body;
+    // For FormData, let fetch set the multipart boundary itself —
+    // forcing application/json (or any explicit Content-Type) breaks
+    // boundary detection on the server.
+    const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
+    const headers: Record<string, string> = isFormData
+        ? { ...(options?.headers as Record<string, string>) }
+        : {
+              "Content-Type": "application/json",
+              ...(options?.headers as Record<string, string>),
+          };
     const res = await fetch(`${API_BASE}${path}`, {
         ...options,
         headers,

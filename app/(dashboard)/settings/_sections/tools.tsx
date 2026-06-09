@@ -4,7 +4,7 @@ import * as React from "react"
 import { Plus, Wrench } from "lucide-react"
 import { toast } from "sonner"
 
-import { tools } from "@/lib/api"
+import { tools } from "@/lib/api/tools"
 import type { ToolDTO } from "@/lib/schemas/tool"
 
 import { Button } from "@/components/ui/button"

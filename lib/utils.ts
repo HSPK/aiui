@@ -12,15 +12,16 @@ export function formatToLocal(dateStr: string, pattern: string = "MMM d, HH:mm:s
     return format(date, pattern)
 }
 
+// Detect timezone marker at the end of an ISO-ish string: trailing Z
+// OR a ±HHMM / ±HH:MM offset. Hoisted to avoid per-call recompile —
+// formatMessageTime / formatRelativeDate / normalizeDate are called
+// many times per render in message-heavy views.
+const TZ_SUFFIX_RE = /Z$|([+-]\d{2}(:?\d{2})?)$/
+
 export function normalizeDate(dateStr?: string | Date) {
     if (!dateStr) return new Date()
     if (dateStr instanceof Date) return dateStr
-
-    // Check if string contains timezone info (Z, +HH:mm, -HH:mm)
-    // Simple check: Z at the end, or + / - followed by a digit near the end
-    const hasTimezone = /Z$|([+-]\d{2}(:?\d{2})?)$/.test(dateStr)
-
-    return new Date(hasTimezone ? dateStr : `${dateStr}Z`)
+    return new Date(TZ_SUFFIX_RE.test(dateStr) ? dateStr : `${dateStr}Z`)
 }
 
 export function formatMessageTime(dateStr?: string | Date) {

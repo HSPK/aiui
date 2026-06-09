@@ -17,7 +17,7 @@ import {
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 
-import { mcpServers } from "@/lib/api"
+import { mcpServers } from "@/lib/api/mcp"
 import { useAuth } from "@/context/auth-context"
 import type { McpPreset, McpPresetCategory, McpServerDTO } from "@/lib/schemas/mcp"
 

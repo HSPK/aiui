@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useTheme } from "next-themes";
 
-import { preferences } from "@/lib/api";
+import { preferences } from "@/lib/api/preferences";
 import { resolveTheme, writeStoredTheme } from "@/lib/themes";
 
 /**

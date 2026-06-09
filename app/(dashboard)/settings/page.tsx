@@ -4,7 +4,7 @@ import * as React from "react"
 import { Bot, MessageSquare, Palette, RotateCcw, Sliders, User, Wrench } from "lucide-react"
 import { toast } from "sonner"
 
-import { preferences } from "@/lib/api"
+import { preferences } from "@/lib/api/preferences"
 import { defaultUserPreferences } from "@/lib/schemas/preferences"
 import { useDeviceSettingsStore } from "@/lib/stores/device-settings-store"
 import { Button } from "@/components/ui/button"

@@ -14,7 +14,9 @@ import {
     Zap,
 } from "lucide-react"
 
-import { models as modelsApi, providers, stats } from "@/lib/api"
+import { models as modelsApi } from "@/lib/api/models"
+import { providers } from "@/lib/api/providers"
+import { stats } from "@/lib/api/stats"
 import { useAuth } from "@/context/auth-context"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
 import { Badge } from "@/components/ui/badge"

@@ -22,7 +22,7 @@ import {
     Zap,
 } from "lucide-react"
 
-import { stats } from "@/lib/api"
+import { stats } from "@/lib/api/stats"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
     CHART_TOOLTIP_STYLE,

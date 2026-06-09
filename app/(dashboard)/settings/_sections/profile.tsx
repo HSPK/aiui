@@ -4,7 +4,7 @@ import * as React from "react"
 import { User } from "lucide-react"
 import { toast } from "sonner"
 
-import { preferences } from "@/lib/api"
+import { preferences } from "@/lib/api/preferences"
 import { defaultUserPreferences } from "@/lib/schemas/preferences"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"

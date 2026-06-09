@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation"
 import { LayoutGrid, Plus, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 
-import { mcpServers } from "@/lib/api"
+import { mcpServers } from "@/lib/api/mcp"
 import { useAuth } from "@/context/auth-context"
 import type { McpServerDTO } from "@/lib/schemas/mcp"
 

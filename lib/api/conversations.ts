@@ -1,5 +1,5 @@
 "use client";
-import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { defineResource } from "./resource";
 import { fetcher } from "./client";
 import type { Paginated } from "@/lib/schemas/common";
@@ -20,6 +20,10 @@ const base = defineResource<
         sort: q.sort ?? "-updated_at",
         keyword: q.keyword,
     }),
+    // List + get are read-mostly; users rarely care about millisecond
+    // freshness here. 60s lets nav back to the sidebar / chat skip
+    // a network round-trip — mutations explicit-invalidate anyway.
+    staleTime: 60_000,
 });
 
 /** Cache key for the initial page of messages of a single conversation.
@@ -85,13 +89,6 @@ export const conversations = {
                 sort: params?.sort ?? "-created_at",
             }).toString(),
         ),
-
-    useMessages: (id: string | null | undefined, params?: { page?: number; page_size?: number; sort?: string }) =>
-        useQuery({
-            queryKey: [...base.keys.one(id ?? ""), "messages", params] as const,
-            queryFn: () => conversations.listMessages(id!, params),
-            enabled: !!id,
-        }),
 };
 
 // Messages are a sibling resource only used for rating today.

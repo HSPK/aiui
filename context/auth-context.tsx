@@ -1,6 +1,9 @@
 "use client"
 
-import { auth, ApiError, apiKeys, preferences } from "@/lib/api";
+import { auth } from "@/lib/api/auth";
+import { ApiError } from "@/lib/api/client";
+import { apiKeys } from "@/lib/api/apikeys";
+import { preferences } from "@/lib/api/preferences";
 import type { LoginInput, UserDTO } from "@/lib/schemas/user";
 import * as React from "react"
 import { useRouter, usePathname, useSearchParams } from "next/navigation"
