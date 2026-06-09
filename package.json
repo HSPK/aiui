@@ -1,6 +1,6 @@
 {
   "name": "@hspk/loom",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Self-hosted AI testing platform — try models and MCP servers, log every request, and front your apps through an OpenAI-compatible gateway.",
   "keywords": [
     "ai",
@@ -47,6 +47,7 @@
     "build:cli": "node scripts/build-cli.mjs",
     "start": "next start",
     "lint": "eslint",
+    "test": "node scripts/run-e2e.mjs",
     "prepare": "node scripts/build-cli.mjs",
     "prepublishOnly": "bun run build"
   },
