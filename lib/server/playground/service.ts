@@ -17,6 +17,10 @@ import { aggregateTools, executeTool, type AggregatedTool } from "../mcp/runtime
 import { pipeAndStripDone, replayDbMessageToWire, type WireMessage } from "./wire";
 
 const MAX_TOOL_HOPS = 8;
+// TextEncoder is stateless — share a single instance instead of
+// instantiating per chat turn. Each request still allocates its own
+// TextDecoder (decoder.decode keeps stream-mode state).
+const SSE_ENCODER = new TextEncoder();
 
 /**
  * Send a playground chat turn. Persists the user message + assistant
@@ -57,6 +61,13 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
             .where(eq(schema.conversations.id, conversationId)).run();
     } else {
         const titleText = (userText.trim() || "New Chat").slice(0, 40);
+        // Race-safe insert: multi-model send (`streamMultiple` in
+        // use-chat-stream) fires N parallel requests at the same
+        // brand-new conversation_id. Without `onConflictDoNothing`
+        // the second/third caller would crash with PK violation
+        // because the SELECT above missed but their INSERT lost the
+        // race. After the conflict-safe insert, re-select to apply
+        // the standard ownership check.
         db.insert(schema.conversations).values({
             id: conversationId,
             userId: user.id,
@@ -64,23 +75,28 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
             config: { model: body.model },
             createdAt: now,
             updatedAt: now,
-        }).run();
+        }).onConflictDoNothing().run();
+
+        const after = db.select().from(schema.conversations)
+            .where(eq(schema.conversations.id, conversationId)).get();
+        if (!after) throw forbidden();
+        if (after.userId !== user.id) throw forbidden();
     }
 
-    // Persist user message (idempotent on user_message_id).
+    // Persist user message (idempotent on user_message_id, race-safe
+    // via onConflictDoNothing — multi-model `streamMultiple` fires N
+    // parallel requests sharing the SAME user_message_id, and the
+    // SELECT-then-INSERT pattern would crash N-1 of them on the PK).
     const userMessageId = body.user_message_id ?? randomUUID();
-    const userExisting = db.select().from(schema.messages).where(eq(schema.messages.id, userMessageId)).get();
-    if (!userExisting) {
-        db.insert(schema.messages).values({
-            id: userMessageId,
-            conversationId,
-            role: "user",
-            content: userContentArray,
-            parentId: body.parent_message_id ?? null,
-            isActive: true,
-            createdAt: now,
-        }).run();
-    }
+    db.insert(schema.messages).values({
+        id: userMessageId,
+        conversationId,
+        role: "user",
+        content: userContentArray,
+        parentId: body.parent_message_id ?? null,
+        isActive: true,
+        createdAt: now,
+    }).onConflictDoNothing().run();
 
     const limit = Math.max(1, body.history_limit ?? body.conv_histrory_limit ?? 20);
     const recent = db.select().from(schema.messages)
@@ -169,10 +185,10 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
                 error: lastError,
             },
         }).run();
-        db.update(schema.conversations)
-            .set({ updatedAt: tsNow })
-            .where(eq(schema.conversations.id, conversationId))
-            .run();
+        // NOTE: deliberately NOT bumping conversations.updatedAt here.
+        // It was already bumped at turn-start (the sidebar-sort key
+        // is "you sent something on this conv"). Repeating per tool
+        // round writes the same row N times for nothing.
     };
 
     const insertToolMessage = (part: ToolResultPart, parentId: string) => {
@@ -190,13 +206,20 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
 
     // ---- response stream ----
 
-    const encoder = new TextEncoder();
+    // Client-disconnect signal. The ReadableStream's `cancel()` fires
+    // when the consumer goes away (browser closed the tab, FE
+    // AbortController.abort(), proxy hangup, ...). We propagate that
+    // via an AbortController so the orchestrator can:
+    //   1. Tear down the in-flight upstream HTTP request (saves $$).
+    //   2. Bail out of the multi-hop tool loop instead of running
+    //      executeTool + dispatching MCP calls into a closed stream.
+    const abortController = new AbortController();
 
     const responseStream = new ReadableStream<Uint8Array>({
         async start(controller) {
             const send = (chunk: Uint8Array) => controller.enqueue(chunk);
             const emitEvent = (event: string, data: unknown) => {
-                send(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+                send(SSE_ENCODER.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
             };
 
             // Surface any tool-aggregation errors up front so the FE can
@@ -215,6 +238,7 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
                 let pendingFinishReason: string | undefined;
 
                 while (true) {
+                    if (abortController.signal.aborted) break;
                     if (hops >= MAX_TOOL_HOPS) {
                         emitEvent("loom_tool_error", {
                             message: `Max tool hops (${MAX_TOOL_HOPS}) reached without final answer`,
@@ -233,6 +257,7 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
                         result = await forwardGeneration(user, "chat", reqBody, {
                             conversationId,
                             messageId: assistantMessageId,
+                            signal: abortController.signal,
                             onComplete: ({ content, reasoning, toolCalls, finishReason }) => {
                                 roundContent = content;
                                 roundReasoning = reasoning;
@@ -241,12 +266,18 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
                             },
                         });
                     } catch (err) {
+                        // Client-disconnect aborts the upstream fetch
+                        // and shows up here as AbortError — that's not
+                        // a "loom_error", just stop quietly.
+                        if (abortController.signal.aborted) break;
                         const message = err instanceof Error ? err.message : String(err);
                         lastError = message;
                         upsertAssistant();
                         emitEvent("loom_error", { message });
                         break;
                     }
+
+                    if (abortController.signal.aborted) break;
 
                     lastGenerationId = result.logId;
                     // Surface the per-round message + generation id over
@@ -333,18 +364,31 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
                     // Execute each tool call. Failures become tool
                     // result messages with `is_error: true` so the model
                     // can see them and recover.
-                    for (const tc of pendingToolCalls!) {
-                        const envelope = toolIndex.get(tc.name);
-                        let exec;
-                        if (!envelope) {
-                            exec = {
-                                content: `No MCP server has a tool called "${tc.name}". Available: ${Array.from(toolIndex.keys()).join(", ") || "<none>"}.`,
-                                isError: true,
-                                serverName: "unknown",
-                            };
-                        } else {
-                            exec = await executeTool(tc.name, tc.arguments);
-                        }
+                    //
+                    // Parallelise: a single model turn that emits
+                    // `[weather(LA), weather(NYC), weather(SF)]` was
+                    // waiting for each tool sequentially before. The
+                    // tools themselves are independent — only the
+                    // history shape matters, and we restore that by
+                    // walking the resolved Promises in original order.
+                    if (abortController.signal.aborted) break;
+                    const execs = await Promise.all(
+                        pendingToolCalls!.map(async (tc) => {
+                            const envelope = toolIndex.get(tc.name);
+                            if (!envelope) {
+                                return {
+                                    content: `No MCP server has a tool called "${tc.name}". Available: ${Array.from(toolIndex.keys()).join(", ") || "<none>"}.`,
+                                    isError: true,
+                                    serverName: "unknown",
+                                };
+                            }
+                            return executeTool(tc.name, tc.arguments);
+                        }),
+                    );
+
+                    for (let i = 0; i < pendingToolCalls!.length; i++) {
+                        const tc = pendingToolCalls![i];
+                        const exec = execs[i];
 
                         const resultPart: ToolResultPart = {
                             type: "tool_result",
@@ -380,9 +424,18 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
                 }
             } finally {
                 // One terminal [DONE] for the whole multi-round stream.
-                send(encoder.encode("data: [DONE]\n\n"));
-                controller.close();
+                // controller.enqueue / .close throw if the stream was
+                // already cancelled (client disconnect); swallow those
+                // so we don't crash the producer mid-cleanup.
+                try { send(SSE_ENCODER.encode("data: [DONE]\n\n")); } catch { /* stream closed */ }
+                try { controller.close(); } catch { /* stream closed */ }
             }
+        },
+        cancel() {
+            // Consumer (FE / proxy) gave up. Trip the abort signal so
+            // the orchestrator's main loop bails out of the next round
+            // and the in-flight upstream fetch is torn down.
+            abortController.abort();
         },
     });
 

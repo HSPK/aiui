@@ -2,6 +2,7 @@ import "server-only";
 import { and, asc, count, desc, eq, like, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { generationLogs, users } from "../db/schema";
+import { persistImageArtifacts } from "../gateway/artifacts";
 import { forbidden, notFound } from "../response";
 import type { SessionUser } from "../auth";
 import type { Paginated } from "@/lib/schemas/common";
@@ -33,9 +34,30 @@ export function listLogs(user: SessionUser, query: LogListQuery): Paginated<LogL
     const whereExpr = and(...filters);
 
     const total = db.select({ value: count() }).from(generationLogs).where(whereExpr).get()?.value ?? 0;
+    // NOTE: omit the heavy JSON columns (input, content, generation,
+    // generation_kwargs) from the list query — list rows only render
+    // input_summary / output. Selecting them used to ship MB-sized b64
+    // blobs over the wire even when only the table view was needed.
     const rows = db
         .select({
-            log: generationLogs,
+            log: {
+                id: generationLogs.id,
+                userId: generationLogs.userId,
+                modelName: generationLogs.modelName,
+                capability: generationLogs.capability,
+                inputSummary: generationLogs.inputSummary,
+                status: generationLogs.status,
+                output: generationLogs.output,
+                reason: generationLogs.reason,
+                promptTokens: generationLogs.promptTokens,
+                completionTokens: generationLogs.completionTokens,
+                totalTokens: generationLogs.totalTokens,
+                firstTokenLatencyMs: generationLogs.firstTokenLatencyMs,
+                totalLatencyMs: generationLogs.totalLatencyMs,
+                createdAt: generationLogs.createdAt,
+                updatedAt: generationLogs.updatedAt,
+                isDeleted: generationLogs.isDeleted,
+            },
             username: users.username,
         })
         .from(generationLogs)
@@ -69,7 +91,19 @@ export function listLogs(user: SessionUser, query: LogListQuery): Paginated<LogL
     return { items, total, page: query.page, page_size: query.page_size };
 }
 
-export function getLog(user: SessionUser, id: string): LogDetailDTO {
+/** True when the log payload still has un-persisted b64_json blobs
+ *  inline. Old logs written before artifact persistence will return
+ *  true on first read — we lazily migrate them in `getLog`. */
+function hasInlineB64(generation: unknown): boolean {
+    if (!generation || typeof generation !== "object") return false;
+    const data = (generation as { data?: unknown }).data;
+    if (!Array.isArray(data)) return false;
+    return data.some(
+        (d) => d && typeof d === "object" && typeof (d as { b64_json?: unknown }).b64_json === "string",
+    );
+}
+
+export async function getLog(user: SessionUser, id: string): Promise<LogDetailDTO> {
     const row = db
         .select({ log: generationLogs, username: users.username })
         .from(generationLogs)
@@ -79,6 +113,25 @@ export function getLog(user: SessionUser, id: string): LogDetailDTO {
     if (!row) throw notFound("Log not found");
     const { log, username } = row;
     if (user.role !== "admin" && log.userId !== user.id) throw forbidden();
+
+    // Lazy migration: legacy image logs written before artifact
+    // persistence still carry MB-sized b64 inline. Strip + persist on
+    // first read so subsequent reads are fast AND the gallery works.
+    let generation = log.generation as Record<string, unknown> | null;
+    if (log.capability === "image" && generation && hasInlineB64(generation)) {
+        try {
+            const cloned = structuredClone(generation);
+            await persistImageArtifacts(log.id, cloned);
+            generation = cloned;
+            db.update(generationLogs)
+                .set({ generation: cloned })
+                .where(eq(generationLogs.id, log.id))
+                .run();
+        } catch (err) {
+            console.error("[loom] lazy artifact migration failed for log", log.id, err);
+        }
+    }
+
     return {
         id: log.id,
         user_id: log.userId,
@@ -90,9 +143,8 @@ export function getLog(user: SessionUser, id: string): LogDetailDTO {
         input: log.input ?? null,
         output: log.output ?? "",
         reason: log.reason,
-        content: log.content ?? null,
         generation_kwargs: (log.generationKwargs ?? {}) as Record<string, unknown>,
-        generation: log.generation ?? null,
+        generation: generation ?? null,
         conversation_id: log.conversationId ?? undefined,
         message_id: log.messageId ?? undefined,
         prompt_tokens: log.promptTokens ?? null,
@@ -104,4 +156,19 @@ export function getLog(user: SessionUser, id: string): LogDetailDTO {
         updated_at: log.updatedAt,
         is_deleted: !!log.isDeleted,
     };
+}
+
+/** Lightweight gate for artifact reads. The image-gallery route gets
+ *  hit once per image — running the full `getLog` (which streams
+ *  multi-MB JSON columns + does lazy migration) just to confirm
+ *  ownership is wasteful. This reads only the id+userId so the
+ *  ownership predicate fits in the index. */
+export function assertLogReadable(user: SessionUser, id: string): void {
+    const row = db
+        .select({ userId: generationLogs.userId })
+        .from(generationLogs)
+        .where(eq(generationLogs.id, id))
+        .get();
+    if (!row) throw notFound("Log not found");
+    if (user.role !== "admin" && row.userId !== user.id) throw forbidden();
 }

@@ -100,32 +100,43 @@ export function replayDbMessageToWire(role: string, content: unknown): WireMessa
  * Operates on line boundaries with carry-over buffering for chunks
  * that split mid-line.
  */
+const PIPE_ENCODER = new TextEncoder();
+
 export async function pipeAndStripDone(
     body: ReadableStream<Uint8Array>,
     controller: ReadableStreamDefaultController<Uint8Array>,
 ): Promise<void> {
     const reader = body.getReader();
     const decoder = new TextDecoder();
-    const encoder = new TextEncoder();
     let carry = "";
-    while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        carry += decoder.decode(value, { stream: true });
-        const lines = carry.split("\n");
-        carry = lines.pop() ?? "";
-        let out = "";
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (trimmed === "data: [DONE]" || trimmed === "data:[DONE]") continue;
-            out += line + "\n";
+    try {
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            carry += decoder.decode(value, { stream: true });
+            const lines = carry.split("\n");
+            carry = lines.pop() ?? "";
+            let out = "";
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (trimmed === "data: [DONE]" || trimmed === "data:[DONE]") continue;
+                out += line + "\n";
+            }
+            if (out) controller.enqueue(PIPE_ENCODER.encode(out));
         }
-        if (out) controller.enqueue(encoder.encode(out));
-    }
-    if (carry) {
-        const trimmed = carry.trim();
-        if (trimmed !== "data: [DONE]" && trimmed !== "data:[DONE]") {
-            controller.enqueue(encoder.encode(carry));
+        if (carry) {
+            const trimmed = carry.trim();
+            if (trimmed !== "data: [DONE]" && trimmed !== "data:[DONE]") {
+                controller.enqueue(PIPE_ENCODER.encode(carry));
+            }
         }
+    } finally {
+        // Free the upstream connection on any exit path (orderly
+        // close, controller.enqueue throw on aborted client, etc.).
+        // Without this, an aborted FE leaves the upstream socket
+        // held until GC, which on free-tier rate-limited providers
+        // can blow the per-key concurrency cap.
+        try { await reader.cancel() } catch { /* ignore */ }
+        try { reader.releaseLock() } catch { /* ignore */ }
     }
 }

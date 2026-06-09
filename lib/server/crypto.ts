@@ -8,14 +8,21 @@ const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
 const TAG_LENGTH = 16;
 
+// SHA-256 of LOOM_MASTER_KEY — the derived AES key. LOOM_MASTER_KEY
+// doesn't change at runtime, so we memoise the derivation. Without
+// this every encrypt/decrypt re-hashes the master string.
+let cachedKey: Buffer | null = null;
+
 function getKey(): Buffer {
+    if (cachedKey) return cachedKey;
     const raw = process.env.LOOM_MASTER_KEY;
     if (!raw) {
         throw new Error(
             "LOOM_MASTER_KEY environment variable is required to encrypt/decrypt provider API keys."
         );
     }
-    return createHash("sha256").update(raw).digest();
+    cachedKey = createHash("sha256").update(raw).digest();
+    return cachedKey;
 }
 
 export function encryptSecret(plain: string | null | undefined): string | null {

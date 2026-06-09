@@ -5,6 +5,11 @@ import { HttpError } from "../response";
 import { completeLog } from "./log";
 import type { ForwardGenerationOpts, ForwardResult } from "./types";
 
+// Shared stateless encoder for the per-chunk re-emission. The decoder
+// stays per-stream because it accumulates partial multi-byte chars
+// across `stream: true` calls.
+const STREAM_ENCODER = new TextEncoder();
+
 /**
  * Streaming branch of forwardGeneration. Transcodes whatever the
  * upstream variant emits into chat-completion-shaped SSE so the
@@ -65,7 +70,6 @@ export function handleStream({
     const toolAcc = new Map<number, { id?: string; name?: string; arguments: string }>();
 
     const decoder = new TextDecoder();
-    const encoder = new TextEncoder();
     const createdAt = Math.floor(started / 1000);
 
     const emitChunk = (
@@ -107,7 +111,7 @@ export function handleStream({
         };
         if (systemFingerprint) chunkObj.system_fingerprint = systemFingerprint;
         if (usagePayload) chunkObj.usage = usagePayload;
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(chunkObj)}\n\n`));
+        controller.enqueue(STREAM_ENCODER.encode(`data: ${JSON.stringify(chunkObj)}\n\n`));
     };
 
     const transformer = new TransformStream<Uint8Array, Uint8Array>({
@@ -184,7 +188,7 @@ export function handleStream({
             const closingReason = finishReason ?? (orderedToolCalls.length > 0 ? "tool_calls" : "stop");
             // Terminal stop chunk (carries final usage if known) + [DONE].
             emitChunk(controller, {}, usage, closingReason);
-            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.enqueue(STREAM_ENCODER.encode("data: [DONE]\n\n"));
 
             // Persist the merged log entry in canonical chat-completion shape.
             const u = usage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined;
@@ -210,7 +214,6 @@ export function handleStream({
             completeLog(logId, {
                 status: "completed",
                 output: accumContent,
-                content: mergedResponse,
                 generation: mergedResponse,
                 promptTokens: u?.prompt_tokens ?? null,
                 completionTokens: u?.completion_tokens ?? null,

@@ -21,20 +21,34 @@ export async function authenticateBearer(req: Request): Promise<SessionUser> {
     const token = match[1].trim();
     const hash = sha256(token);
 
-    const rows = db
+    const row = db
         .select({ user: users, apiKey: apiKeys })
         .from(apiKeys)
         .innerJoin(users, eq(users.id, apiKeys.userId))
         .where(eq(apiKeys.keyHash, hash))
-        .all();
+        .get();
 
-    const row = rows[0];
     if (!row) throw unauthorized("Invalid API key");
 
+    bumpLastUsed(row.apiKey.id, row.apiKey.lastUsedAt);
+    return userToSession(row.user);
+}
+
+// Debounce last_used_at writes — an active API client can hammer
+// gateway requests, and a per-request UPDATE writes back into
+// `api_keys` thousands of times for what is essentially a "seen
+// recently" stat. Only persist when the existing timestamp is more
+// than LAST_USED_DEBOUNCE_MS stale.
+const LAST_USED_DEBOUNCE_MS = 60_000;
+const TZ_SUFFIX_RE = /[+-]\d\d:?\d\d$/;
+
+function bumpLastUsed(keyId: string, prev: string | null): void {
+    if (prev) {
+        const t = Date.parse(prev.endsWith("Z") || TZ_SUFFIX_RE.test(prev) ? prev : prev + "Z");
+        if (Number.isFinite(t) && Date.now() - t < LAST_USED_DEBOUNCE_MS) return;
+    }
     db.update(apiKeys)
         .set({ lastUsedAt: new Date().toISOString() })
-        .where(eq(apiKeys.id, row.apiKey.id))
+        .where(eq(apiKeys.id, keyId))
         .run();
-
-    return userToSession(row.user);
 }

@@ -1,4 +1,5 @@
 import "server-only";
+import { eq } from "drizzle-orm";
 import { db, schema } from "./db";
 import { decryptSecret } from "./crypto";
 import { classifyModel } from "./capabilities";
@@ -47,6 +48,10 @@ interface CacheEntry {
 }
 
 const cache = new Map<string, CacheEntry>();
+// In-flight refreshes — coalesces a thundering herd of concurrent
+// stale lookups into a single upstream /models request. The first
+// caller starts the fetch, subsequent callers reuse the same promise.
+const pendingRefresh = new Map<string, Promise<CacheEntry>>();
 
 function cacheTtlMs(): number {
     const seconds = Number(process.env.LOOM_MODELS_CACHE_TTL);
@@ -97,17 +102,31 @@ export async function discoverModels(provider: Provider): Promise<DiscoveredMode
 }
 
 async function refreshProvider(provider: Provider): Promise<CacheEntry> {
-    const entry: CacheEntry = { fetchedAt: Date.now(), models: [], error: null };
-    try {
-        entry.models = await discoverModels(provider);
-    } catch (err) {
-        entry.error = err instanceof Error ? err.message : String(err);
-        // Keep stale models if we had any, so a transient upstream blip doesn't blank the list
-        const prev = cache.get(provider.id);
-        if (prev?.models?.length) entry.models = prev.models;
-    }
-    cache.set(provider.id, entry);
-    return entry;
+    // Coalesce concurrent refreshers — without this, a discovery
+    // route hit + a chat request triggering resolveByDiscovery can
+    // both miss the cache simultaneously and each fire the upstream
+    // /models call. Same provider id → same in-flight promise.
+    const inflight = pendingRefresh.get(provider.id);
+    if (inflight) return inflight;
+
+    const fresh = (async () => {
+        const entry: CacheEntry = { fetchedAt: Date.now(), models: [], error: null };
+        try {
+            entry.models = await discoverModels(provider);
+        } catch (err) {
+            entry.error = err instanceof Error ? err.message : String(err);
+            // Keep stale models if we had any, so a transient upstream blip doesn't blank the list
+            const prev = cache.get(provider.id);
+            if (prev?.models?.length) entry.models = prev.models;
+        }
+        cache.set(provider.id, entry);
+        return entry;
+    })().finally(() => {
+        pendingRefresh.delete(provider.id);
+    });
+
+    pendingRefresh.set(provider.id, fresh);
+    return fresh;
 }
 
 async function getEntry(provider: Provider, opts: { force?: boolean } = {}): Promise<CacheEntry> {
@@ -117,7 +136,7 @@ async function getEntry(provider: Provider, opts: { force?: boolean } = {}): Pro
 }
 
 function enabledProviders(): Provider[] {
-    return db.select().from(schema.providers).all().filter((p) => p.enabled);
+    return db.select().from(schema.providers).where(eq(schema.providers.enabled, true)).all();
 }
 
 /**
@@ -130,6 +149,13 @@ export async function listAllDiscovered(opts: { force?: boolean } = {}): Promise
     const out: DiscoveredModel[] = [];
     for (const e of entries) out.push(...e.models);
     return out;
+}
+
+/** Best-effort count of discovered models for a single provider. */
+export async function discoveredCountForProvider(provider: Provider): Promise<number> {
+    if (!provider.enabled) return 0;
+    const entry = await getEntry(provider);
+    return entry.models.length;
 }
 
 /** Best-effort per-provider count of discovered models (zero on failure). */

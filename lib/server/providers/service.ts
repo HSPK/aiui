@@ -5,7 +5,7 @@ import { db } from "../db";
 import { models, providers } from "../db/schema";
 import { decryptSecret, encryptSecret } from "../crypto";
 import { badRequest, notFound } from "../response";
-import { clearDiscoveryCache, discoverModels, discoveredCountByProvider } from "../discovery";
+import { clearDiscoveryCache, discoverModels, discoveredCountByProvider, discoveredCountForProvider } from "../discovery";
 import { resolveAdapter } from "../adapters";
 import "../adapters/register";
 import { serializeProvider } from "./serializer";
@@ -23,6 +23,16 @@ function dbModelCounts(): Record<string, number> {
     const map: Record<string, number> = {};
     for (const r of rows) map[r.providerId] = Number(r.c);
     return map;
+}
+
+/** DB-only count of models for a single provider (excludes discovered). */
+function dbModelCountForProvider(providerId: string): number {
+    const row = db
+        .select({ c: sql<number>`count(*)`.as("c") })
+        .from(models)
+        .where(eq(models.providerId, providerId))
+        .get();
+    return Number(row?.c ?? 0);
 }
 
 export function findProviderByIdOrName(idOrName: string): Provider | undefined {
@@ -46,10 +56,9 @@ export async function listProviders(): Promise<ProviderDTO[]> {
 export async function getProvider(idOrName: string): Promise<ProviderDTO> {
     const provider = findProviderByIdOrName(idOrName);
     if (!provider) throw notFound("Provider not found");
-    const dbCounts = dbModelCounts();
-    const discoveredCounts = await discoveredCountByProvider();
-    const total = (dbCounts[provider.id] ?? 0) + (discoveredCounts[provider.id] ?? 0);
-    return serializeProvider(provider, total);
+    const dbCount = dbModelCountForProvider(provider.id);
+    const discoveredCount = await discoveredCountForProvider(provider);
+    return serializeProvider(provider, dbCount + discoveredCount);
 }
 
 /**

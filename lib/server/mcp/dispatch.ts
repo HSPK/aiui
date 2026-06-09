@@ -1,4 +1,5 @@
 import "server-only";
+import type { McpServerDTO } from "@/lib/schemas/mcp";
 import { listMcpServers } from "./service";
 import { CALL_TIMEOUT_MS, getClient, withTimeout } from "./runtime";
 import { listToolsForServer } from "./protocol";
@@ -71,7 +72,38 @@ export function unqualify(qualifiedName: string): { serverPrefix: string; toolNa
 
 /** Aggregate tools across the requested server ids. Failed servers are
  *  swallowed (with one toast-level message in the result) so a single
- *  flaky server doesn't break the whole turn. */
+ *  flaky server doesn't break the whole turn.
+ *
+ *  Hot-path optimisation: the most recent successful health-check
+ *  writes the server's `tools/list` snapshot to `mcp_servers.tools_cache`
+ *  alongside `last_check_at`. When that snapshot is fresh we can build
+ *  the AggregatedTool[] from DB-resident JSON instead of spawning a
+ *  stdio child or hitting the HTTP server — typically saving 100–500 ms
+ *  per enabled server per chat turn. */
+const TOOLS_CACHE_TTL_MS = 5 * 60 * 1000
+
+function ageMs(iso: string | null | undefined): number {
+    if (!iso) return Infinity
+    const t = Date.parse(iso.endsWith("Z") || /[+-]\d\d:?\d\d$/.test(iso) ? iso : iso + "Z")
+    if (Number.isNaN(t)) return Infinity
+    return Date.now() - t
+}
+
+function aggregateFromCache(server: McpServerDTO): AggregatedTool[] | null {
+    if (server.last_check_status !== "ok") return null
+    if (ageMs(server.last_check_at) > TOOLS_CACHE_TTL_MS) return null
+    const cached = server.tools_cache
+    if (!cached) return null
+    return cached.map((t) => ({
+        qualifiedName: qualify(server.name, t.name),
+        localName: t.name,
+        description: t.description,
+        parameters: t.parameters,
+        serverId: server.id,
+        serverName: server.name,
+    }))
+}
+
 export async function aggregateTools(serverIds: string[]): Promise<{
     tools: AggregatedTool[];
     errors: Array<{ serverId: string; serverName: string; message: string }>;
@@ -84,6 +116,13 @@ export async function aggregateTools(serverIds: string[]): Promise<{
     const errors: Array<{ serverId: string; serverName: string; message: string }> = [];
     await Promise.all(
         servers.map(async (s) => {
+            // Fast path: serve from the persisted `tools_cache` snapshot
+            // when fresh. Skips the MCP round-trip entirely.
+            const cached = aggregateFromCache(s)
+            if (cached) {
+                tools.push(...cached)
+                return
+            }
             try {
                 const t = await listToolsForServer(s);
                 tools.push(...t);

@@ -37,6 +37,7 @@ import type {
 // sibling files is an internal refactor only.
 export { authenticateGateway };
 export type { AssembledToolCall, ForwardGenerationOpts, ForwardResult, ResolvedModel };
+export { forwardMultipartGeneration, gatewayProxy } from "./multipart";
 
 // =============================================================================
 // Model resolution
@@ -195,12 +196,25 @@ export async function forwardGeneration(
     });
 
     const started = Date.now();
+    // Honour the model's configured timeout (admin sets it on the
+    // model row; defaults to 60s). Combine with the caller-supplied
+    // signal so EITHER a client disconnect OR the deadline aborts
+    // the upstream request. Streaming responses don't tick down the
+    // timeout per-chunk — it's a TTFB-ish bound that errors out if
+    // the upstream hangs before sending headers.
+    const timeoutMs = Math.max(1, model.timeout) * 1000;
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    const combinedSignal = opts.signal
+        ? AbortSignal.any([opts.signal, timeoutSignal])
+        : timeoutSignal;
+
     let upstream: Response;
     try {
         upstream = await fetch(adapter.upstreamUrl(callArgs), {
             method: "POST",
             headers: adapter.upstreamHeaders(callArgs, apiKey),
             body: JSON.stringify(upstreamBody),
+            signal: combinedSignal,
         });
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

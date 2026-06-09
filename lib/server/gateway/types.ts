@@ -29,6 +29,10 @@ export interface ForwardResult {
 export interface ForwardGenerationOpts {
     conversationId?: string;
     messageId?: string;
+    /** Optional abort signal — forwarded to the upstream fetch so a
+     *  client disconnect tears down the open HTTP connection instead
+     *  of letting the model finish into the void. */
+    signal?: AbortSignal;
     /** Called once with extracted info after a non-stream or end-of-stream completion. */
     onComplete?: (info: {
         content: string;

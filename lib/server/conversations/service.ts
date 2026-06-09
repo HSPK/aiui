@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, count, desc, eq, inArray, like, or, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, like, sql, type SQL } from "drizzle-orm";
 import { db } from "../db";
 import { conversations, messages } from "../db/schema";
 import { forbidden, notFound } from "../response";
@@ -18,10 +18,7 @@ export function listConversations(userId: string, query: ConversationListQuery):
         eq(conversations.isDeleted, false),
     ];
     if (query.keyword) {
-        filters.push(or(
-            like(conversations.title, `%${query.keyword}%`),
-            like(conversations.searchText, `%${query.keyword}%`),
-        )!);
+        filters.push(like(conversations.title, `%${query.keyword}%`));
     }
     const whereExpr = and(...filters);
 
@@ -39,7 +36,6 @@ export function listConversations(userId: string, query: ConversationListQuery):
         title: c.title,
         config: (c.config ?? {}) as Record<string, unknown>,
         group_id: c.groupId ?? undefined,
-        search_text: c.searchText ?? undefined,
         created_at: c.createdAt,
         updated_at: c.updatedAt,
         is_deleted: !!c.isDeleted,
@@ -92,36 +88,36 @@ export function listMessages(userId: string, conversationId: string, query: Mess
     // user. Without this, paginating a tool-heavy turn breaks the FE
     // fold (orphan tool rows can't bind back to a missing parent and
     // get dropped, leaving an empty render).
+    //
+    // Recursive CTE: one round-trip walks the parent chain to root
+    // instead of O(depth) `IN (...)` round-trips. SQLite cap protects
+    // against pathological cycles in case of corrupted parent_id data.
     const haveIds = new Set(rows.map((r) => r.id));
-    const ancestors: typeof rows = [];
-    let frontier = rows
-        .map((r) => r.parentId)
-        .filter((id): id is string => !!id && !haveIds.has(id));
-    const seenParentIds = new Set<string>(frontier);
-    // Bounded loop — even pathological chains will terminate at the
-    // root user message. Cap at 64 just in case of corrupted data so
-    // we never spin forever.
-    let hops = 0;
-    while (frontier.length > 0 && hops < 64) {
-        const parents = db.select().from(messages)
-            .where(and(
-                eq(messages.conversationId, conversationId),
-                inArray(messages.id, frontier),
-            ))
-            .all();
-        for (const p of parents) {
-            ancestors.push(p);
-            haveIds.add(p.id);
-        }
-        const nextFrontier: string[] = [];
-        for (const p of parents) {
-            if (p.parentId && !haveIds.has(p.parentId) && !seenParentIds.has(p.parentId)) {
-                seenParentIds.add(p.parentId);
-                nextFrontier.push(p.parentId);
-            }
-        }
-        frontier = nextFrontier;
-        hops += 1;
+    const seedParents = Array.from(
+        new Set(
+            rows.map((r) => r.parentId)
+                .filter((id): id is string => !!id && !haveIds.has(id)),
+        ),
+    );
+    let ancestors: typeof rows = [];
+    if (seedParents.length > 0) {
+        const seedJson = JSON.stringify(seedParents);
+        ancestors = db.all<typeof messages.$inferSelect>(sql`
+            WITH RECURSIVE ancestors(id, depth) AS (
+                SELECT value AS id, 0 AS depth FROM json_each(${seedJson})
+                UNION
+                SELECT m.parent_id, a.depth + 1
+                FROM messages m
+                JOIN ancestors a ON m.id = a.id
+                WHERE m.parent_id IS NOT NULL
+                  AND m.conversation_id = ${conversationId}
+                  AND a.depth < 64
+            )
+            SELECT m.* FROM messages m
+            JOIN ancestors a ON m.id = a.id
+            WHERE m.conversation_id = ${conversationId}
+        `);
+        for (const a of ancestors) haveIds.add(a.id);
     }
 
     // Also descend: for every loaded assistant, pull in any `role:
@@ -166,7 +162,6 @@ export function listMessages(userId: string, conversationId: string, query: Mess
         model_id: m.modelId ?? undefined,
         generation_id: m.generationId ?? undefined,
         parent_id: m.parentId ?? undefined,
-        meta: m.meta ?? undefined,
         is_active: !!m.isActive,
         rating: m.rating ?? undefined,
         feedback: m.feedback ?? undefined,

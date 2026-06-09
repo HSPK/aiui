@@ -59,14 +59,13 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
     if (!token) return null;
     const id = sha256(token);
 
-    const rows = db
+    const row = db
         .select({ user: users, session: sessions })
         .from(sessions)
         .innerJoin(users, eq(users.id, sessions.userId))
         .where(eq(sessions.id, id))
-        .all();
+        .get();
 
-    const row = rows[0];
     if (!row) return null;
     if (row.session.expiresAt.getTime() < Date.now()) {
         purgeExpired();

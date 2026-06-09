@@ -29,9 +29,14 @@ function magnitude(v: number[]): number {
     return Math.sqrt(s);
 }
 
-function cosine(a: number[], b: number[]): number {
-    const m = magnitude(a) * magnitude(b);
-    return m === 0 ? 0 : dot(a, b) / m;
+/** Cosine with a pre-computed query magnitude. The query vector is
+ *  reused across N documents, so re-computing its magnitude per
+ *  document was O(N · dim) wasted work. */
+function cosineWithPrecomputed(a: number[], b: number[], magA: number): number {
+    if (magA === 0) return 0;
+    const magB = magnitude(b);
+    if (magB === 0) return 0;
+    return dot(a, b) / (magA * magB);
 }
 
 /** Wire-format param keys to forward to upstream. Anything unset is
@@ -107,10 +112,13 @@ async function runOne(
         const dim = queryVec?.length ?? docVecs.find((v) => v?.length)?.length ?? null;
 
         const scores: PlaygroundEmbeddingDocScore[] | null = queryVec
-            ? docVecs.map((v, i) => ({
-                  index: i,
-                  score: v ? cosine(queryVec, v) : 0,
-              }))
+            ? (() => {
+                  const queryMag = magnitude(queryVec);
+                  return docVecs.map((v, i) => ({
+                      index: i,
+                      score: v ? cosineWithPrecomputed(queryVec, v, queryMag) : 0,
+                  }));
+              })()
             : null;
 
         return {
