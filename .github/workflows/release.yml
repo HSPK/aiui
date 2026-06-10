@@ -52,9 +52,16 @@ jobs:
           version=$(node -p "require('./package.json').version")
           tarball="${name}-${version}.tgz"
           test -f "$tarball"
+          # Stable alias filename so the GitHub "/releases/latest/download/"
+          # redirect works (which requires a known asset name independent
+          # of version). Same bytes, two names — npm/bun de-dup by URL so
+          # there's no cost to publishing both.
+          alias_tarball="${name}.tgz"
+          cp "$tarball" "$alias_tarball"
           echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+          echo "alias_tarball=$alias_tarball" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          ls -lh "$tarball"
+          ls -lh "$tarball" "$alias_tarball"
 
       - name: Resolve release tag
         id: tag
@@ -72,11 +79,15 @@ jobs:
           set -e
           tag="${{ steps.tag.outputs.tag }}"
           tarball="${{ steps.pack.outputs.tarball }}"
-          # Idempotent: create if missing, otherwise upload (clobbering existing asset).
+          alias_tarball="${{ steps.pack.outputs.alias_tarball }}"
+          notes=$(printf '%s\n%s\n%s\n' \
+            "Install latest:" \
+            "    bun add -g https://github.com/HSPK/loom/releases/latest/download/loom.tgz" \
+            "" \
+            "Install pinned:" \
+            "    bun add -g https://github.com/HSPK/loom/releases/download/$tag/$tarball")
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" "$tarball" --clobber
+            gh release upload "$tag" "$tarball" "$alias_tarball" --clobber
           else
-            gh release create "$tag" "$tarball" \
-              --title "$tag" \
-              --notes "Install: \`npm i https://github.com/HSPK/loom/releases/download/$tag/$tarball\`"
+            gh release create "$tag" "$tarball" "$alias_tarball" --title "$tag" --notes "$notes"
           fi
