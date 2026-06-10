@@ -50,9 +50,33 @@ export function locateConfigFile(): string | null {
     return null;
 }
 
-/** Recursively replace ${ENV_VAR} in any string value with the corresponding env var. */
+/** Recursively replace ${ENV_VAR} in any string value with the corresponding
+ *  env var. When a referenced env var is unset/empty, the ENTIRE string is
+ *  returned as `undefined` (and a one-shot warning is emitted) — partial
+ *  interpolation silently produces empty strings, which would defeat the
+ *  "only overwrite if specified" guards in upsertProvider et al. (a leaked
+ *  `${OPENAI_KEY}` with the env unset would otherwise wipe the stored secret
+ *  on every config reload). Returning undefined lets the existing `!==
+ *  undefined` checks correctly treat the field as "not specified in this
+ *  config", preserving the UI-managed value. */
+const warnedUnsetEnvVars = new Set<string>();
 export function interpolateEnv<T>(value: T): T {
     if (typeof value === "string") {
+        let hasUnset = false;
+        value.replace(/\$\{([A-Z0-9_]+)\}/g, (_m, name) => {
+            const v = process.env[name];
+            if (v === undefined || v === "") {
+                hasUnset = true;
+                if (!warnedUnsetEnvVars.has(name)) {
+                    warnedUnsetEnvVars.add(name);
+                    console.warn(
+                        `[loom:config] env var \${${name}} is not set — fields referencing it will be treated as omitted (preserving any existing DB value)`,
+                    );
+                }
+            }
+            return "";
+        });
+        if (hasUnset) return undefined as unknown as T;
         return value.replace(/\$\{([A-Z0-9_]+)\}/g, (_m, name) => process.env[name] ?? "") as T;
     }
     if (Array.isArray(value)) {
@@ -61,7 +85,12 @@ export function interpolateEnv<T>(value: T): T {
     if (value && typeof value === "object") {
         const out: Record<string, unknown> = {};
         for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-            out[k] = interpolateEnv(v);
+            const interpolated = interpolateEnv(v);
+            // Drop the key entirely when interpolation collapsed to undefined
+            // so the "field not specified" guards in downstream consumers
+            // (entry.api_key !== undefined etc.) re-engage and the existing
+            // DB-stored value is preserved.
+            if (interpolated !== undefined) out[k] = interpolated;
         }
         return out as T;
     }

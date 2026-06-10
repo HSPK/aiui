@@ -1,0 +1,82 @@
+name: Release tarball to GitHub
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Tag or commit SHA to release from"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 1
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build (Next.js + CLI + external aliases)
+        run: bun run build
+
+      - name: Run e2e suite
+        run: bun run test
+
+      - name: Pack tarball
+        id: pack
+        run: |
+          set -e
+          npm pack
+          name=$(node -p "require('./package.json').name.replace('@','').replace('/','-')")
+          version=$(node -p "require('./package.json').version")
+          tarball="${name}-${version}.tgz"
+          test -f "$tarball"
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          ls -lh "$tarball"
+
+      - name: Resolve release tag
+        id: tag
+        run: |
+          set -e
+          ref="${{ inputs.ref || github.ref_name }}"
+          # When triggered by tag push, github.ref_name is the tag.
+          # When triggered manually, inputs.ref is a tag or SHA — use it directly.
+          echo "tag=$ref" >> "$GITHUB_OUTPUT"
+
+      - name: Create / update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          tag="${{ steps.tag.outputs.tag }}"
+          tarball="${{ steps.pack.outputs.tarball }}"
+          # Idempotent: create if missing, otherwise upload (clobbering existing asset).
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$tarball" --clobber
+          else
+            gh release create "$tag" "$tarball" \
+              --title "$tag" \
+              --notes "Install: \`npm i https://github.com/HSPK/loom/releases/download/$tag/$tarball\`"
+          fi

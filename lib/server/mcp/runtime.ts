@@ -332,11 +332,25 @@ async function buildClient(
      *  When the child process dies unexpectedly (crash, kill, network
      *  hangup), the SDK fires onclose; we re-dispatch via
      *  `hooks.onUnexpectedClose` so the entry's state machine can
-     *  flip to `failed`. We capture `session` so a delayed close
-     *  event on an already-replaced connection can be ignored by the
-     *  hook implementation. */
+     *  flip to `failed`.
+     *
+     *  CRITICAL: must be attached BEFORE `client.connect(transport)`.
+     *  The SDK's `Protocol.connect()` captures `transport.onclose` and
+     *  wraps it with its own `_onclose()` which (a) rejects every
+     *  pending `_responseHandlers` entry with `McpError` and (b)
+     *  clears per-request timeouts. If we attach AFTER connect, we
+     *  clobber that wrapper — and when the child crashes, in-flight
+     *  `client.callTool()` / `listTools()` calls never settle until
+     *  the per-call 60s `withTimeout` fires, stalling
+     *  `disposeMcpClient` and stranding the user behind a long hang.
+     *  Chain instead of overwrite via the `_onclose ?? prev` capture
+     *  pattern the SDK uses. */
     const attachUnexpectedClose = (t: { onclose?: () => void }) => {
-        t.onclose = () => hooks.onUnexpectedClose?.();
+        const prev = t.onclose;
+        t.onclose = () => {
+            try { prev?.(); } catch { /* ignore */ }
+            hooks.onUnexpectedClose?.();
+        };
     };
 
     let close: () => Promise<void>;
@@ -410,6 +424,11 @@ async function buildClient(
 
         appendMcpLog(server.id, "lifecycle", "starting");
         hooks.onPhase?.("starting");
+        // Attach BEFORE connect so the SDK's Protocol.connect can
+        // chain on top of our handler (see attachUnexpectedClose
+        // comment). Without this, pending RPCs hang ~60s on child
+        // crash before timing out, instead of rejecting immediately.
+        attachUnexpectedClose(transport);
         try {
             // The SDK's `connect()` covers spawn → initialize handshake
             // in one shot. For stdio that handshake is blocked until
@@ -436,7 +455,6 @@ async function buildClient(
         }
 
         spawningTransports.delete(spawningHandle);
-        attachUnexpectedClose(transport);
         let closed = false;
         close = async () => {
             // Idempotency latch — softClose, release, evict, dispose
@@ -445,13 +463,17 @@ async function buildClient(
             // / removeListener don't run twice in pathological cases.
             if (closed) return;
             closed = true;
-            // Detach EVERY listener synchronously BEFORE we await
+            // Detach stderr handlers synchronously BEFORE we await
             // transport.close — between the await and the SDK's
             // actual close event there's a window where the
             // PassThrough can still flush queued chunks, and we
             // don't want those to fire user-facing hooks or
             // resurrect log files.
-            transport.onclose = undefined;
+            //
+            // Do NOT detach transport.onclose — the SDK's chained
+            // handler must run on close() to reject any in-flight
+            // RPCs. Our chained `hooks.onUnexpectedClose` no-ops on
+            // already-disposed entries.
             if (stderr && stderrDataHandler) stderr.removeListener("data", stderrDataHandler);
             if (stderr && stderrEndHandler) stderr.removeListener("end", stderrEndHandler);
             try { await transport.close(); } catch { /* ignore */ }
@@ -466,6 +488,8 @@ async function buildClient(
         });
         const spawningHandle = { close: () => transport.close() };
         spawningTransports.add(spawningHandle);
+        // Attach BEFORE connect — see stdio path comment above.
+        attachUnexpectedClose(transport);
         try {
             await withTimeout(client.connect(transport), connectTimeoutMs, "mcp connect");
         } catch (err) {
@@ -477,12 +501,12 @@ async function buildClient(
         spawningTransports.delete(spawningHandle);
         appendMcpLog(server.id, "lifecycle", "ready");
         hooks.onPhase?.("ready");
-        attachUnexpectedClose(transport);
         let closedHttp = false;
         close = async () => {
             if (closedHttp) return;
             closedHttp = true;
-            transport.onclose = undefined;
+            // Same reasoning as stdio close() — keep transport.onclose
+            // chained so SDK can reject pending RPCs on close.
             try { await transport.close(); } catch { /* ignore */ }
         };
     }

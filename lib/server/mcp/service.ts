@@ -162,7 +162,26 @@ export function updateMcpServer(idOrName: string, input: McpServerUpdateInput): 
         // actually changes. Keeping them separate is what stops the cached
         // child process from being respawned for a rename.
         updates.updatedAt = new Date().toISOString();
-        if (configChanged) updates.configVersion = randomUUID();
+        if (configChanged) {
+            updates.configVersion = randomUUID();
+            // Invalidate the tools/resources/prompts caches AND the
+            // health-check signal inside the same transaction. Without
+            // this, `dispatch.aggregateFromCache` keeps serving the
+            // OLD config's tool list (it gates only on
+            // last_check_status==="ok" + age) until the async
+            // `scheduleCheck` fires below finishes — seconds for a
+            // warm server, minutes for a stdio cold spawn. During
+            // that window the model picks tools from the stale list,
+            // then `executeTool` (which builds against the NEW config)
+            // fails with "unknown tool" — confusing the user right
+            // after they edited the config.
+            updates.toolsCache = null;
+            updates.resourcesCache = null;
+            updates.promptsCache = null;
+            updates.lastCheckStatus = null;
+            updates.lastCheckAt = null;
+            updates.lastCheckError = null;
+        }
 
         tx.update(mcpServers).set(updates).where(eq(mcpServers.id, s.id)).run();
         willBeEnabled = input.enabled !== undefined ? input.enabled : !!s.enabled;
