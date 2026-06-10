@@ -19,6 +19,11 @@ export async function createSession(userId: string): Promise<string> {
     const token = generateRandomToken(32);
     const id = sha256(token);
     const expiresAt = new Date(Date.now() + sessionTtlMs());
+    // Opportunistic cleanup — a login is cheap (rare event), so piggy-
+    // back the prune to keep the sessions table bounded even when
+    // users never hit an expired-cookie path. Without this, rows
+    // accumulate forever across years of logins.
+    purgeExpired();
     db.insert(sessions).values({ id, userId, expiresAt }).run();
     return token;
 }

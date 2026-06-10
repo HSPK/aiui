@@ -1,5 +1,5 @@
 import "server-only";
-import { registerVariant, type UpstreamApiVariant } from ".";
+import { extractUpstreamError, registerVariant, type UpstreamApiVariant } from ".";
 
 export const embeddingsVariant: UpstreamApiVariant = {
     id: "embeddings",
@@ -19,6 +19,7 @@ export const embeddingsVariant: UpstreamApiVariant = {
             completionTokens: null,
             totalTokens: j?.usage?.total_tokens ?? null,
             normalized: (j ?? {}) as Record<string, unknown>,
+            error: extractUpstreamError(j),
         };
     },
 

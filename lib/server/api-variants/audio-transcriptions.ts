@@ -1,5 +1,5 @@
 import "server-only";
-import { registerVariant, type UpstreamApiVariant } from ".";
+import { extractUpstreamError, registerVariant, type UpstreamApiVariant } from ".";
 
 export const audioTranscriptionsVariant: UpstreamApiVariant = {
     id: "audio.transcriptions",
@@ -15,6 +15,7 @@ export const audioTranscriptionsVariant: UpstreamApiVariant = {
             completionTokens: null,
             totalTokens: null,
             normalized: (json ?? {}) as Record<string, unknown>,
+            error: extractUpstreamError(json),
         };
     },
 

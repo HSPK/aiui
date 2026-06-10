@@ -10,11 +10,11 @@ export const userPreferencesDTOSchema = z.object({
     default_model: z.string(),
     default_summary_model: z.string(),
 
-    default_system_prompt: z.string(),
-    default_history_limit: z.number().int().positive(),
+    default_system_prompt: z.string().max(20_000),
+    default_history_limit: z.number().int().min(1).max(50),
 
-    user_name: z.string(),
-    user_avatar: z.string(),
+    user_name: z.string().max(120),
+    user_avatar: z.string().max(20),
 
     // Appearance — drives lib/themes registry + next-themes scheme.
     theme_id: z.string(),
@@ -24,6 +24,14 @@ export const userPreferencesDTOSchema = z.object({
     chat_render_mode: z.enum(["instant", "stream", "typewriter"]),
     typewriter_cps: z.number().int().min(20).max(400),
     chat_bubble_style: z.enum(["plain", "bubble", "minimal"]),
+
+    // Timeouts (seconds). Global per-user knobs that override the
+    // hard-coded gateway and MCP-runtime defaults. Reasoning models
+    // and slow upstreams routinely need >60s, and `npx`/`uvx` MCP
+    // installs can take minutes on cold networks — so the defaults
+    // are generous (1h) and the bounds permit anything up to 24h.
+    gateway_timeout_seconds: z.number().int().min(1).max(86_400),
+    mcp_connect_timeout_seconds: z.number().int().min(1).max(86_400),
 });
 
 /** All fields optional → PATCH semantics. Sent fields replace; unsent stay. */
@@ -41,6 +49,8 @@ export const defaultUserPreferences: UserPreferencesDTO = {
     chat_render_mode: "stream",
     typewriter_cps: 80,
     chat_bubble_style: "plain",
+    gateway_timeout_seconds: 3600,
+    mcp_connect_timeout_seconds: 3600,
 };
 
 export type UserPreferencesDTO = z.infer<typeof userPreferencesDTOSchema>;

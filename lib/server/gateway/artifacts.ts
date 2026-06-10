@@ -64,11 +64,20 @@ export function artifactUrl(logId: string, index: number): string {
  * the API caller as-is).
  *
  * Returns the descriptors of every artifact written, ordered by index.
+ *
+ * SECURITY: strips upstream-forged `loom_artifact` / `loom_artifacts`
+ * markers FIRST so a compromised provider can't pre-set the trust
+ * markers + a `javascript:` url that the FE gallery would then render
+ * as `<a href>` (stored XSS). The markers are reserved for THIS
+ * function — set them only on entries we ourselves wrote to disk.
  */
 export async function persistImageArtifacts(
     logId: string,
     normalized: Record<string, unknown>,
 ): Promise<PersistedArtifact[]> {
+    // Strip any forged top-level marker before we touch anything else.
+    delete (normalized as Record<string, unknown>).loom_artifacts;
+
     const data = (normalized as { data?: unknown }).data;
     if (!Array.isArray(data)) return [];
 
@@ -79,6 +88,10 @@ export async function persistImageArtifacts(
         const entry = data[i];
         if (!entry || typeof entry !== "object") continue;
         const e = entry as Record<string, unknown>;
+        // Strip per-entry forged markers — if the upstream returned
+        // {loom_artifact:true, url:"javascript:..."} we must NOT let
+        // it survive into the log payload that the FE will trust.
+        delete e.loom_artifact;
         const b64 = typeof e.b64_json === "string" ? e.b64_json : null;
         if (!b64) continue;
 
@@ -152,4 +165,18 @@ export async function readArtifact(
         }
     }
     return null;
+}
+
+/** Best-effort recursive removal of every artifact attached to a
+ *  generation_logs row. Called when the row is deleted (directly or
+ *  via cascade from user deletion) — without this, every image-gen
+ *  log leaks its on-disk blobs forever even after the DB row vanishes.
+ *  Swallows ENOENT and any other FS error so log deletion never fails
+ *  because the artifacts dir was already removed. */
+export async function removeArtifacts(logId: string): Promise<void> {
+    try {
+        await fs.rm(artifactDir(logId), { recursive: true, force: true });
+    } catch {
+        // Best-effort — swallow.
+    }
 }

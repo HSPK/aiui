@@ -95,6 +95,7 @@ function setEnvIfMissing(name: string, value: unknown): void {
  *   cache.models_ttl_seconds    -> LOOM_MODELS_CACHE_TTL
  *   server.port                 -> LOOM_SERVER_PORT     (CLI uses this)
  *   server.hostname             -> LOOM_SERVER_HOSTNAME (CLI uses this)
+ *   server.trust_proxy          -> LOOM_TRUST_PROXY     (=1 when true)
  */
 export function applyConfigEnv(cfg: LoomConfig | null | undefined): string[] {
     if (!cfg || typeof cfg !== "object") return [];
@@ -112,6 +113,7 @@ export function applyConfigEnv(cfg: LoomConfig | null | undefined): string[] {
     map("LOOM_MODELS_CACHE_TTL", cfg.cache?.models_ttl_seconds);
     map("LOOM_SERVER_PORT", cfg.server?.port);
     map("LOOM_SERVER_HOSTNAME", cfg.server?.hostname);
+    map("LOOM_TRUST_PROXY", cfg.server?.trust_proxy ? "1" : undefined);
     return applied;
 }
 

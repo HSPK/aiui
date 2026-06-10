@@ -126,19 +126,36 @@ export const ModelSelect = React.memo(function ModelSelect({
 
     return (
         <div ref={containerRef} className="relative">
-            <button
-                type="button"
-                onClick={() => !isLoading && setOpen(!open)}
-                className={cn(
-                    "flex h-9 w-full items-center justify-between rounded-md border bg-transparent px-3 text-sm",
-                    "transition-colors hover:bg-muted/50",
-                    isLoading && "cursor-not-allowed opacity-50"
-                )}
-                disabled={isLoading}
-            >
-                <span className="truncate">{value || placeholder}</span>
-                <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
-            </button>
+            {(() => {
+                // Surface stale selection — value is set but isn't in
+                // the (filtered) options list. Without this cue the
+                // settings page lies: it shows the saved default model
+                // as if active while the chat picker silently falls
+                // back to `chatModels[0]` on first send.
+                const stale = !!value && !models.some((m) => m.name === value)
+                return (
+                    <button
+                        type="button"
+                        onClick={() => !isLoading && setOpen(!open)}
+                        className={cn(
+                            "flex h-9 w-full items-center justify-between rounded-md border bg-transparent px-3 text-sm",
+                            "transition-colors hover:bg-muted/50",
+                            isLoading && "cursor-not-allowed opacity-50",
+                            stale && "border-destructive/50",
+                        )}
+                        disabled={isLoading}
+                        title={stale ? `${value} is no longer available — pick another` : value || undefined}
+                    >
+                        <span className={cn("truncate", stale && "text-destructive line-through")}>
+                            {value || placeholder}
+                        </span>
+                        {stale && (
+                            <span className="ml-2 text-[10px] text-destructive shrink-0">(unavailable)</span>
+                        )}
+                        <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+                    </button>
+                )
+            })()}
             {open && (
                 <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover shadow-md">
                     <div className="border-b p-2">

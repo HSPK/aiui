@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button"
 import { ArrowUpDown, Files, Zap, Clock } from "lucide-react"
 
 import { formatToLocal } from "@/lib/utils"
+import { copyToClipboard } from "@/lib/clipboard"
 
 interface LogsTableProps {
     data: LogListItemDTO[];
@@ -59,7 +60,7 @@ export function LogsTable({ data, sorting, onSortingChange, onViewDetail }: Logs
                         className="h-3 w-3 opacity-0 group-hover:opacity-100 cursor-pointer text-muted-foreground transition-opacity"
                         onClick={(e) => {
                             e.stopPropagation();
-                            navigator.clipboard.writeText(row.original.id);
+                            void copyToClipboard(row.original.id);
                         }}
                     />
                 </div>

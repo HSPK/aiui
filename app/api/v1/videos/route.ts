@@ -17,7 +17,7 @@ export const POST = defineRoute({
             throw badRequest("POST /v1/videos expects multipart/form-data");
         }
         const form = await req.formData();
-        const { response } = await forwardMultipartGeneration(user, "video", form);
+        const { response } = await forwardMultipartGeneration(user, "video", form, { signal: req.signal });
         return response;
     },
 });

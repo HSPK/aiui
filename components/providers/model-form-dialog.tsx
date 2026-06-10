@@ -21,9 +21,14 @@ interface Props {
      *  promoted). In edit mode: the row being edited. */
     model?: ModelDTO | null
     defaultProviderId?: string
+    /** Forwarded from the inner form. Callers that anchor their page
+     *  on the model name (e.g. /models/[name]) use this to redirect
+     *  when the name changes — otherwise the URL points at a
+     *  now-non-existent slug. */
+    onSaved?: (saved: ModelDTO | null) => void
 }
 
-export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProviderId }: Props) {
+export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProviderId, onSaved }: Props) {
     // Pure create only when no model is supplied. Promoting a discovered
     // model is a form of edit from the user's POV — show the same title.
     const title = model || mode === "edit" ? "Edit" : "Add model"
@@ -48,7 +53,10 @@ export function ModelFormDialog({ open, onOpenChange, mode, model, defaultProvid
                         mode={mode}
                         model={model}
                         defaultProviderId={defaultProviderId}
-                        onSaved={() => onOpenChange(false)}
+                        onSaved={(saved) => {
+                            onSaved?.(saved)
+                            onOpenChange(false)
+                        }}
                         onCancel={() => onOpenChange(false)}
                     />
                 )}

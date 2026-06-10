@@ -7,13 +7,14 @@
 // automatically — don't add a banner or you get a duplicate.
 
 import * as esbuild from "esbuild";
-import { chmodSync, mkdirSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "..");
 const OUTFILE = resolve(ROOT, "bin/loom.mjs");
+const PKG_VERSION = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8")).version;
 
 mkdirSync(dirname(OUTFILE), { recursive: true });
 
@@ -28,6 +29,7 @@ await esbuild.build({
     packages: "external",
     // Resolve TS path alias `@/...` → repo root, matching tsconfig.json.
     alias: { "@": ROOT },
+    define: { "process.env.LOOM_VERSION": JSON.stringify(PKG_VERSION) },
     logLevel: "info",
 });
 

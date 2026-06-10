@@ -134,6 +134,41 @@
       "when": 1780991701367,
       "tag": "0018_melted_lily_hollister",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1781020718836,
+      "tag": "0019_timeout_default_3600",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1781060262790,
+      "tag": "0020_mcp_config_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1781071484668,
+      "tag": "0021_api_keys_expires_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1781073418190,
+      "tag": "0022_sessions_expires_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1781075030114,
+      "tag": "0023_iso_default_timestamps",
+      "breakpoints": true
     }
   ]
 }

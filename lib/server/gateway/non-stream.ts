@@ -2,6 +2,7 @@ import "server-only";
 import type { UpstreamApiVariant, VariantContext } from "../api-variants";
 import { persistImageArtifacts } from "./artifacts";
 import { completeLog } from "./log";
+import { HttpError } from "../response";
 import type { ForwardGenerationOpts, ForwardResult } from "./types";
 
 /**
@@ -30,7 +31,45 @@ export async function handleNonStream({
     const contentType = upstream.headers.get("Content-Type") ?? "";
 
     if (contentType.startsWith("application/json")) {
-        const json = await upstream.json().catch(() => ({}));
+        // CRITICAL: distinguish abort/truncation from a legitimate empty
+        // body. The earlier `await upstream.json().catch(() => ({}))`
+        // swallowed AbortError + invalid JSON + truncation alike, then
+        // logged the call as `status: "completed"` with null output and
+        // returned 200 — making a mid-body timeout indistinguishable from
+        // a clean empty response. Read text first; on parse failure,
+        // mark the log failed and surface a 502 so the caller knows.
+        let bodyText: string;
+        try {
+            bodyText = await upstream.text();
+        } catch (err) {
+            const reason = err instanceof Error ? err.message : String(err);
+            completeLog(logId, {
+                status: "failed",
+                reason: `Upstream body read failed: ${reason}`,
+                totalLatencyMs: Date.now() - started,
+            });
+            throw new HttpError(`Upstream body read failed: ${reason}`, 502);
+        }
+        let json: unknown;
+        if (!bodyText) {
+            // Empty body is legal (some upstreams return 200 + "" on
+            // success no-op). Continue with empty object so the
+            // downstream parser/log writers don't NPE.
+            json = {};
+        } else {
+            try {
+                json = JSON.parse(bodyText);
+            } catch (err) {
+                const reason = err instanceof Error ? err.message : String(err);
+                completeLog(logId, {
+                    status: "failed",
+                    reason: `Upstream returned invalid JSON: ${reason}`,
+                    output: bodyText.slice(0, 4096),
+                    totalLatencyMs: Date.now() - started,
+                });
+                throw new HttpError(`Upstream returned invalid JSON: ${reason}`, 502);
+            }
+        }
         const parsed = variant.parseResponse(json, ctx);
 
         // Image responses can carry MB-sized base64 blobs per entry —
@@ -53,9 +92,15 @@ export async function handleNonStream({
             }
         }
 
+        // Honor variant-reported terminal failure (R14): parseResponse
+        // sets `error` when the upstream returned HTTP 200 with
+        // `status:"failed"` / "incomplete" — promote to failed log +
+        // FE error so the chat row shows retry instead of a green
+        // bubble. Same UX contract as the streaming path.
         completeLog(logId, {
-            status: "completed",
+            status: parsed.error ? "failed" : "completed",
             output: parsed.output,
+            reason: parsed.error ?? null,
             generation: logNormalized,
             promptTokens: parsed.promptTokens,
             completionTokens: parsed.completionTokens,
@@ -68,6 +113,7 @@ export async function handleNonStream({
             usage: parsed.normalized.usage as Record<string, unknown> | undefined,
             toolCalls: parsed.toolCalls,
             finishReason: parsed.finishReason,
+            error: parsed.error,
         });
         return {
             response: new Response(JSON.stringify(parsed.normalized), {
@@ -77,8 +123,23 @@ export async function handleNonStream({
         };
     }
 
-    // Binary or unknown — log size, pass through.
-    const buf = await upstream.arrayBuffer();
+    // Binary or unknown — log size, pass through. arrayBuffer() can
+    // throw on abort/timeout/truncation mid-body; without this guard
+    // the `generation_logs` row would sit at `status: "pending"`
+    // forever (the route's defineRoute wrapper converts the throw to
+    // 500 but never touches the log row).
+    let buf: ArrayBuffer;
+    try {
+        buf = await upstream.arrayBuffer();
+    } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        completeLog(logId, {
+            status: "failed",
+            reason: `Upstream binary body read failed: ${reason}`,
+            totalLatencyMs: Date.now() - started,
+        });
+        throw new HttpError(`Upstream binary body read failed: ${reason}`, 502);
+    }
     completeLog(logId, {
         status: "completed",
         output: `binary response (${contentType || "unknown"}, ${buf.byteLength} bytes)`,

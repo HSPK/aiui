@@ -5,6 +5,7 @@ export const apiKeyDTOSchema = z.object({
     name: z.string(),
     prefix: z.string(),
     last_used_at: z.string().nullable(),
+    expires_at: z.string().nullable(),
     created_at: z.string(),
 });
 
@@ -15,6 +16,8 @@ export const apiKeyCreatedDTOSchema = apiKeyDTOSchema.extend({
 
 export const apiKeyCreateSchema = z.object({
     name: z.string().trim().min(1, "API key name is required"),
+    /** ISO timestamp. `null` / omitted = never expires. */
+    expires_at: z.string().datetime().nullable().optional(),
 });
 
 export type ApiKeyDTO = z.infer<typeof apiKeyDTOSchema>;

@@ -11,7 +11,7 @@ export const POST = defineRoute({
             throw badRequest("POST /v1/audio/transcriptions expects multipart/form-data");
         }
         const form = await req.formData();
-        const { response } = await forwardMultipartGeneration(user, "audio.transcription", form);
+        const { response } = await forwardMultipartGeneration(user, "audio.transcription", form, { signal: req.signal });
         return response;
     },
 });

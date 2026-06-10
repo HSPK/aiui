@@ -151,7 +151,14 @@ export function McpFormDialog({ open, onOpenChange, mode, server, preset, onSave
     const targetError = transport === "stdio"
         ? (!stdio.command.trim() ? "Command is required" : null)
         : (!http.url.trim() ? "URL is required" : null)
-    const formError = nameError ?? targetError ?? envError ?? headersError
+    // If decryption failed on the existing row, secret fields were
+    // returned as empty strings — saving would re-encrypt the empties
+    // and destroy the original ciphertext. Refuse the save and tell
+    // the admin what's wrong. Only relevant in edit mode.
+    const decryptError = mode === "edit" && server?.config_decryption_failed
+        ? "Stored secrets could not be decrypted — master key may have changed. Re-enter env/header values from scratch (delete and re-create the server if unsure)."
+        : null
+    const formError = nameError ?? targetError ?? envError ?? headersError ?? decryptError
     const isLoading = createMutation.isPending || updateMutation.isPending
     const canSubmit = !formError && !isLoading
 
@@ -204,6 +211,19 @@ export function McpFormDialog({ open, onOpenChange, mode, server, preset, onSave
                 </DialogHeader>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
+                    {mode === "edit" && server?.config_decryption_failed && (
+                        <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+                            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                            <div className="space-y-1">
+                                <div className="font-medium">Secrets unreadable</div>
+                                <div>
+                                    Stored env/header values can&apos;t be decrypted — likely the master key changed.
+                                    Re-enter them from scratch; saving without re-entering would overwrite the originals with empty strings.
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     <Field label="Name" htmlFor="m-name" required>
                         <Input
                             id="m-name"

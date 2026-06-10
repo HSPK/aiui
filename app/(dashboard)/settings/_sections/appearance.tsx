@@ -20,9 +20,16 @@ export function AppearanceSection() {
     const prefs = prefsServer ?? defaultUserPreferences
     const update = preferences.useUpdate()
     const themes = React.useMemo(() => getAllThemes(), [])
+    const activeTheme = themes.find((t) => t.id === prefs.theme_id)
+    const forcedScheme = activeTheme?.forceScheme
 
     const patch = (p: Partial<UserPreferencesDTO>) =>
         update.mutate(p, { onError: (e) => toast.error(e.message || "Failed to save") })
+
+    // Local mirror for the slider so it responds smoothly while
+    // dragging; server commit fires on release via onValueCommit.
+    const [cpsInput, setCpsInput] = React.useState(prefs.typewriter_cps)
+    React.useEffect(() => { setCpsInput(prefs.typewriter_cps) }, [prefs.typewriter_cps])
 
     return (
         <div className="space-y-4">
@@ -44,10 +51,15 @@ export function AppearanceSection() {
 
                 <SettingsField
                     label="Color Scheme"
-                    description="Light, dark, or follow the OS preference."
+                    description={
+                        forcedScheme
+                            ? `The "${activeTheme?.label ?? "selected"}" theme is ${forcedScheme}-only.`
+                            : "Light, dark, or follow the OS preference."
+                    }
                 >
                     <SchemeToggle
-                        value={prefs.theme_scheme}
+                        value={forcedScheme ?? prefs.theme_scheme}
+                        disabled={!!forcedScheme}
                         onChange={(scheme) => patch({ theme_scheme: scheme })}
                     />
                 </SettingsField>
@@ -79,15 +91,18 @@ export function AppearanceSection() {
                 {prefs.chat_render_mode === "typewriter" && (
                     <SettingsField
                         label="Typewriter Speed"
-                        description={`${prefs.typewriter_cps} characters per second.`}
+                        description={`${cpsInput} characters per second.`}
                         stacked
                     >
                         <Slider
-                            value={[prefs.typewriter_cps]}
+                            value={[cpsInput]}
                             min={20}
                             max={400}
                             step={10}
-                            onValueChange={([v]) => patch({ typewriter_cps: v })}
+                            onValueChange={([v]) => setCpsInput(v)}
+                            onValueCommit={([v]) => {
+                                if (v !== prefs.typewriter_cps) patch({ typewriter_cps: v })
+                            }}
                         />
                     </SettingsField>
                 )}
@@ -173,9 +188,11 @@ function ThemeTile({
 function SchemeToggle({
     value,
     onChange,
+    disabled = false,
 }: {
     value: UserPreferencesDTO["theme_scheme"]
     onChange: (v: UserPreferencesDTO["theme_scheme"]) => void
+    disabled?: boolean
 }) {
     const options = [
         { value: "light" as const, label: "Light", icon: Sun },
@@ -183,7 +200,7 @@ function SchemeToggle({
         { value: "system" as const, label: "System", icon: Monitor },
     ]
     return (
-        <div className="inline-flex rounded-md border bg-muted/30 p-0.5">
+        <div className={cn("inline-flex rounded-md border bg-muted/30 p-0.5", disabled && "opacity-60")}>
             {options.map((opt) => {
                 const Icon = opt.icon
                 const active = value === opt.value
@@ -191,12 +208,14 @@ function SchemeToggle({
                     <button
                         key={opt.value}
                         type="button"
+                        disabled={disabled}
                         onClick={() => onChange(opt.value)}
                         className={cn(
                             "inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs transition-colors",
                             active
                                 ? "bg-background text-foreground shadow-sm"
-                                : "text-muted-foreground hover:text-foreground"
+                                : "text-muted-foreground hover:text-foreground",
+                            disabled && "cursor-not-allowed"
                         )}
                     >
                         <Icon className="h-3.5 w-3.5" />

@@ -37,7 +37,6 @@ interface ProviderEntry {
     api_version?: string | null;
     api_key?: string | null;
     default_params?: Record<string, unknown>;
-    http_proxy?: Record<string, string> | null;
     document_page?: string;
     model_page?: string;
     health_check_url?: string | null;
@@ -57,6 +56,9 @@ function adapterIdFor(entry: ProviderEntry): string {
         apiVersion: entry.api_version ?? null,
         apiKeyEncrypted: null,
         defaultParams: {},
+        // httpProxy column is dead surface (column remains for back-
+        // compat; never read by gateway since the feature was unwired).
+        // TS still requires the field on Provider — pass null.
         httpProxy: null,
         documentPage: null,
         modelPage: null,
@@ -93,7 +95,6 @@ function upsertProvider(entry: ProviderEntry): { id: string; name: string } | nu
         baseUrl,
         apiVersion: entry.api_version?.trim() || null,
         defaultParams: entry.default_params ?? {},
-        httpProxy: entry.http_proxy ?? null,
         documentPage: entry.document_page ?? null,
         modelPage: entry.model_page ?? null,
         healthCheckUrl: entry.health_check_url?.trim() || null,
@@ -150,6 +151,23 @@ export function loadConfigFile(): void {
         ? (cfg as { providers: ProviderEntry[] }).providers
         : [];
     if (providers.length === 0) return;
+
+    // Warn on duplicate names — `upsertProvider` is keyed on `name`,
+    // so two entries with the same name would silently let the second
+    // clobber the first (including the api_key). Users typo'ing names
+    // would not notice until a request hits the wrong upstream.
+    const seenNames = new Set<string>();
+    for (const entry of providers) {
+        const n = entry.name?.trim();
+        if (!n) continue;
+        if (seenNames.has(n)) {
+            console.warn(
+                `[loom:config] ${path}: duplicate provider name "${n}" — last entry will win, ` +
+                `overwriting the earlier one (including its api_key). Rename one to keep both.`,
+            );
+        }
+        seenNames.add(n);
+    }
 
     let count = 0;
     for (const entry of providers) {

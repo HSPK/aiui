@@ -1,6 +1,6 @@
 {
-  "name": "@hspk/loom",
-  "version": "1.0.0",
+  "name": "@whxway/loom",
+  "version": "1.3.0",
   "description": "Self-hosted AI testing platform — try models and MCP servers, log every request, and front your apps through an OpenAI-compatible gateway.",
   "keywords": [
     "ai",
@@ -35,6 +35,7 @@
     ".next",
     "drizzle",
     "public",
+    "scripts/postinstall.mjs",
     "README.md",
     "LICENSE"
   ],
@@ -43,12 +44,14 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "bun run build:cli && next build",
+    "build": "bun run build:cli && next build && bun run build:aliases",
     "build:cli": "node scripts/build-cli.mjs",
+    "build:aliases": "node scripts/generate-external-aliases.mjs",
     "start": "next start",
     "lint": "eslint",
     "test": "node scripts/run-e2e.mjs",
     "prepare": "node scripts/build-cli.mjs",
+    "postinstall": "node scripts/postinstall.mjs",
     "prepublishOnly": "bun run build"
   },
   "dependencies": {

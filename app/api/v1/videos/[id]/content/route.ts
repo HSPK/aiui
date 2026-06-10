@@ -20,12 +20,13 @@ export const GET = defineRoute({
     auth: "gateway",
     params: paramsSchema,
     query: querySchema,
-    handler: async ({ user, params, query }) =>
+    handler: async ({ req, user, params, query }) =>
         gatewayProxy({
             user,
             modelName: query.model,
             method: "GET",
             path: `/videos/${encodeURIComponent(params.id)}/content`,
             query: query.variant ? `variant=${encodeURIComponent(query.variant)}` : undefined,
+            signal: req.signal,
         }),
 });

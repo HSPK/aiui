@@ -5,6 +5,7 @@ import dynamic from "next/dynamic"
 import { Check, Copy } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { copyToClipboard } from "@/lib/clipboard"
 import { useTheme } from "next-themes"
 
 interface CodeBlockProps {
@@ -71,8 +72,9 @@ export const CodeBlock = React.memo(({ language, value, className }: CodeBlockPr
         if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
     }, [])
 
-    const onCopy = React.useCallback(() => {
-        navigator.clipboard.writeText(value)
+    const onCopy = React.useCallback(async () => {
+        const ok = await copyToClipboard(value)
+        if (!ok) return
         if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
         setCopied(true)
         copyTimerRef.current = setTimeout(() => setCopied(false), 2000)

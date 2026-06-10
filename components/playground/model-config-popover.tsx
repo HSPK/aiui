@@ -25,6 +25,13 @@ interface ModelConfigPopoverProps {
     onConfigChange: (modelId: string, config: ModelConfig) => void
     onRemove?: (modelId: string) => void
     canRemove?: boolean
+    /** Set when the saved modelId is no longer usable (deleted, admin
+     *  disabled it, or capability changed). The chip renders with
+     *  destructive styling + an (unavailable)/(missing) tag so the
+     *  user knows their per-conv selection will 400 at the gateway —
+     *  without this, the chip looks active while the dropdown
+     *  silently excludes the model. */
+    stale?: "missing" | "unavailable" | null
 }
 
 // Parameter row component - clean, toggle-style UI
@@ -195,6 +202,7 @@ export const ModelConfigPopover = React.memo(function ModelConfigPopover({
     onConfigChange,
     onRemove,
     canRemove = true,
+    stale = null,
 }: ModelConfigPopoverProps) {
     const [open, setOpen] = React.useState(false)
     const [localConfig, setLocalConfig] = React.useState<ModelConfig>({})
@@ -436,17 +444,23 @@ export const ModelConfigPopover = React.memo(function ModelConfigPopover({
                 ref={triggerRef}
                 type="button"
                 onClick={handleOpen}
+                title={stale ? `${modelId} (${stale}) — remove and re-pick` : modelId}
                 className={cn(
                     "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs transition-all",
                     "border group focus:outline-none focus:ring-1 focus:ring-ring focus:ring-offset-1",
-                    hasCustomConfig
-                        ? "bg-primary/10 border-primary/30 text-primary hover:bg-primary/20"
-                        : "bg-muted/50 border-border/50 text-muted-foreground hover:text-foreground hover:border-border"
+                    stale
+                        ? "bg-destructive/10 border-destructive/40 text-destructive hover:bg-destructive/15"
+                        : hasCustomConfig
+                            ? "bg-primary/10 border-primary/30 text-primary hover:bg-primary/20"
+                            : "bg-muted/50 border-border/50 text-muted-foreground hover:text-foreground hover:border-border"
                 )}
             >
                 <ProviderIcon providerName={provider} className="h-3.5 w-3.5" />
-                <span className="max-w-[120px] truncate">{modelId}</span>
-                {hasCustomConfig && (
+                <span className={cn("max-w-[120px] truncate", stale && "line-through")}>{modelId}</span>
+                {stale && (
+                    <span className="text-[10px] shrink-0">({stale})</span>
+                )}
+                {!stale && hasCustomConfig && (
                     <span className="bg-primary text-primary-foreground text-[10px] px-1 rounded-sm font-medium">
                         {Object.values(config).filter(v => v !== undefined).length}
                     </span>

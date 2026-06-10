@@ -7,6 +7,12 @@ import { listToolsForServer } from "@/lib/server/mcp/runtime";
 const paramsSchema = z.object({ id: z.string().min(1) });
 
 export const GET = defineRoute({
+    // Admin-only: this endpoint has a side effect — spawning the
+    // configured `npx`/`uvx`/`bunx` child if no cached connection
+    // exists. Letting a non-admin enumerate server ids and trigger
+    // arbitrary spawns is a DoS vector (fd exhaustion + install
+    // storm) even though no secrets are returned.
+    auth: "admin",
     params: paramsSchema,
     handler: async ({ params }) => {
         const server = getMcpServer(decodeURIComponent(params.id));

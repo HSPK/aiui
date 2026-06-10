@@ -1,5 +1,5 @@
 import "server-only";
-import { registerVariant, type UpstreamApiVariant } from ".";
+import { extractUpstreamError, registerVariant, type UpstreamApiVariant } from ".";
 
 export const imagesGenerationsVariant: UpstreamApiVariant = {
     id: "images.generations",
@@ -20,6 +20,7 @@ export const imagesGenerationsVariant: UpstreamApiVariant = {
             completionTokens: j?.usage?.output_tokens ?? null,
             totalTokens: j?.usage?.total_tokens ?? null,
             normalized: (j ?? {}) as Record<string, unknown>,
+            error: extractUpstreamError(j),
         };
     },
 

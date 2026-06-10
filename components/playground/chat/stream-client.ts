@@ -46,7 +46,20 @@ export class StreamClient {
 
             if (!res.ok) {
                 const text = await res.text()
-                throw new Error(text || res.statusText)
+                // The /playground/chat route returns the standard
+                // loom envelope `{code, msg, data}`. Show the human
+                // `msg` instead of raw JSON — without this, the
+                // inline error card on the assistant bubble would
+                // render `{"code":-1,"msg":"…","data":null}` verbatim,
+                // burying the actual error.
+                let message = text || res.statusText
+                try {
+                    const body = JSON.parse(text) as { msg?: string }
+                    if (typeof body?.msg === "string" && body.msg) message = body.msg
+                } catch {
+                    // Not JSON — keep the raw text fallback.
+                }
+                throw new Error(message)
             }
 
             if (!res.body) {

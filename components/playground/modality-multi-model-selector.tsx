@@ -43,7 +43,8 @@ export function ModalityMultiModelSelector({
 
     const filtered = React.useMemo(() => {
         const all = Array.isArray(data) ? data : []
-        const capMatch = all.filter((m) => matchesCapability(m, capability))
+        // Drop disabled — the gateway would 400 on use, no UI cue.
+        const capMatch = all.filter((m) => m.enabled !== false && matchesCapability(m, capability))
         if (!search) return capMatch
         const q = search.toLowerCase()
         return capMatch.filter(
@@ -173,14 +174,34 @@ export function ModalityMultiModelSelector({
             {selectedModels.map((m, idx) => {
                 const name = value[idx]
                 if (!name) return null
+                // Stale = chip's saved name no longer satisfies the
+                // filter (deleted upstream, admin disabled it, or
+                // capability changed). Without surfacing this the
+                // chip looks active while the dropdown silently
+                // excludes the model — user can't re-add via picker
+                // and send will 400 at the gateway with no upfront
+                // cue. Mirrors R10's single-pick selector behavior.
+                const stale = !m
+                    ? "missing"
+                    : (m.enabled === false || !matchesCapability(m, capability))
+                        ? "unavailable"
+                        : null
                 return (
                     <Badge
                         key={name}
-                        variant="secondary"
-                        className="h-7 pl-1.5 pr-0.5 gap-1 font-normal text-xs"
+                        variant={stale ? "outline" : "secondary"}
+                        className={cn(
+                            "h-7 pl-1.5 pr-0.5 gap-1 font-normal text-xs",
+                            stale && "border-destructive/40 text-destructive",
+                        )}
+                        title={stale ? `${name} (${stale})` : name}
                     >
-                        {m && <ProviderIcon providerName={m.provider ?? "?"} />}
-                        <span className="truncate max-w-[140px]">{name}</span>
+                        {m && !stale && <ProviderIcon providerName={m.provider ?? "?"} />}
+                        {stale && <Bot className="h-3 w-3 text-destructive" />}
+                        <span className={cn("truncate max-w-[140px]", stale && "line-through")}>{name}</span>
+                        {stale && (
+                            <span className="text-[10px] text-destructive shrink-0">({stale})</span>
+                        )}
                         <button
                             type="button"
                             onClick={() => toggle(name)}

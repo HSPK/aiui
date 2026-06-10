@@ -1,5 +1,5 @@
 import "server-only";
-import { registerVariant, type UpstreamApiVariant } from ".";
+import { extractUpstreamError, registerVariant, type UpstreamApiVariant } from ".";
 
 /**
  * OpenAI Sora `POST /v1/videos` — async multipart create. The wire
@@ -24,18 +24,30 @@ export const videosVariant: UpstreamApiVariant = {
             seconds?: string | number;
             size?: string;
             model?: string;
+            error?: { message?: string };
         };
         const id = typeof j?.id === "string" ? j.id : null;
         const status = typeof j?.status === "string" ? j.status : null;
         const summary = id
             ? `${id}${status ? ` (${status})` : ""}`
             : status ?? "video job created";
+        // Two failure shapes possible on HTTP 200:
+        //   1. Standard `{error:{message}}` envelope (covered by extractUpstreamError).
+        //   2. Create-time job lands as `{status:"failed", error:{message}}` — Sora's
+        //      documented spec. Surface either as the variant's error so the
+        //      generation_logs row reflects the failure instead of "completed".
+        const envelopeError = extractUpstreamError(j);
+        const error = envelopeError
+            ?? (status === "failed"
+                ? (j?.error?.message ?? "video job failed")
+                : undefined);
         return {
             output: summary,
             promptTokens: null,
             completionTokens: null,
             totalTokens: null,
             normalized: (j ?? {}) as Record<string, unknown>,
+            error,
         };
     },
 

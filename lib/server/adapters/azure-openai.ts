@@ -1,5 +1,5 @@
 import "server-only";
-import { registerAdapter, type ProviderAdapter, type UpstreamCallArgs } from ".";
+import { registerAdapter, type ProviderAdapter, type ResourceCallArgs, type UpstreamCallArgs } from ".";
 import type { NormalizedModelMeta } from "@/lib/schemas/adapter";
 import type { Provider } from "../db/schema";
 
@@ -51,7 +51,10 @@ export const azureOpenAIAdapter: ProviderAdapter = {
         const url = `${baseUrl(provider)}/openai/models?api-version=${encodeURIComponent(apiVersion(provider))}`;
         const headers: Record<string, string> = { Accept: "application/json" };
         if (apiKey) headers["api-key"] = apiKey;
-        const res = await fetch(url, { headers });
+        // 15s timeout matches lib/server/adapters/openai.ts:DISCOVERY_TIMEOUT_MS —
+        // bound the discovery fetch so a wedged Azure endpoint can't
+        // permanently hang `listAllDiscovered` / `resolveByDiscovery`.
+        const res = await fetch(url, { headers, signal: AbortSignal.timeout(15_000) });
         if (!res.ok) {
             throw new Error(`models discovery HTTP ${res.status} from ${url}`);
         }
@@ -84,6 +87,23 @@ export const azureOpenAIAdapter: ProviderAdapter = {
 
     upstreamHeaders(_args, apiKey) {
         const h: Record<string, string> = { "Content-Type": "application/json" };
+        if (apiKey) h["api-key"] = apiKey;
+        return h;
+    },
+
+    /** Follow-up resource paths (poll/download/delete) must hit the
+     *  same deployment + api-version slot so Azure can route them. */
+    resourceUrl(args: ResourceCallArgs) {
+        const deployment = encodeURIComponent(args.model.upstreamModelId);
+        const v = encodeURIComponent(apiVersion(args.provider));
+        let url = `${baseUrl(args.provider)}/openai/deployments/${deployment}${args.path}?api-version=${v}`;
+        if (args.query) url += `&${args.query}`;
+        return url;
+    },
+
+    /** Azure uses `api-key` header, NOT `Authorization: Bearer`. */
+    resourceHeaders(_args, apiKey) {
+        const h: Record<string, string> = {};
         if (apiKey) h["api-key"] = apiKey;
         return h;
     },

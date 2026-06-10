@@ -59,9 +59,25 @@ export function softDeleteConversation(userId: string, id: string): void {
 }
 
 export function updateConversationTitle(userId: string, id: string, input: ConversationTitleInput): void {
-    loadOwned(userId, id);
+    const conv = loadOwned(userId, id);
+    // Compare-and-swap: when caller supplies `expected_title`, only
+    // write if the row's CURRENT title still matches. Used by the
+    // background title-generator to avoid silently clobbering a
+    // manual rename that landed between snapshot-time and the LLM
+    // result arriving. Mismatch is silent (200 OK, no-op) — the
+    // caller's wire shape already conveyed "best-effort: skip if
+    // changed". Without this guard, async background updaters race
+    // with synchronous user edits and the user's choice loses.
+    if (input.expected_title !== undefined && conv.title !== input.expected_title) {
+        return;
+    }
+    // Trust the validator — `conversationTitleSchema.max(200)` already
+    // capped the input. Earlier code did `.slice(0, 100)` here which
+    // silently truncated any 101–200 char title that passed validation,
+    // returning 200 OK while data was lost. If we want a tighter cap
+    // the schema is the place — single source of truth.
     db.update(conversations)
-        .set({ title: input.title.slice(0, 100), updatedAt: new Date().toISOString() })
+        .set({ title: input.title, updatedAt: new Date().toISOString() })
         .where(eq(conversations.id, id))
         .run();
 }
@@ -71,13 +87,23 @@ export function updateConversationTitle(userId: string, id: string, input: Conve
 export function listMessages(userId: string, conversationId: string, query: MessageListQuery): Paginated<MessageDTO> {
     loadOwned(userId, conversationId);
 
-    const orderExpr = query.sort.startsWith("-") ? desc(messages.createdAt) : asc(messages.createdAt);
+    // Compose (created_at, id) ordering — created_at alone is unstable
+    // because ms-precision ISO timestamps frequently collide when the
+    // tool-execution orchestrator inserts an assistant + N tool rows
+    // inside the same handler tick. Without an `id` tiebreaker, SQLite
+    // is free to return tied rows in different orders across calls,
+    // so a row could appear on page 1 in one call and page 2 in the
+    // next (duplicate via dedup or — worse — silently skipped). The
+    // merge-sort below applies the same tiebreaker.
+    const orderExprs = query.sort.startsWith("-")
+        ? [desc(messages.createdAt), desc(messages.id)]
+        : [asc(messages.createdAt), asc(messages.id)];
     const whereExpr = and(eq(messages.conversationId, conversationId), eq(messages.isActive, true));
 
     const total = db.select({ value: count() }).from(messages).where(whereExpr).get()?.value ?? 0;
     const rows = db.select().from(messages)
         .where(whereExpr)
-        .orderBy(orderExpr)
+        .orderBy(...orderExprs)
         .limit(query.page_size)
         .offset((query.page - 1) * query.page_size)
         .all();
@@ -120,15 +146,21 @@ export function listMessages(userId: string, conversationId: string, query: Mess
         for (const a of ancestors) haveIds.add(a.id);
     }
 
-    // Also descend: for every loaded assistant, pull in any `role:
-    // "tool"` rows that point back at it via parent_id. The newest-
-    // first page window can stop mid-turn (e.g. only 20 of 31 tool
-    // results land in the page), which leaves the assistant's
+    // Also descend: for every loaded NON-ERRORED assistant, pull in
+    // any `role:"tool"` rows that point back at it via parent_id. The
+    // newest-first page window can stop mid-turn (e.g. only 20 of 31
+    // tool results land in the page), which leaves the assistant's
     // tool_call parts unresolved on the FE and they render as
     // "running" forever. Tool rows have no children so this is a
     // single non-recursive pass.
+    //
+    // Errored assistants are excluded because their tool children are
+    // orphans by definition (the assistant didn't finish committing the
+    // tool_calls protocol). They're cleaned up server-side at error
+    // time; this filter is defense-in-depth for any pre-existing rows
+    // that pre-date that cleanup.
     const assistantIds = [...rows, ...ancestors]
-        .filter((r) => r.role === "assistant")
+        .filter((r) => r.role === "assistant" && !r.error)
         .map((r) => r.id);
     const descendants: typeof rows = [];
     if (assistantIds.length > 0) {
@@ -147,9 +179,12 @@ export function listMessages(userId: string, conversationId: string, query: Mess
         }
     }
 
-    // Merge + dedup, preserving the requested sort order.
+    // Merge + dedup, preserving the requested sort order with the
+    // same (created_at, id) tiebreaker the SQL uses — otherwise
+    // tied-timestamp rows could reorder across the SQL/JS boundary.
     const merged = [...rows, ...ancestors, ...descendants].sort((a, b) => {
-        const cmp = a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0;
+        let cmp = a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0;
+        if (cmp === 0) cmp = a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
         return query.sort.startsWith("-") ? -cmp : cmp;
     });
 

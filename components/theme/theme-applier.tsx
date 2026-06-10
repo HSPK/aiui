@@ -34,12 +34,17 @@ export function ThemeApplier() {
         if (!prefs) return;
         if (typeof document === "undefined") return;
 
-        const themeId = prefs.theme_id;
-        const preset = resolveTheme(themeId);
+        const preset = resolveTheme(prefs.theme_id);
         const target = preset.forceScheme ?? prefs.theme_scheme;
 
-        document.documentElement.dataset.theme = themeId;
-        writeStoredTheme({ id: themeId, scheme: target });
+        // Use the RESOLVED preset.id, not the raw prefs.theme_id, so a
+        // stored theme that's been removed from the registry (e.g.
+        // after an app update) silently degrades to the default
+        // preset's tokens. Writing the raw id would leave
+        // `<html data-theme="deleted-preset">` with no matching CSS
+        // rule and the UI falls through to the bare `:root` defaults.
+        document.documentElement.dataset.theme = preset.id;
+        writeStoredTheme({ id: preset.id, scheme: target });
 
         if (target !== activeScheme) setTheme(target);
     }, [prefs, activeScheme, setTheme]);

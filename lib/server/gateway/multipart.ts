@@ -2,9 +2,11 @@ import "server-only";
 import type { SessionUser } from "../auth";
 import { getCapability } from "../capabilities";
 import { resolveVariantId, type UpstreamCallArgs } from "../adapters";
+import { applyFieldFilter } from "../adapters/openai";
 import { getVariant, type VariantContext } from "../api-variants";
+import { getPreferences } from "../preferences";
 import { badRequest, HttpError } from "../response";
-import { resolveModel } from "./index";
+import { mergeParams, resolveModel } from "./index";
 import { completeLog, startLog } from "./log";
 import { handleNonStream } from "./non-stream";
 import type { ForwardResult } from "./types";
@@ -27,6 +29,7 @@ export async function forwardMultipartGeneration(
     user: SessionUser,
     capabilityId: string,
     form: FormData,
+    opts: { signal?: AbortSignal } = {},
 ): Promise<ForwardResult> {
     const capability = getCapability(capabilityId);
     if (!capability) throw badRequest(`Unknown capability "${capabilityId}"`);
@@ -50,14 +53,51 @@ export async function forwardMultipartGeneration(
     const ctx: VariantContext = { provider, model, meta, capability, stream: false };
     const callArgs: UpstreamCallArgs = { provider, model, meta, capability, variant, stream: false };
 
+    // Apply the same merge + filter pipeline as the JSON path, even
+    // though the body is FormData. Without this, `model.default_params`
+    // is silently ignored on multipart capabilities (audio transcription,
+    // video create), and Foundry's strict `accepted_fields` / `rejected_fields`
+    // filter is bypassed — both contract violations vs. CLAUDE.md.
+    //
+    // Strategy: extract the scalar (non-File) fields into a JSON-shaped
+    // dict, run mergeParams + applyFieldFilter on it, rebuild the
+    // FormData with merged scalars + original File entries. File
+    // entries are never subject to default_params merge (they're the
+    // payload, not metadata).
+    const scalars: Record<string, unknown> = {};
+    const files: Array<[string, File]> = [];
+    for (const [k, v] of form.entries()) {
+        if (v instanceof File) {
+            files.push([k, v]);
+        } else {
+            scalars[k] = String(v);
+        }
+    }
+    let mergedScalars: Record<string, unknown>;
+    let filteredScalars: Record<string, unknown>;
+    try {
+        mergedScalars = mergeParams(scalars, model, provider);
+        filteredScalars = applyFieldFilter(mergedScalars, meta);
+    } catch (err) {
+        if (err instanceof HttpError) throw err;
+        const message = err instanceof Error ? err.message : String(err);
+        throw badRequest(`Failed to translate multipart body: ${message}`);
+    }
+
     // Re-stamp model with upstream id so providers / Azure deployment
     // routing stays consistent with the JSON path.
+    filteredScalars.model = model.upstreamModelId;
+
     const upstreamForm = new FormData();
-    for (const [k, v] of form.entries()) {
-        if (k === "model") continue;
-        upstreamForm.append(k, v);
+    for (const [k, v] of Object.entries(filteredScalars)) {
+        if (v === undefined || v === null) continue;
+        if (typeof v === "object") {
+            upstreamForm.append(k, JSON.stringify(v));
+        } else {
+            upstreamForm.append(k, String(v));
+        }
     }
-    upstreamForm.append("model", model.upstreamModelId);
+    for (const [k, file] of files) upstreamForm.append(k, file);
 
     // Summarise BEFORE the upstream-id rewrite so logs reflect the
     // caller-facing model + any text prompt fields.
@@ -80,16 +120,28 @@ export async function forwardMultipartGeneration(
     const started = Date.now();
     // Multipart endpoints are non-stream (audio.speech / transcription
     // returns the full audio buffer, video create returns a job id),
-    // so the model.timeout is a real wall-clock cap on the upstream
-    // call — useful for stuck providers.
-    const timeoutMs = Math.max(1, model.timeout) * 1000;
+    // so the operative timeout is a real wall-clock cap on the
+    // upstream call. MIN(model.timeout, user_pref) so neither setting
+    // can be silently bypassed — see comment in forwardGeneration.
+    // Compose with the caller signal so EITHER a client disconnect
+    // (mid-upload of an MB-sized audio file) OR the deadline aborts
+    // the upstream POST. Without combining, the upstream fetch would
+    // hold the socket + spend provider $ until the timeout elapsed
+    // even after the client gave up.
+    const userTimeoutSec = getPreferences(user.id).gateway_timeout_seconds;
+    const effectiveSec = Math.max(1, Math.min(userTimeoutSec, model.timeout));
+    const timeoutMs = effectiveSec * 1000;
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    const combinedSignal = opts.signal
+        ? AbortSignal.any([opts.signal, timeoutSignal])
+        : timeoutSignal;
     let upstream: Response;
     try {
         upstream = await fetch(adapter.upstreamUrl(callArgs), {
             method: "POST",
             headers,
             body: upstreamForm,
-            signal: AbortSignal.timeout(timeoutMs),
+            signal: combinedSignal,
         });
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -161,32 +213,66 @@ interface ProxyArgs {
     body?: BodyInit;
     /** Override / supplement adapter headers. */
     headers?: Record<string, string>;
+    /** Optional caller signal (e.g. client disconnect on a long poll) —
+     *  combined with the gateway timeout so EITHER aborts the upstream. */
+    signal?: AbortSignal;
 }
 
 /**
  * Lightweight proxy for follow-up requests that ride on top of a
  * previously-created resource. No gateway pipeline, no log — the
- * resource creation was already logged at submit time.
+ * resource creation was already logged at submit time. Routes through
+ * the resolved adapter's `resourceUrl` + `resourceHeaders` so Azure
+ * deployments (where polling must hit
+ * `/openai/deployments/{deployment}/videos/{id}?api-version=...`
+ * with `api-key:` instead of `Authorization: Bearer …`) work
+ * end-to-end without per-adapter branching here.
  */
 export async function gatewayProxy(args: ProxyArgs): Promise<Response> {
-    const { provider, apiKey } = await resolveModel(args.modelName);
+    const { model, provider, adapter, apiKey } = await resolveModel(args.modelName);
     if (!provider.enabled) throw badRequest(`Provider "${provider.name}" is disabled`);
 
-    const baseUrl = provider.baseUrl.replace(/\/$/, "");
-    let url = `${baseUrl}${args.path}`;
-    if (args.query) url += `?${args.query}`;
+    const resourceArgs = {
+        provider,
+        model,
+        path: args.path,
+        query: args.query,
+    };
+    const buildUrl = adapter.resourceUrl ?? ((a) => {
+        const base = a.provider.baseUrl.replace(/\/$/, "");
+        let u = `${base}${a.path}`;
+        if (a.query) u += `?${a.query}`;
+        return u;
+    });
+    const buildAuth = adapter.resourceHeaders ?? ((_a, key) => {
+        const h: Record<string, string> = {};
+        if (key) h["Authorization"] = `Bearer ${key}`;
+        return h;
+    });
 
-    const headers: Record<string, string> = {};
-    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+    const url = buildUrl(resourceArgs);
+    const headers: Record<string, string> = { ...buildAuth(resourceArgs, apiKey) };
     Object.assign(headers, args.headers ?? {});
     if (args.body && !headers["Content-Type"] && !(args.body instanceof FormData)) {
         headers["Content-Type"] = "application/json";
     }
 
+    // Same MIN(user_pref, model.timeout) cap as the JSON/multipart
+    // paths — without it, a stalled upstream would hang each poll /
+    // download / delete indefinitely, leaking server sockets on every
+    // misbehaving video job.
+    const userTimeoutSec = getPreferences(args.user.id).gateway_timeout_seconds;
+    const effectiveSec = Math.max(1, Math.min(userTimeoutSec, model.timeout));
+    const timeoutSignal = AbortSignal.timeout(effectiveSec * 1000);
+    const combinedSignal = args.signal
+        ? AbortSignal.any([args.signal, timeoutSignal])
+        : timeoutSignal;
+
     const res = await fetch(url, {
         method: args.method ?? "GET",
         headers,
         body: args.body,
+        signal: combinedSignal,
     });
 
     // Pass-through: preserve content-type so binary downloads work.

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { Check, Copy, Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { copyToClipboard } from "@/lib/clipboard"
 
 /**
  * Generic JSON / clipboard primitives used by the log-details sheet's
@@ -21,14 +22,14 @@ export function CopyButton({ text, className }: { text: string; className?: stri
         if (timerRef.current) clearTimeout(timerRef.current)
     }, [])
     const handleCopy = async () => {
-        try {
-            await navigator.clipboard.writeText(text)
-            if (timerRef.current) clearTimeout(timerRef.current)
-            setCopied(true)
-            timerRef.current = setTimeout(() => setCopied(false), 2000)
-        } catch (err) {
-            console.error("Failed to copy:", err)
+        const ok = await copyToClipboard(text)
+        if (!ok) {
+            console.error("Failed to copy")
+            return
         }
+        if (timerRef.current) clearTimeout(timerRef.current)
+        setCopied(true)
+        timerRef.current = setTimeout(() => setCopied(false), 2000)
     }
     return (
         <Button
@@ -62,14 +63,14 @@ export function JsonActionButtons({
     const handleCopy = async (e: React.MouseEvent) => {
         e.stopPropagation()
         onClick?.(e)
-        try {
-            await navigator.clipboard.writeText(jsonString)
-            if (timerRef.current) clearTimeout(timerRef.current)
-            setCopied(true)
-            timerRef.current = setTimeout(() => setCopied(false), 2000)
-        } catch (err) {
-            console.error("Failed to copy:", err)
+        const ok = await copyToClipboard(jsonString)
+        if (!ok) {
+            console.error("Failed to copy")
+            return
         }
+        if (timerRef.current) clearTimeout(timerRef.current)
+        setCopied(true)
+        timerRef.current = setTimeout(() => setCopied(false), 2000)
     }
 
     const handleDownload = (e: React.MouseEvent) => {

@@ -20,19 +20,26 @@ import { ResultsSection } from "./results"
 
 const MAX_DOCS = 64
 
-function splitDocuments(raw: string): string[] {
+function splitDocuments(raw: string): { docs: string[]; rawLineCount: number; truncated: boolean } {
     const lines = raw.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
+    const rawLineCount = lines.length
     // De-dup while preserving order — repeated documents would just
     // produce identical scores and clutter the table.
     const seen = new Set<string>()
     const out: string[] = []
+    let truncated = false
     for (const l of lines) {
         if (seen.has(l)) continue
         seen.add(l)
+        if (out.length >= MAX_DOCS) {
+            truncated = true
+            // Don't break — keep counting unique-after-cap lines so
+            // the truncation warning shows the real drop count.
+            continue
+        }
         out.push(l)
-        if (out.length >= MAX_DOCS) break
     }
-    return out
+    return { docs: out, rawLineCount, truncated }
 }
 
 export function EmbeddingPlayground() {
@@ -42,7 +49,7 @@ export function EmbeddingPlayground() {
     const patchEmbedding = useModalityStore((s) => s.patchEmbedding)
     const [running, setRunning] = React.useState(false)
 
-    const docs = React.useMemo(() => splitDocuments(docsText), [docsText])
+    const { docs, rawLineCount, truncated } = React.useMemo(() => splitDocuments(docsText), [docsText])
     const canRun =
         modelIds.length > 0 && query.trim().length > 0 && docs.length > 0
 
@@ -187,9 +194,9 @@ export function EmbeddingPlayground() {
                             ({docs.length}/{MAX_DOCS} lines)
                         </span>
                     </Label>
-                    {docs.length > MAX_DOCS && (
+                    {truncated && (
                         <span className="text-[10px] text-destructive">
-                            Only the first {MAX_DOCS} will be sent
+                            Only the first {MAX_DOCS} of {rawLineCount} non-empty lines will be sent
                         </span>
                     )}
                 </div>

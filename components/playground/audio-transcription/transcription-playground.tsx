@@ -13,6 +13,7 @@ import {
     type TranscriptionResult,
 } from "@/lib/stores/modality-store"
 import { cn } from "@/lib/utils"
+import { copyToClipboard } from "@/lib/clipboard"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -255,9 +256,10 @@ function ResultPanel({ result }: { result: Result }) {
         if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
     }, [])
 
-    const handleCopy = React.useCallback(() => {
+    const handleCopy = React.useCallback(async () => {
         if (!text) return
-        navigator.clipboard.writeText(text)
+        const ok = await copyToClipboard(text)
+        if (!ok) return
         if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
         setCopied(true)
         copyTimerRef.current = setTimeout(() => setCopied(false), 1800)

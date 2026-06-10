@@ -30,8 +30,6 @@ export interface DiscoveredModel {
     id: string;
     /** Provider id this model belongs to (DB primary key). */
     provider_id: string;
-    /** Convenience copy of the provider's name. */
-    provider_name: string;
     /** Adapter id that fetched this entry. */
     adapter_id: string;
     /** Inferred capability id (chat | embedding | image | …) — adapter
@@ -43,6 +41,17 @@ export interface DiscoveredModel {
 
 interface CacheEntry {
     fetchedAt: number;
+    /** Wall-clock of the last *successful* discovery write. On the
+     *  error path we keep stale models but DO NOT bump this — used
+     *  by `isFresh` so a transient failure doesn't silence the
+     *  provider for the full TTL. */
+    lastSuccessAt: number;
+    /** Generation tag captured at the moment the in-flight refresh
+     *  started. Bumped by every cache eviction. The refresher's
+     *  writeback no-ops if the tag has moved underneath it, which
+     *  prevents a slow upstream fetch from clobbering a fresh
+     *  invalidation triggered by a config change mid-flight. */
+    generation: number;
     models: DiscoveredModel[];
     error: string | null;
 }
@@ -52,6 +61,28 @@ const cache = new Map<string, CacheEntry>();
 // stale lookups into a single upstream /models request. The first
 // caller starts the fetch, subsequent callers reuse the same promise.
 const pendingRefresh = new Map<string, Promise<CacheEntry>>();
+// Monotonic per-provider generation counter. Bumped on every
+// cache eviction so an in-flight refresh that started with an older
+// generation can detect "I'm stale" and refuse to write back. The
+// pendingRefresh map is ALSO cleared so subsequent callers don't
+// await the doomed promise.
+const providerGeneration = new Map<string, number>();
+// Cool-down before we'll retry after a discovery failure — keeps a
+// transient blip (DNS hiccup, momentary 502, etc.) from silencing
+// the provider for the full TTL. Short enough that the next request
+// re-probes within seconds; long enough that we don't melt the
+// upstream during a sustained outage.
+const ERROR_RETRY_COOLDOWN_MS = 15_000;
+
+function currentGeneration(providerId: string): number {
+    return providerGeneration.get(providerId) ?? 0;
+}
+
+function bumpGeneration(providerId: string): number {
+    const next = currentGeneration(providerId) + 1;
+    providerGeneration.set(providerId, next);
+    return next;
+}
 
 function cacheTtlMs(): number {
     const seconds = Number(process.env.LOOM_MODELS_CACHE_TTL);
@@ -60,7 +91,13 @@ function cacheTtlMs(): number {
 }
 
 function isFresh(entry: CacheEntry): boolean {
-    return Date.now() - entry.fetchedAt < cacheTtlMs();
+    if (entry.error) {
+        // Failed last time — re-probe after a short cool-down so
+        // transient upstream blips don't silence the provider for
+        // the full TTL.
+        return Date.now() - entry.fetchedAt < ERROR_RETRY_COOLDOWN_MS;
+    }
+    return Date.now() - entry.lastSuccessAt < cacheTtlMs();
 }
 
 /**
@@ -92,7 +129,6 @@ export async function discoverModels(provider: Provider): Promise<DiscoveredMode
         out.push({
             id: meta.upstream_id,
             provider_id: provider.id,
-            provider_name: provider.name,
             adapter_id: adapter.id,
             capability: capabilityFromMeta(meta, meta.upstream_id),
             meta,
@@ -109,20 +145,42 @@ async function refreshProvider(provider: Provider): Promise<CacheEntry> {
     const inflight = pendingRefresh.get(provider.id);
     if (inflight) return inflight;
 
+    // Snapshot the generation at fetch dispatch — if invalidation
+    // happens mid-flight, providerGeneration will have moved past
+    // this value and the writeback below becomes a no-op.
+    const startedGeneration = currentGeneration(provider.id);
+    const now = Date.now();
     const fresh = (async () => {
-        const entry: CacheEntry = { fetchedAt: Date.now(), models: [], error: null };
+        const prev = cache.get(provider.id);
+        const entry: CacheEntry = {
+            fetchedAt: now,
+            lastSuccessAt: prev?.lastSuccessAt ?? 0,
+            generation: startedGeneration,
+            models: [],
+            error: null,
+        };
         try {
             entry.models = await discoverModels(provider);
+            entry.lastSuccessAt = Date.now();
         } catch (err) {
             entry.error = err instanceof Error ? err.message : String(err);
             // Keep stale models if we had any, so a transient upstream blip doesn't blank the list
-            const prev = cache.get(provider.id);
             if (prev?.models?.length) entry.models = prev.models;
         }
-        cache.set(provider.id, entry);
+        // Stale-writeback guard — if the cache was invalidated while
+        // we were fetching (admin edited base_url / api_key / etc.),
+        // refuse to install the now-stale result.
+        if (currentGeneration(provider.id) === startedGeneration) {
+            cache.set(provider.id, entry);
+        }
         return entry;
     })().finally(() => {
-        pendingRefresh.delete(provider.id);
+        // Only delete OUR inflight promise — a clearDiscoveryCacheFor
+        // mid-flight may have already replaced this entry with a new
+        // refresher, and we don't want to evict that one.
+        if (pendingRefresh.get(provider.id) === fresh) {
+            pendingRefresh.delete(provider.id);
+        }
     });
 
     pendingRefresh.set(provider.id, fresh);
@@ -135,8 +193,20 @@ async function getEntry(provider: Provider, opts: { force?: boolean } = {}): Pro
     return refreshProvider(provider);
 }
 
+/** Stable provider ordering for discovery walks. Without ORDER BY,
+ *  SQLite is free to return rows in arbitrary order (typically rowid
+ *  order, but not guaranteed across vacuum/rebuild), which makes
+ *  `resolveByDiscovery` non-deterministic when two providers expose
+ *  the same model name. Ordering by `createdAt` gives admins a
+ *  predictable "first registered wins" semantic; the id tiebreaker
+ *  protects against same-tick inserts. */
 function enabledProviders(): Provider[] {
-    return db.select().from(schema.providers).where(eq(schema.providers.enabled, true)).all();
+    return db
+        .select()
+        .from(schema.providers)
+        .where(eq(schema.providers.enabled, true))
+        .orderBy(schema.providers.createdAt, schema.providers.id)
+        .all();
 }
 
 /**
@@ -202,7 +272,34 @@ export function getDiscoveryStatus(providerId: string): CacheEntry | null {
     return cache.get(providerId) ?? null;
 }
 
-/** Drop the entire cache (e.g. on provider mutation). */
+/** Drop the entire cache (e.g. on global reload). Prefer
+ *  `clearDiscoveryCacheFor(providerId)` for single-provider edits so
+ *  unrelated providers don't pay the next-request upstream-fetch tax.
+ *  Also bumps every known provider's generation tag + drops every
+ *  in-flight refresher so any racing fetch can't write back stale data. */
 export function clearDiscoveryCache(): void {
+    // Bump generations for every provider that has been touched —
+    // covers both the cached set and any in-flight refresher whose
+    // entry hasn't landed yet.
+    const ids = new Set<string>();
+    for (const id of cache.keys()) ids.add(id);
+    for (const id of pendingRefresh.keys()) ids.add(id);
+    for (const id of providerGeneration.keys()) ids.add(id);
+    for (const id of ids) bumpGeneration(id);
     cache.clear();
+    pendingRefresh.clear();
+}
+
+/** Evict a single provider's cached entry. Cheaper than `clearDiscoveryCache()`
+ *  for the common case of editing one provider — leaves other providers'
+ *  hot caches intact so the very next `GET /providers` (which calls
+ *  `discoveredCountByProvider`) doesn't fan out parallel `/models`
+ *  fetches across every other upstream. Also drops the in-flight
+ *  refresher (if any) and bumps the generation tag so the racing
+ *  fetch — which captured the OLD config — can't write its result
+ *  back as fresh. */
+export function clearDiscoveryCacheFor(providerId: string): void {
+    bumpGeneration(providerId);
+    cache.delete(providerId);
+    pendingRefresh.delete(providerId);
 }

@@ -13,6 +13,7 @@ import {
     HealthSection,
     PromptsSection,
     ResourcesSection,
+    RuntimeSection,
     ServerInfoSection,
     ToolsSection,
 } from "./_parts/sections"
@@ -31,21 +32,42 @@ interface Props {
  * invocation below — the shell stays small.
  */
 export function McpServerDetailsSheet({ server, open, onOpenChange, isAdmin }: Props) {
-    const check = mcpServers.useCheck({
+    // Streaming check — live stderr lines + phase transitions surface
+    // in the HealthSection so slow `npx`/`uvx` installs aren't silent.
+    const check = mcpServers.useCheckStream()
+    // Live runtime status panel — polled every 3 s while the sheet is
+    // open (TanStack Query's refetchInterval), idle otherwise.
+    const runtime = mcpServers.useRuntime(open && server ? server.id : null)
+    const stop = mcpServers.useStop({
+        onSuccess: () => toast.success("Stopped"),
+        onError: (e) => toast.error(e.message || "Stop failed"),
+    })
+    const restart = mcpServers.useRestart({
         onSuccess: (s) => {
-            if (s.last_check_status === "ok") {
-                toast.success(`Check passed — ${s.tools_cache?.length ?? 0} tools`)
+            if (s.last_check_status === "ok") toast.success(`Restarted — ${s.tools_cache?.length ?? 0} tools`)
+            else toast.error(`Restart failed: ${(s.last_check_error ?? "unknown").split("\n", 1)[0]}`)
+        },
+        onError: (e) => toast.error(e.message || "Restart failed"),
+    })
+
+    React.useEffect(() => {
+        if (check.result) {
+            if (check.result.last_check_status === "ok") {
+                toast.success(`Check passed — ${check.result.tools_cache?.length ?? 0} tools`)
             } else {
-                const first = (s.last_check_error ?? "unknown error").split("\n", 1)[0]
+                const first = (check.result.last_check_error ?? "unknown error").split("\n", 1)[0]
                 toast.error(`Check failed: ${first}`)
             }
-        },
-        onError: (e) => toast.error(e.message || "Check failed"),
-    })
+        }
+    }, [check.result])
+
+    React.useEffect(() => {
+        if (check.error && !check.result) toast.error(check.error)
+    }, [check.error, check.result])
 
     const runCheck = React.useCallback(() => {
         if (!server) return
-        check.mutate(server.id)
+        void check.run(server.id)
     }, [server, check])
 
     // Silent backfill: rows created before the server_info column
@@ -59,7 +81,20 @@ export function McpServerDetailsSheet({ server, open, onOpenChange, isAdmin }: P
         if (server.last_check_status !== "ok") return
         if (backfillIdRef.current === server.id) return
         backfillIdRef.current = server.id
-        check.mutate(server.id)
+        void check.run(server.id)
+    }, [open, server, check])
+
+    // Reset stream state when switching between rows so the previous
+    // server's logs don't bleed into the new sheet.
+    const lastSheetIdRef = React.useRef<string | null>(null)
+    React.useEffect(() => {
+        if (!open) return
+        const id = server?.id ?? null
+        if (lastSheetIdRef.current && lastSheetIdRef.current !== id) {
+            check.cancel()
+            check.reset()
+        }
+        lastSheetIdRef.current = id
     }, [open, server, check])
 
     if (!server) return null
@@ -86,7 +121,27 @@ export function McpServerDetailsSheet({ server, open, onOpenChange, isAdmin }: P
                 </SheetHeader>
 
                 <div className="px-6 py-4 space-y-5">
-                    <HealthSection server={server} onCheck={runCheck} isChecking={check.isPending} isAdmin={isAdmin} />
+                    <HealthSection
+                        server={server}
+                        onCheck={runCheck}
+                        isChecking={check.isChecking}
+                        isAdmin={isAdmin}
+                        streaming={{
+                            phase: check.phase,
+                            logs: check.logs,
+                            error: check.error,
+                        }}
+                    />
+                    <RuntimeSection
+                        server={server}
+                        runtime={runtime.data ?? null}
+                        isLoading={runtime.isLoading}
+                        isAdmin={isAdmin}
+                        onStop={() => stop.mutate(server.id)}
+                        onRestart={() => restart.mutate(server.id)}
+                        isStopping={stop.isPending}
+                        isRestarting={restart.isPending}
+                    />
                     {server.server_info && <ServerInfoSection info={server.server_info} />}
                     <EndpointSection server={server} isAdmin={isAdmin} />
                     <ToolsSection tools={server.tools_cache ?? []} status={server.last_check_status} />

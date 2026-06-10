@@ -40,7 +40,8 @@ export function ModalitySingleModelSelector({
 
     const filtered = React.useMemo(() => {
         const all = Array.isArray(data) ? data : []
-        const capMatch = all.filter((m) => matchesCapability(m, capability))
+        // Drop disabled — the gateway would 400 on use, no UI cue.
+        const capMatch = all.filter((m) => m.enabled !== false && matchesCapability(m, capability))
         if (!search) return capMatch
         const q = search.toLowerCase()
         return capMatch.filter(
@@ -59,6 +60,17 @@ export function ModalitySingleModelSelector({
         return data.find((m) => m.name === value) ?? null
     }, [value, data])
 
+    // "Stale" = saved value exists somewhere but doesn't satisfy the
+    // current filter (capability mismatch, disabled, deleted upstream).
+    // Without surfacing this, the trigger renders the stale name as if
+    // it's an active selection while the dropdown silently excludes it
+    // — the user has no signal that send will 400 / silently fall back
+    // to chatModels[0].
+    const stale = React.useMemo(() => {
+        if (!value || !selected) return !!value
+        return selected.enabled === false || !matchesCapability(selected, capability)
+    }, [value, selected, capability])
+
     return (
         <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>
@@ -72,10 +84,22 @@ export function ModalitySingleModelSelector({
                     )}
                 >
                     <span className="flex items-center gap-2 min-w-0">
-                        {selected ? (
+                        {selected && !stale ? (
                             <>
                                 <ProviderIcon providerName={selected.provider ?? "?"} />
                                 <span className="truncate">{selected.name}</span>
+                            </>
+                        ) : selected && stale ? (
+                            <>
+                                <Bot className="h-4 w-4 text-destructive" />
+                                <span className="truncate text-destructive line-through">{selected.name}</span>
+                                <span className="text-[10px] text-destructive shrink-0">(unavailable)</span>
+                            </>
+                        ) : value && !selected ? (
+                            <>
+                                <Bot className="h-4 w-4 text-destructive" />
+                                <span className="truncate text-destructive">{value}</span>
+                                <span className="text-[10px] text-destructive shrink-0">(missing)</span>
                             </>
                         ) : (
                             <>

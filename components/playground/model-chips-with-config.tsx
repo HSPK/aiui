@@ -40,9 +40,13 @@ export const ModelChipsWithConfig = React.memo(function ModelChipsWithConfig({
     const prefs = userPrefs ?? defaultUserPreferences
 
     const modelsMap = React.useMemo(() => {
-        const map = new Map<string, { provider?: string }>()
+        const map = new Map<string, { provider?: string; enabled?: boolean; type?: string }>()
         if (Array.isArray(modelsData)) {
-            modelsData.forEach((m) => map.set(m.name, { provider: m.provider ?? undefined }))
+            modelsData.forEach((m) => map.set(m.name, {
+                provider: m.provider ?? undefined,
+                enabled: m.enabled,
+                type: m.type,
+            }))
         }
         return map
     }, [modelsData])
@@ -110,17 +114,32 @@ export const ModelChipsWithConfig = React.memo(function ModelChipsWithConfig({
 
     return (
         <div className="flex items-center gap-1.5 flex-wrap">
-            {selectedModelIds.map((modelId) => (
-                <ModelConfigPopover
-                    key={modelId}
-                    modelId={modelId}
-                    provider={modelsMap.get(modelId)?.provider ?? undefined}
-                    config={modelConfigs[modelId] || DEFAULT_MODEL_CONFIG}
-                    onConfigChange={handleConfigChange}
-                    onRemove={handleRemoveModel}
-                    canRemove={selectedModelIds.length > 1}
-                />
-            ))}
+            {selectedModelIds.map((modelId) => {
+                const entry = modelsMap.get(modelId)
+                // Stale chip = saved model no longer present, disabled,
+                // or no longer chat-capability. Without this cue the
+                // chip looks active while the model dropdown silently
+                // excludes it (R8 filter), so the user can't replace
+                // via picker. Send will 400 at the gateway — surface
+                // the unavailability up-front via the chip styling.
+                const stale = !entry
+                    ? "missing"
+                    : (entry.enabled === false || (entry.type && entry.type !== "chat"))
+                        ? "unavailable"
+                        : null
+                return (
+                    <ModelConfigPopover
+                        key={modelId}
+                        modelId={modelId}
+                        provider={entry?.provider ?? undefined}
+                        config={modelConfigs[modelId] || DEFAULT_MODEL_CONFIG}
+                        onConfigChange={handleConfigChange}
+                        onRemove={handleRemoveModel}
+                        canRemove={selectedModelIds.length > 1}
+                        stale={stale}
+                    />
+                )
+            })}
 
             <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
                 <PopoverTrigger asChild>

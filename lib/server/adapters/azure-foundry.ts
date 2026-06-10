@@ -1,6 +1,6 @@
 import "server-only";
-import { registerAdapter, type ProviderAdapter, type UpstreamCallArgs } from ".";
-import { fetchOpenAIModels } from "./openai";
+import { registerAdapter, type ProviderAdapter, type ResourceCallArgs, type UpstreamCallArgs } from ".";
+import { defaultResourceUrl, fetchOpenAIModels } from "./openai";
 import type { NormalizedModelMeta, UpstreamApiId } from "@/lib/schemas/adapter";
 
 /**
@@ -144,6 +144,17 @@ export const azureFoundryAdapter: ProviderAdapter = {
 
     upstreamHeaders(_args, apiKey) {
         const h: Record<string, string> = { "Content-Type": "application/json" };
+        if (apiKey) h["api-key"] = apiKey;
+        return h;
+    },
+
+    /** Foundry routes to the model via body.model, NOT via deployment
+     *  URL — so follow-up resource paths use the same flat shape as
+     *  OpenAI direct. Only the auth header differs. */
+    resourceUrl: defaultResourceUrl,
+
+    resourceHeaders(_args: ResourceCallArgs, apiKey: string | null) {
+        const h: Record<string, string> = {};
         if (apiKey) h["api-key"] = apiKey;
         return h;
     },

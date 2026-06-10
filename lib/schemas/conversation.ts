@@ -45,6 +45,13 @@ export const conversationListQuerySchema = z.object({
 
 export const conversationTitleSchema = z.object({
     title: z.string().trim().min(1, "title is required").max(200),
+    /** Optional compare-and-swap precondition. When set, the server
+     *  ONLY writes if the row's current title still equals this
+     *  string. Used by background title-generation to avoid silently
+     *  clobbering a manual rename — without it, the LLM result lands
+     *  N seconds after the user typed a new title, overwriting their
+     *  choice with no UI signal. */
+    expected_title: z.string().optional(),
 });
 
 export const messageListQuerySchema = z.object({

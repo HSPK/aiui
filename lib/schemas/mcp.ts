@@ -75,6 +75,12 @@ export const mcpServerDTOSchema = z.object({
     transport: mcpTransportSchema,
     /** Free-form config object — discriminated by `transport`. */
     config: z.record(z.string(), z.unknown()),
+    /** True when at least one ciphertext field couldn't be decrypted —
+     *  the master key may have changed or the row was hand-edited.
+     *  When true, the FE refuses to submit the form (otherwise the
+     *  empty-string fallback would re-encrypt and silently overwrite
+     *  the original ciphertext). */
+    config_decryption_failed: z.boolean().optional(),
     enabled: z.boolean(),
     /** Health check status from the most recent check (create / update
      *  / explicit /check call). `null` means "never checked". */
@@ -93,8 +99,31 @@ export const mcpServerDTOSchema = z.object({
      *  for showing the upstream's own description / version on the
      *  details sheet without forcing the admin to type one. */
     server_info: mcpServerInfoSchema.nullable(),
+    /** Sentinel that bumps ONLY on transport/config edits — the
+     *  runtime state machine compares this to a built connection's
+     *  `built_for` to detect "config changed; rebuild needed".
+     *  Renames / description / enabled-toggle never advance it. */
+    config_version: z.string(),
     created_at: z.string(),
     updated_at: z.string(),
+});
+
+export const mcpRuntimeStatusSchema = z.object({
+    server_id: z.string(),
+    /** Live state of the runtime entry. `idle` means no process owned —
+     *  next tool call / re-check will spawn. */
+    status: z.enum(["idle", "connecting", "connected", "failed"]),
+    /** Child process PID (stdio only, null otherwise / before spawn). */
+    pid: z.number().int().nullable(),
+    /** ISO timestamp of the successful connect handshake. */
+    started_at: z.string().nullable(),
+    /** server.updated_at the active connection was built against — admins
+     *  use this to confirm a config edit has propagated. */
+    built_for: z.string().nullable(),
+    /** Last error message when status === "failed". */
+    error: z.string().nullable(),
+    /** Tail of the persisted log file (stderr + lifecycle), newest-last. */
+    recent_logs: z.array(z.string()),
 });
 
 // ---- Inputs ----
@@ -158,6 +187,7 @@ export type McpResourcesSnapshot = z.infer<typeof mcpResourcesSnapshotSchema>;
 export type McpPromptDescriptor = z.infer<typeof mcpPromptDescriptorSchema>;
 export type McpServerInfo = z.infer<typeof mcpServerInfoSchema>;
 export type McpServerDTO = z.infer<typeof mcpServerDTOSchema>;
+export type McpRuntimeStatusDTO = z.infer<typeof mcpRuntimeStatusSchema>;
 export type McpServerCreateInput = z.infer<typeof mcpServerCreateSchema>;
 export type McpServerUpdateInput = z.infer<typeof mcpServerUpdateSchema>;
 

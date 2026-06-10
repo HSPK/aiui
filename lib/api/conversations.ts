@@ -8,7 +8,7 @@ import type { ConversationDTO, MessageDTO } from "@/lib/schemas/conversation";
 const base = defineResource<
     ConversationDTO,
     never,
-    { title: string },
+    { title: string; expected_title?: string },
     { page?: number; page_size?: number; sort?: string; keyword?: string },
     Paginated<ConversationDTO>
 >({
@@ -37,8 +37,14 @@ export function messagesCacheKey(conversationId: string, pageSize: number) {
 export const conversations = {
     ...base,
 
-    // ---- shorthand: title-only update ----
-    updateTitle: (id: string, title: string) => base.update(id, { title }),
+    /** Title-only PATCH. When `expectedTitle` is supplied, the server
+     *  performs a compare-and-swap: write only if the row's current
+     *  title still equals `expectedTitle` — otherwise no-op. Background
+     *  title generators MUST pass this so a manual rename that landed
+     *  between snapshot-time and the LLM result isn't silently
+     *  clobbered. */
+    updateTitle: (id: string, title: string, expectedTitle?: string) =>
+        base.update(id, expectedTitle === undefined ? { title } : { title, expected_title: expectedTitle }),
 
     // ---- shared message cache key (used by usePaginatedMessages / sync) ----
     messagesCacheKey,

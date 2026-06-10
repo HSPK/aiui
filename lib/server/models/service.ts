@@ -91,9 +91,8 @@ function discoveredToDTO(d: DiscoveredModel, provider: Provider | undefined): Mo
         name: d.id,
         model_id: d.id,
         proxy: provider?.baseUrl ?? null,
-        timeout: 60,
+        timeout: 3600,
         max_retries: 2,
-        http_proxy: null,
         default_params: {},
         type: d.capability,
         api_variant_id: null,
@@ -104,7 +103,7 @@ function discoveredToDTO(d: DiscoveredModel, provider: Provider | undefined): Mo
         max_tokens: d.meta.max_output_tokens ?? null,
         description: null,
         knowledge_date: null,
-        provider: provider?.name ?? d.provider_name,
+        provider: provider?.name ?? "(unknown provider)",
         provider_id: d.provider_id,
         is_local: false,
         enabled: true,
@@ -227,32 +226,56 @@ export async function createModel(input: ModelCreateInput): Promise<ModelDTO> {
     // case and we don't want to lose its metadata.
     let snapshotted = input.discovered_metadata;
     if (snapshotted === undefined || snapshotted === null) {
+        // Warm the discovery cache before snapshotting — `getDiscoveryStatus`
+        // is a pure lookup, so on a cold cache (fresh boot, or a
+        // recent `clearDiscoveryCache` from a provider edit) it would
+        // return null and we'd silently drop metadata for direct API
+        // / CLI `POST /api/models` callers. `discoveredForProvider`
+        // populates the cache via the adapter; failure is swallowed
+        // (we still attempt the lookup below and fall back to a flat
+        // {id: upstream} projection if absent).
+        try { await discoveredForProvider(provider); } catch { /* swallow */ }
         const cached = getDiscoveryStatus(provider.id);
         const hit = cached?.models.find((m) => m.id === upstream);
         if (hit) snapshotted = hit.meta.raw ?? null;
     }
 
     const id = randomUUID();
-    db.insert(models).values({
-        id,
-        name,
-        providerId: provider.id,
-        upstreamModelId: upstream,
-        type: input.type ?? "chat",
-        defaultParams: input.default_params ?? {},
-        contextWindow: input.context_window ?? null,
-        maxTokens: input.max_tokens ?? null,
-        outputDimension: input.output_dimension ?? null,
-        pricing: input.pricing ?? null,
-        description: input.description ?? null,
-        knowledgeDate: input.knowledge_date ?? null,
-        timeout: input.timeout ?? 60,
-        maxRetries: input.max_retries ?? 2,
-        httpProxy: input.http_proxy ?? null,
-        enabled: input.enabled ?? true,
-        apiVariantId: input.api_variant_id?.trim() || null,
-        discoveredMetadata: snapshotted ?? null,
-    }).run();
+    try {
+        db.insert(models).values({
+            id,
+            name,
+            providerId: provider.id,
+            upstreamModelId: upstream,
+            type: input.type ?? "chat",
+            defaultParams: input.default_params ?? {},
+            contextWindow: input.context_window ?? null,
+            maxTokens: input.max_tokens ?? null,
+            outputDimension: input.output_dimension ?? null,
+            pricing: input.pricing ?? null,
+            description: input.description ?? null,
+            knowledgeDate: input.knowledge_date ?? null,
+            timeout: input.timeout ?? 3600,
+            maxRetries: input.max_retries ?? 2,
+            enabled: input.enabled ?? true,
+            apiVariantId: input.api_variant_id?.trim() || null,
+            discoveredMetadata: snapshotted ?? null,
+        }).run();
+    } catch (err) {
+        // Concurrent createModel race — same shape as R9 providers'
+        // fix. SELECT above missed for both callers; second INSERT
+        // hits UNIQUE(name) constraint. Map to clean 400 so the
+        // admin form shows "Model name already exists" instead of a
+        // generic 500 toast.
+        if (
+            err instanceof Error &&
+            "code" in err &&
+            (err as { code: string }).code === "SQLITE_CONSTRAINT_UNIQUE"
+        ) {
+            throw badRequest("Model name already exists");
+        }
+        throw err;
+    }
 
     return getModel(id);
 }
@@ -292,7 +315,6 @@ export async function updateModel(idOrName: string, input: ModelUpdateInput): Pr
     if (input.knowledge_date !== undefined) updates.knowledgeDate = input.knowledge_date;
     if (input.timeout !== undefined) updates.timeout = input.timeout;
     if (input.max_retries !== undefined) updates.maxRetries = input.max_retries;
-    if (input.http_proxy !== undefined) updates.httpProxy = input.http_proxy ?? null;
     if (input.enabled !== undefined) updates.enabled = !!input.enabled;
     if (input.api_variant_id !== undefined) {
         const v = input.api_variant_id?.trim();
@@ -300,9 +322,46 @@ export async function updateModel(idOrName: string, input: ModelUpdateInput): Pr
     }
     if (input.discovered_metadata !== undefined) updates.discoveredMetadata = input.discovered_metadata;
 
+    // Defense-in-depth: drop the stale snapshot when the row's
+    // adapter-specific projection target changes and the caller didn't
+    // supply a fresh one. Two trigger conditions:
+    //   - `upstream_model_id` change (the original R9 case — same
+    //     provider, different upstream id)
+    //   - `provider_id` change (cross-adapter — the stored snapshot is
+    //     in the old adapter's shape, so e.g. azure-foundry's
+    //     `capabilities` block would be silently fed through
+    //     openai's `extractModelMeta`, mis-projecting supported_apis
+    //     and accepted_fields — exactly the failure the snapshot
+    //     mechanism is meant to prevent)
+    // `getModel` then re-warms discovery against the (new provider,
+    // new upstream id) tuple and re-projects metadata correctly. When
+    // the upstream no longer exists, meta stays null (truthful
+    // signal) rather than carrying a misleading stale projection.
+    const upstreamChanged =
+        updates.upstreamModelId !== undefined &&
+        updates.upstreamModelId !== model.upstreamModelId;
+    const providerChanged =
+        updates.providerId !== undefined &&
+        updates.providerId !== model.providerId;
+    if ((upstreamChanged || providerChanged) && input.discovered_metadata === undefined) {
+        updates.discoveredMetadata = null;
+    }
+
     updates.updatedAt = new Date().toISOString();
 
-    db.update(models).set(updates).where(eq(models.id, model.id)).run();
+    try {
+        db.update(models).set(updates).where(eq(models.id, model.id)).run();
+    } catch (err) {
+        // Concurrent rename race — same shape as createModel above.
+        if (
+            err instanceof Error &&
+            "code" in err &&
+            (err as { code: string }).code === "SQLITE_CONSTRAINT_UNIQUE"
+        ) {
+            throw badRequest("Model name already exists");
+        }
+        throw err;
+    }
     return getModel(model.id);
 }
 

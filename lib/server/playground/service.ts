@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db, schema } from "../db";
 import { forwardGeneration, resolveModel, type AssembledToolCall } from "../gateway";
 import { forbidden } from "../response";
@@ -50,6 +50,14 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
             : body.content;
     const userText = extractText(body.content);
 
+    // Reject empty turns server-side — FE has a similar guard but a
+    // misbehaving client (or replay) shouldn't be able to push empty
+    // `(empty)` rows into the conversation, which would confuse the
+    // model on the next turn.
+    if (!userText.trim() && userContentArray.every(p => p.type === "text")) {
+        throw forbidden("Message content cannot be empty");
+    }
+
     const conversationId = body.conversation_id ?? randomUUID();
     const now = new Date().toISOString();
 
@@ -57,6 +65,11 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
         .where(eq(schema.conversations.id, conversationId)).get();
     if (existingConv) {
         if (existingConv.userId !== user.id) throw forbidden();
+        // Refuse to extend a soft-deleted conversation. Without this
+        // guard the FE could re-open a trashed conv (e.g. via stale
+        // URL) and silently resurrect it by sending. We force the
+        // user to undelete explicitly via the trash UI.
+        if (existingConv.isDeleted) throw forbidden("Conversation was deleted");
         db.update(schema.conversations).set({ updatedAt: now })
             .where(eq(schema.conversations.id, conversationId)).run();
     } else {
@@ -88,6 +101,34 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
     // parallel requests sharing the SAME user_message_id, and the
     // SELECT-then-INSERT pattern would crash N-1 of them on the PK).
     const userMessageId = body.user_message_id ?? randomUUID();
+    const assistantMessageId = body.assistant_message_id ?? randomUUID();
+
+    // SECURITY: enforce conversation scope on caller-provided message
+    // ids. `messages.id` is a global PK; without this check the
+    // assistant upsert's `ON CONFLICT(id) DO UPDATE` could silently
+    // overwrite any row whose id the caller knows (cross-conversation
+    // or, with leaked ids, cross-user). The userMessageId is
+    // `onConflictDoNothing` but still allowed only if scope matches —
+    // a silent no-op against a victim's id is a side-channel for id
+    // existence probing.
+    const callerProvidedIds = [
+        body.user_message_id,
+        body.assistant_message_id,
+    ].filter((v): v is string => typeof v === "string");
+    if (callerProvidedIds.length > 0) {
+        const collisions = db.select({
+            id: schema.messages.id,
+            conversationId: schema.messages.conversationId,
+        }).from(schema.messages)
+            .where(inArray(schema.messages.id, callerProvidedIds))
+            .all();
+        for (const c of collisions) {
+            if (c.conversationId !== conversationId) {
+                throw forbidden("Message id belongs to another conversation");
+            }
+        }
+    }
+
     db.insert(schema.messages).values({
         id: userMessageId,
         conversationId,
@@ -98,28 +139,62 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
         createdAt: now,
     }).onConflictDoNothing().run();
 
+    // Retry / regenerate cleanup: when the caller is re-using an
+    // existing `assistant_message_id`, prune any `role:"tool"` rows
+    // left over from a previous attempt. Without this, retry leaves
+    // orphan tool rows around — the next history replay sends them
+    // upstream alongside the freshly-generated assistant content
+    // (which may NOT carry tool_calls this time), and the upstream
+    // 4xx's with "tool message must follow assistant with
+    // tool_calls". Also fixes the zombie-bubble render in the
+    // conversation descend pass.
+    if (body.assistant_message_id) {
+        db.delete(schema.messages).where(and(
+            eq(schema.messages.conversationId, conversationId),
+            eq(schema.messages.parentId, body.assistant_message_id),
+            eq(schema.messages.role, "tool"),
+        )).run();
+    }
+
     const limit = Math.max(1, body.history_limit ?? body.conv_histrory_limit ?? 20);
+    // Drop `isNull(error)` from the SELECT — we need errored
+    // assistants visible to the post-fetch filter so we can transitively
+    // skip their `role:"tool"` children. Otherwise an errored
+    // assistant disappears from `recent` but its tool children would
+    // still be replayed without their parent (poison-state from a
+    // round-1 success → round-2 failure scenario).
     const recent = db.select().from(schema.messages)
         .where(and(
             eq(schema.messages.conversationId, conversationId),
             eq(schema.messages.isActive, true),
-            // Skip errored assistant slots — they have empty content
-            // and would poison the upstream prompt on subsequent turns.
-            isNull(schema.messages.error),
         ))
         .orderBy(desc(schema.messages.createdAt))
         .limit(limit)
         .all();
     recent.reverse();
 
+    // Two-pass filter so we can drop orphaned `role:"tool"` rows whose
+    // assistant parent failed (error set) or is missing from the
+    // fetched window. Either case would otherwise poison the upstream
+    // history replay.
+    const droppedAssistantIds = new Set<string>();
+    const presentIds = new Set<string>(recent.map((m) => m.id));
     const wireMessages: WireMessage[] = [];
     if (body.system?.trim()) wireMessages.push({ role: "system", content: body.system });
     for (const m of recent) {
+        if (m.role === "assistant" && m.error) {
+            droppedAssistantIds.add(m.id);
+            continue;
+        }
+        if (m.role === "tool") {
+            const parent = m.parentId;
+            if (!parent || droppedAssistantIds.has(parent) || !presentIds.has(parent)) {
+                continue;
+            }
+        }
         const c = m.content as MessageContent | unknown;
         wireMessages.push(...replayDbMessageToWire(m.role, c));
     }
-
-    const assistantMessageId = body.assistant_message_id ?? randomUUID();
 
     // Aggregate MCP tools (if any) for this turn. Failed servers are
     // surfaced to the client via synthetic SSE events but don't fail
@@ -184,7 +259,24 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
                 generationId: lastGenerationId,
                 error: lastError,
             },
+            // Defense-in-depth alongside the up-front SELECT scope
+            // check: refuse to overwrite a row that lives in another
+            // conversation, even if the caller's id slipped past
+            // validation somehow (race, future refactor, ...).
+            where: eq(schema.messages.conversationId, conversationId),
         }).run();
+        // When the turn ends in error, also drop any tool children
+        // that landed before the failure. The history-replay filter
+        // would skip them anyway (orphaned parent), but leaving them
+        // in the DB pollutes raw exports + the conversation descend
+        // pass would still render zombie bubbles until retry.
+        if (lastError) {
+            db.delete(schema.messages).where(and(
+                eq(schema.messages.conversationId, conversationId),
+                eq(schema.messages.parentId, assistantMessageId),
+                eq(schema.messages.role, "tool"),
+            )).run();
+        }
         // NOTE: deliberately NOT bumping conversations.updatedAt here.
         // It was already bumped at turn-start (the sidebar-sort key
         // is "you sent something on this conv"). Repeating per tool
@@ -202,6 +294,24 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
             isActive: true,
             createdAt: tsNow,
         }).run();
+    };
+
+    /** Merge a streaming round's partial deltas into `accumParts` /
+     *  `lastReasoning` and flush via upsertAssistant. Called on every
+     *  abort / error / disconnect path so the user sees whatever
+     *  streamed BEFORE the failure on reload. Idempotent — if no
+     *  content streamed, upsertAssistant writes an empty placeholder
+     *  which the FE renders as "(interrupted)". */
+    const persistPartial = (content: string, reasoning: string) => {
+        if (!content && !reasoning && accumParts.length === 0) {
+            // Nothing to persist — don't create a phantom row.
+            return;
+        }
+        if (content) {
+            accumParts.push({ type: "text", text: content });
+        }
+        if (reasoning) lastReasoning = reasoning;
+        upsertAssistant();
     };
 
     // ---- response stream ----
@@ -232,6 +342,12 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
                 });
             }
 
+            // Live deltas mirrored from forwardGeneration's
+            // onStreamDelta — hoisted to the start() scope so the outer
+            // catch can persist whatever streamed BEFORE the failure.
+            let liveContent = "";
+            let liveReasoning = "";
+
             try {
                 let hops = 0;
                 let pendingToolCalls: AssembledToolCall[] | undefined;
@@ -252,32 +368,59 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
                     let roundReasoning = "";
                     let roundFinish: string | undefined;
                     let roundToolCalls: AssembledToolCall[] | undefined;
+                    /** Set when the gateway streamed a terminal failure
+                     *  event mid-stream (e.g. /v1/responses
+                     *  `response.failed`). HTTP status is still 200
+                     *  and the transformer flushed normally, so we
+                     *  only learn via onComplete — promote to
+                     *  lastError + loom_error below so the chat row
+                     *  reflects the failure and the FE shows retry. */
+                    let roundError: string | null = null;
+                    // Reset live accumulators each round. They mirror
+                    // onStreamDelta so an abort/throw mid-round can
+                    // still persist whatever streamed before failure.
+                    liveContent = "";
+                    liveReasoning = "";
                     let result;
                     try {
                         result = await forwardGeneration(user, "chat", reqBody, {
                             conversationId,
                             messageId: assistantMessageId,
                             signal: abortController.signal,
-                            onComplete: ({ content, reasoning, toolCalls, finishReason }) => {
+                            onStreamDelta: (d) => {
+                                liveContent += d.content;
+                                if (d.reasoning) liveReasoning += d.reasoning;
+                            },
+                            onComplete: ({ content, reasoning, toolCalls, finishReason, error }) => {
                                 roundContent = content;
                                 roundReasoning = reasoning;
                                 roundToolCalls = toolCalls;
                                 roundFinish = finishReason;
+                                roundError = error ?? null;
                             },
                         });
                     } catch (err) {
                         // Client-disconnect aborts the upstream fetch
                         // and shows up here as AbortError — that's not
-                        // a "loom_error", just stop quietly.
-                        if (abortController.signal.aborted) break;
+                        // a "loom_error", but we still persist whatever
+                        // streamed so far so the user sees their
+                        // partial answer on reload.
+                        if (abortController.signal.aborted) {
+                            persistPartial(liveContent, liveReasoning);
+                            break;
+                        }
                         const message = err instanceof Error ? err.message : String(err);
                         lastError = message;
+                        persistPartial(liveContent, liveReasoning);
                         upsertAssistant();
                         emitEvent("loom_error", { message });
                         break;
                     }
 
-                    if (abortController.signal.aborted) break;
+                    if (abortController.signal.aborted) {
+                        persistPartial(liveContent, liveReasoning);
+                        break;
+                    }
 
                     lastGenerationId = result.logId;
                     // Surface the per-round message + generation id over
@@ -319,6 +462,20 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
                         lastReasoning = roundReasoning;
                     }
 
+                    // Mid-stream upstream failure (HTTP 200 + terminal
+                    // failure event) — the gateway already marked the
+                    // generation_logs row as failed; promote here so
+                    // the chat row also persists with `error:` and the
+                    // FE renders the retry affordance. Bail out of the
+                    // tool loop regardless of pendingFinishReason
+                    // (a "stop"-finish + error is still a failure).
+                    if (roundError) {
+                        lastError = roundError;
+                        upsertAssistant();
+                        emitEvent("loom_error", { message: roundError });
+                        break;
+                    }
+
                     pendingToolCalls = roundToolCalls;
                     pendingFinishReason = roundFinish;
 
@@ -332,7 +489,9 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
 
                     // Annotate the assistant message with the tool_call
                     // parts the model just emitted so the FE shows the
-                    // bubbles on a fresh page-load too.
+                    // bubbles on a fresh page-load too. The assistant
+                    // upsert + tool inserts run together under the
+                    // db.transaction below.
                     for (const tc of pendingToolCalls!) {
                         const envelope = toolIndex.get(tc.name);
                         const callPart: ToolCallPart = {
@@ -346,7 +505,6 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
                         };
                         accumParts.push(callPart);
                     }
-                    upsertAssistant();
 
                     // Build the assistant tool_calls envelope for the
                     // next round's history. Without this, the model
@@ -379,29 +537,55 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
                                 return {
                                     content: `No MCP server has a tool called "${tc.name}". Available: ${Array.from(toolIndex.keys()).join(", ") || "<none>"}.`,
                                     isError: true,
-                                    serverName: "unknown",
+                                    serverName: null,
                                 };
                             }
                             return executeTool(tc.name, tc.arguments);
                         }),
                     );
 
+                    // Per-hop atomicity — wrap the assistant upsert +
+                    // every tool result insert in one transaction so a
+                    // mid-hop crash can't leave the conversation with
+                    // an assistant message referencing tool_call_ids
+                    // that have no matching `role: "tool"` rows. Such
+                    // orphan tool_calls render as perpetual "running"
+                    // bubbles on the next page-load AND poison the
+                    // history replay (the upstream rejects "assistant
+                    // tool_calls without matching tool message"). The
+                    // tool execution itself stays OUTSIDE the tx —
+                    // those are network RPCs, not DB work. We accumulate
+                    // results into `execs` first, then write together.
+                    db.transaction(() => {
+                        upsertAssistant();
+                        for (let i = 0; i < pendingToolCalls!.length; i++) {
+                            const tc = pendingToolCalls![i];
+                            const exec = execs[i];
+                            const resultPart: ToolResultPart = {
+                                type: "tool_result",
+                                tool_result: {
+                                    tool_call_id: tc.id,
+                                    name: tc.name,
+                                    content: exec.content,
+                                    is_error: exec.isError,
+                                    // null serverName (malformed name, unknown
+                                    // prefix) → undefined source so the FE
+                                    // renders an "unattributed" badge rather
+                                    // than pretending a server literally named
+                                    // "unknown" exists.
+                                    source: exec.serverName ?? undefined,
+                                },
+                            };
+                            insertToolMessage(resultPart, assistantMessageId);
+                        }
+                    });
+
+                    // Side effects (FE events + wireMessages) fire
+                    // AFTER the tx commits so a rollback doesn't leak
+                    // partial state to the SSE consumer or next round.
                     for (let i = 0; i < pendingToolCalls!.length; i++) {
                         const tc = pendingToolCalls![i];
                         const exec = execs[i];
-
-                        const resultPart: ToolResultPart = {
-                            type: "tool_result",
-                            tool_result: {
-                                tool_call_id: tc.id,
-                                name: tc.name,
-                                content: exec.content,
-                                is_error: exec.isError,
-                                source: exec.serverName,
-                            },
-                        };
-                        insertToolMessage(resultPart, assistantMessageId);
-
                         // Surface to the FE as a synthetic event — the
                         // chat input doesn't poll messages mid-turn so
                         // this is how the bubble appears in real time.
@@ -410,7 +594,7 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
                             name: tc.name,
                             content: exec.content,
                             is_error: exec.isError,
-                            source: exec.serverName,
+                            source: exec.serverName ?? undefined,
                         });
 
                         wireMessages.push({
@@ -421,6 +605,34 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
                     }
 
                     hops += 1;
+                }
+            } catch (err) {
+                // Catch-all for any unexpected throw inside the
+                // orchestrator — without this the throw escapes the
+                // `start()` async, errors the ReadableStream
+                // controller, and the FE sees an abrupt disconnect
+                // instead of a `loom_error` event. Includes tool
+                // dispatch errors (executeTool is contractually
+                // non-throwing today but we don't want a regression
+                // there to silently kill streams) AND mid-stream
+                // upstream failures that `pipeAndStripDone` surfaces
+                // here after the gateway's observed-stream wrapper
+                // already errored the pipe.
+                if (!abortController.signal.aborted) {
+                    const message = err instanceof Error ? err.message : String(err);
+                    // CRITICAL: set lastError before persistPartial so
+                    // upsertAssistant writes `error = message` (not
+                    // null). Otherwise the row looks like a clean
+                    // successful turn on reload, the FE shows no
+                    // retry affordance, and the R3 error-time tool
+                    // prune at the bottom of upsertAssistant doesn't
+                    // fire — leaving stale tool children behind.
+                    lastError = message;
+                    persistPartial(liveContent, liveReasoning);
+                    emitEvent("loom_error", { message });
+                } else {
+                    // Client gave up — still persist whatever streamed.
+                    persistPartial(liveContent, liveReasoning);
                 }
             } finally {
                 // One terminal [DONE] for the whole multi-round stream.

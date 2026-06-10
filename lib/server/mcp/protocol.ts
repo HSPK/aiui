@@ -22,24 +22,27 @@ import { qualify, type AggregatedTool } from "./dispatch";
 /** List tools for a single server, surfaced as OpenAI tool shape. */
 export async function listToolsForServer(server: McpServerDTO): Promise<AggregatedTool[]> {
     const cc = await getClient(server);
-    const result = await withTimeout(cc.client.listTools(), CALL_TIMEOUT_MS, "tools/list");
-    cc.lastUsed = Date.now();
-    const out: AggregatedTool[] = [];
-    for (const t of result.tools ?? []) {
-        const parameters = (t.inputSchema as Record<string, unknown>) ?? {
-            type: "object",
-            properties: {},
-        };
-        out.push({
-            qualifiedName: qualify(server.name, t.name),
-            localName: t.name,
-            description: t.description ?? undefined,
-            parameters,
-            serverId: server.id,
-            serverName: server.name,
-        });
+    try {
+        const result = await withTimeout(cc.client.listTools(), CALL_TIMEOUT_MS, "tools/list");
+        const out: AggregatedTool[] = [];
+        for (const t of result.tools ?? []) {
+            const parameters = (t.inputSchema as Record<string, unknown>) ?? {
+                type: "object",
+                properties: {},
+            };
+            out.push({
+                qualifiedName: qualify(server.name, t.name),
+                localName: t.name,
+                description: t.description ?? undefined,
+                parameters,
+                serverId: server.id,
+                serverName: server.name,
+            });
+        }
+        return out;
+    } finally {
+        cc.release();
     }
-    return out;
 }
 
 /** List static resources + URI templates for a server. Returns null
@@ -50,37 +53,40 @@ export async function listResourcesForServer(server: McpServerDTO): Promise<{
     templates: Array<{ uriTemplate: string; name?: string; description?: string; mimeType?: string }>;
 } | null> {
     const cc = await getClient(server);
-    const caps = cc.client.getServerCapabilities();
-    if (!caps?.resources) return null;
-    cc.lastUsed = Date.now();
-
-    const resources: Array<{ uri: string; name?: string; description?: string; mimeType?: string }> = [];
-    const templates: Array<{ uriTemplate: string; name?: string; description?: string; mimeType?: string }> = [];
-
     try {
-        const r = await withTimeout(cc.client.listResources(), CALL_TIMEOUT_MS, "resources/list");
-        for (const x of r.resources ?? []) {
-            resources.push({ uri: x.uri, name: x.name, description: x.description, mimeType: x.mimeType });
-        }
-    } catch { /* server may declare capability but not implement list */ }
+        const caps = cc.client.getServerCapabilities();
+        if (!caps?.resources) return null;
 
-    try {
-        const r = await withTimeout(
-            cc.client.listResourceTemplates(),
-            CALL_TIMEOUT_MS,
-            "resources/templates/list",
-        );
-        for (const x of r.resourceTemplates ?? []) {
-            templates.push({
-                uriTemplate: x.uriTemplate,
-                name: x.name,
-                description: x.description,
-                mimeType: x.mimeType,
-            });
-        }
-    } catch { /* templates are optional even when resources are supported */ }
+        const resources: Array<{ uri: string; name?: string; description?: string; mimeType?: string }> = [];
+        const templates: Array<{ uriTemplate: string; name?: string; description?: string; mimeType?: string }> = [];
 
-    return { resources, templates };
+        try {
+            const r = await withTimeout(cc.client.listResources(), CALL_TIMEOUT_MS, "resources/list");
+            for (const x of r.resources ?? []) {
+                resources.push({ uri: x.uri, name: x.name, description: x.description, mimeType: x.mimeType });
+            }
+        } catch { /* server may declare capability but not implement list */ }
+
+        try {
+            const r = await withTimeout(
+                cc.client.listResourceTemplates(),
+                CALL_TIMEOUT_MS,
+                "resources/templates/list",
+            );
+            for (const x of r.resourceTemplates ?? []) {
+                templates.push({
+                    uriTemplate: x.uriTemplate,
+                    name: x.name,
+                    description: x.description,
+                    mimeType: x.mimeType,
+                });
+            }
+        } catch { /* templates are optional even when resources are supported */ }
+
+        return { resources, templates };
+    } finally {
+        cc.release();
+    }
 }
 
 /** List prompt templates for a server. Returns null when the server
@@ -91,18 +97,21 @@ export async function listPromptsForServer(server: McpServerDTO): Promise<Array<
     arguments?: Array<{ name: string; description?: string; required?: boolean }>;
 }> | null> {
     const cc = await getClient(server);
-    const caps = cc.client.getServerCapabilities();
-    if (!caps?.prompts) return null;
-    cc.lastUsed = Date.now();
+    try {
+        const caps = cc.client.getServerCapabilities();
+        if (!caps?.prompts) return null;
 
-    const result = await withTimeout(cc.client.listPrompts(), CALL_TIMEOUT_MS, "prompts/list");
-    return (result.prompts ?? []).map((p) => ({
-        name: p.name,
-        description: p.description,
-        arguments: p.arguments?.map((a) => ({
-            name: a.name,
-            description: a.description,
-            required: a.required,
-        })),
-    }));
+        const result = await withTimeout(cc.client.listPrompts(), CALL_TIMEOUT_MS, "prompts/list");
+        return (result.prompts ?? []).map((p) => ({
+            name: p.name,
+            description: p.description,
+            arguments: p.arguments?.map((a) => ({
+                name: a.name,
+                description: a.description,
+                required: a.required,
+            })),
+        }));
+    } finally {
+        cc.release();
+    }
 }

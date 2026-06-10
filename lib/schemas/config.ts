@@ -24,6 +24,12 @@ export const loomConfigSchema = z.object({
         .object({
             port: z.number().int().positive().optional(),
             hostname: z.string().optional(),
+            /** True when Loom sits behind a reverse proxy that overwrites
+             *  `X-Forwarded-For` / `X-Real-IP`. Lets the rate limiter
+             *  trust those headers. SAFE default is `false` — when set,
+             *  ensure the proxy actually scrubs the headers, or an
+             *  attacker can spoof them to bypass per-IP throttling. */
+            trust_proxy: z.boolean().optional(),
         })
         .loose()
         .optional(),

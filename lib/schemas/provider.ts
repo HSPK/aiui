@@ -17,7 +17,6 @@ export const providerDTOSchema = z.object({
     api_version: z.string().nullable(),
     has_api_key: z.boolean(),
     default_params: z.record(z.string(), z.unknown()),
-    http_proxy: z.record(z.string(), z.string()).nullable(),
     document_page: z.string(),
     model_page: z.string(),
     /** Optional full URL returning `{"status": "ok"}` when healthy. */
@@ -53,7 +52,6 @@ export const providerCreateSchema = z.object({
     api_version: z.string().trim().nullable().optional(),
     api_key: z.string().nullable().optional(),
     default_params: z.record(z.string(), z.unknown()).optional(),
-    http_proxy: z.record(z.string(), z.string()).nullable().optional(),
     document_page: z.string().optional(),
     model_page: z.string().optional(),
     health_check_url: z

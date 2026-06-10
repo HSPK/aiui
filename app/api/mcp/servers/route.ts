@@ -4,7 +4,10 @@ import { mcpServerCreateSchema } from "@/lib/schemas/mcp";
 import { createMcpServer, listMcpServers } from "@/lib/server/mcp";
 
 export const GET = defineRoute({
-    handler: () => listMcpServers(),
+    // Authenticated users (e.g. chat playground showing available MCP
+    // tools) can list servers, but non-admins get a redacted config
+    // — env / headers carry secrets that must never leak.
+    handler: ({ user }) => listMcpServers({ redactSecrets: user.role !== "admin" }),
 });
 
 export const POST = defineRoute({

@@ -5,11 +5,17 @@ export const playgroundChatSchema = z.object({
     /** Multimodal — string for plain text, array for text + attachments. */
     content: messageContentSchema,
     model: z.string().min(1, "`model` is required"),
-    conversation_id: z.string().optional(),
-    parent_message_id: z.string().nullable().optional(),
-    user_message_id: z.string().optional(),
-    /** Upsert key for retries — same id replaces, missing id creates new. */
-    assistant_message_id: z.string().optional(),
+    conversation_id: z.string().uuid().optional(),
+    parent_message_id: z.string().uuid().nullable().optional(),
+    /** Caller-provided id for the new user message — must be a UUID
+     *  the caller just generated, NOT an existing row's id. Server
+     *  refuses ids that already belong to a different conversation
+     *  to prevent cross-conversation row hijack. */
+    user_message_id: z.string().uuid().optional(),
+    /** Upsert key for retries — same id replaces, missing id creates new.
+     *  Same scoping rule as `user_message_id`: rejected if it points
+     *  at a row in another conversation. */
+    assistant_message_id: z.string().uuid().optional(),
     system: z.string().optional(),
     temperature: z.number().optional(),
     max_tokens: z.number().int().optional(),

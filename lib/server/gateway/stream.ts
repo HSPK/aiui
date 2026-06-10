@@ -61,6 +61,11 @@ export function handleStream({
     let streamId: string | undefined;
     let systemFingerprint: string | undefined;
     let finishReason: string | null = null;
+    /** Set by `parseStreamChunk` when the upstream emitted a terminal
+     *  failure event mid-stream (HTTP status still 200, e.g.
+     *  `/v1/responses` `response.failed`). Read by `finalize()` so
+     *  the log row's status reflects the actual outcome. */
+    let streamError: string | null = null;
     let buf = "";
     let firstTokenMs: number | null = null;
 
@@ -71,6 +76,62 @@ export function handleStream({
 
     const decoder = new TextDecoder();
     const createdAt = Math.floor(started / 1000);
+
+    // Single-shot terminal log writer. Must be called exactly once per
+    // stream; the `completed` flag dedups so flush() and the
+    // cancel/error wrapper can't double-write. Without this guard the
+    // `generation_logs` row would either stay at "pending" forever
+    // (cancel path skipped) or get overwritten (both paths fired).
+    let completed = false;
+    const finalize = (
+        status: "completed" | "failed",
+        reason: string | null,
+        closingReasonFinal: string,
+    ): void => {
+        if (completed) return;
+        completed = true;
+
+        const orderedToolCalls = Array.from(toolAcc.entries())
+            .sort(([a], [b]) => a - b)
+            .map(([, v]) => ({
+                id: v.id ?? "",
+                name: v.name ?? "",
+                arguments: v.arguments,
+            }))
+            .filter((tc) => tc.name);
+
+        const u = usage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined;
+        const message: Record<string, unknown> = { role: "assistant", content: accumContent };
+        if (accumReasoning) message.reasoning_content = accumReasoning;
+        if (orderedToolCalls.length > 0) {
+            message.tool_calls = orderedToolCalls.map((tc) => ({
+                id: tc.id,
+                type: "function",
+                function: { name: tc.name, arguments: tc.arguments },
+            }));
+        }
+        const mergedResponse: Record<string, unknown> = {
+            id: streamId ?? logId,
+            object: "chat.completion",
+            created: createdAt,
+            model: streamModel ?? model.upstreamModelId,
+            choices: [{ index: 0, message, finish_reason: closingReasonFinal }],
+        };
+        if (systemFingerprint) mergedResponse.system_fingerprint = systemFingerprint;
+        if (usage) mergedResponse.usage = usage;
+
+        completeLog(logId, {
+            status,
+            reason,
+            output: accumContent || null,
+            generation: mergedResponse,
+            promptTokens: u?.prompt_tokens ?? null,
+            completionTokens: u?.completion_tokens ?? null,
+            totalTokens: u?.total_tokens ?? null,
+            firstTokenLatencyMs: firstTokenMs,
+            totalLatencyMs: Date.now() - started,
+        });
+    };
 
     const emitChunk = (
         controller: TransformStreamDefaultController<Uint8Array>,
@@ -141,6 +202,11 @@ export function handleStream({
                 if (delta.systemFingerprint) systemFingerprint = delta.systemFingerprint;
                 if (delta.usage) usage = delta.usage;
                 if (delta.finishReason) finishReason = delta.finishReason;
+                // Variant-reported terminal failure (HTTP 200 but
+                // upstream emitted response.failed / .incomplete /
+                // similar mid-stream). Captured for finalize() so the
+                // log row reflects status="failed", not "completed".
+                if (delta.error?.reason) streamError = delta.error.reason;
 
                 if (delta.toolCalls && delta.toolCalls.length > 0) {
                     for (const tc of delta.toolCalls) {
@@ -190,50 +256,75 @@ export function handleStream({
             emitChunk(controller, {}, usage, closingReason);
             controller.enqueue(STREAM_ENCODER.encode("data: [DONE]\n\n"));
 
-            // Persist the merged log entry in canonical chat-completion shape.
-            const u = usage as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | undefined;
-            const message: Record<string, unknown> = { role: "assistant", content: accumContent };
-            if (accumReasoning) message.reasoning_content = accumReasoning;
-            if (orderedToolCalls.length > 0) {
-                message.tool_calls = orderedToolCalls.map((tc) => ({
-                    id: tc.id,
-                    type: "function",
-                    function: { name: tc.name, arguments: tc.arguments },
-                }));
+            // If a variant set `streamError` (e.g. response.failed
+            // mid-stream), persist the log row as failed — otherwise
+            // a 200-status-but-failed upstream would be indistinguishable
+            // from a clean completion in `generation_logs`.
+            if (streamError) {
+                finalize("failed", streamError, closingReason);
+            } else {
+                finalize("completed", null, closingReason);
             }
-            const mergedResponse: Record<string, unknown> = {
-                id: streamId ?? logId,
-                object: "chat.completion",
-                created: createdAt,
-                model: streamModel ?? model.upstreamModelId,
-                choices: [{ index: 0, message, finish_reason: closingReason }],
-            };
-            if (systemFingerprint) mergedResponse.system_fingerprint = systemFingerprint;
-            if (usage) mergedResponse.usage = usage;
 
-            completeLog(logId, {
-                status: "completed",
-                output: accumContent,
-                generation: mergedResponse,
-                promptTokens: u?.prompt_tokens ?? null,
-                completionTokens: u?.completion_tokens ?? null,
-                totalTokens: u?.total_tokens ?? null,
-                firstTokenLatencyMs: firstTokenMs,
-                totalLatencyMs: Date.now() - started,
-            });
             opts.onComplete?.({
                 content: accumContent,
                 reasoning: accumReasoning,
                 usage,
                 toolCalls: orderedToolCalls.length > 0 ? orderedToolCalls : undefined,
                 finishReason: closingReason,
+                // Propagate streamError up to the orchestrator so it
+                // sets `lastError`, emits `loom_error` to the FE, and
+                // the assistant DB row persists with `error:` — without
+                // this the DB log says "failed" but the chat UI shows
+                // a normal green bubble with no retry button.
+                error: streamError ?? undefined,
             });
         },
     });
 
     const piped = upstream.body.pipeThrough(transformer);
+
+    // Wrap the piped stream so we can observe ABNORMAL termination
+    // (consumer cancel — FE disconnect, proxy hangup — or upstream
+    // error mid-stream). The native TransformStream's `flush()` only
+    // fires on normal close, so without this wrapper the
+    // `generation_logs` row stays at "pending" forever on abort.
+    // The wrapper is a thin reader-passthrough; cancel propagates
+    // upstream so the in-flight fetch tears down too.
+    const observed = new ReadableStream<Uint8Array>({
+        async start(controller) {
+            const reader = piped.getReader();
+            try {
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    controller.enqueue(value);
+                }
+                controller.close();
+            } catch (err) {
+                const reason = err instanceof Error ? err.message : String(err);
+                finalize("failed", reason, finishReason ?? "stop");
+                controller.error(err);
+            } finally {
+                reader.releaseLock();
+            }
+        },
+        cancel(reason) {
+            // Consumer gave up. The TransformStream's `flush()` will
+            // NOT fire — capture the partial state into the log row
+            // so it doesn't sit at "pending" forever.
+            const msg = reason instanceof Error
+                ? reason.message
+                : (typeof reason === "string" && reason)
+                    ? reason
+                    : "client cancelled";
+            finalize("failed", msg, finishReason ?? "stop");
+            return piped.cancel(reason);
+        },
+    });
+
     return {
-        response: new Response(piped, {
+        response: new Response(observed, {
             headers: {
                 "Content-Type": "text/event-stream",
                 "Cache-Control": "no-cache",

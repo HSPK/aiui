@@ -11,7 +11,7 @@ import { startCommand } from "./commands/start";
 export const main = defineCommand({
     meta: {
         name: "loom",
-        version: "0.1.0",
+        version: process.env.LOOM_VERSION || "0.0.0-dev",
         description: "Self-hosted AI testing platform — playground, MCP runtime, request logs, and an OpenAI-compatible gateway.",
     },
     subCommands: {

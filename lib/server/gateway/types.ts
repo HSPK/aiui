@@ -40,6 +40,15 @@ export interface ForwardGenerationOpts {
         usage?: Record<string, unknown>;
         toolCalls?: AssembledToolCall[];
         finishReason?: string;
+        /** Set when the upstream emitted a terminal-failure event mid-
+         *  stream while HTTP status stayed 200 (e.g. /v1/responses
+         *  emits `response.failed` or `response.incomplete`). The
+         *  orchestrator surfaces this as `lastError` so the chat row
+         *  is persisted with `error: reason` and the FE renders the
+         *  retry affordance — without this, the user would see a
+         *  green/normal assistant bubble even though the response was
+         *  truncated by an upstream failure. */
+        error?: string;
     }) => void;
     /** Called per stream chunk for callers that want incremental access. */
     onStreamDelta?: (delta: { content: string; reasoning: string }) => void;

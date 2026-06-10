@@ -9,6 +9,7 @@ import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { preflightFromConfig } from "../preflight";
+import { ensureExternalAliases } from "./external-aliases";
 import { PACKAGE_ROOT, USER_CWD } from "./paths";
 
 export function resolveNextBin(): string {
@@ -41,6 +42,7 @@ export function runNext(mode: "start" | "dev", opts: RunNextOptions): void {
 
     process.env.LOOM_USER_CWD = USER_CWD;
     process.env.LOOM_PACKAGE_ROOT = PACKAGE_ROOT;
+    if (mode === "start") ensureExternalAliases();
     const { path: cfgPath, applied } = preflightFromConfig();
     if (cfgPath) {
         const note = applied.length > 0 ? ` (env: ${applied.join(", ")})` : "";

@@ -122,7 +122,10 @@ export function ConnectedModelSelector({ conversationId }: { conversationId: str
 
     const chatModels = React.useMemo(() => {
         const all = Array.isArray(modelsData) ? modelsData : []
-        return all.filter((m) => m.type === "chat")
+        // Drop disabled models — calling them would 400 at the gateway
+        // (`badRequest("Model is disabled")`) with no helpful UI cue,
+        // so hide them from the picker entirely.
+        return all.filter((m) => m.type === "chat" && m.enabled !== false)
     }, [modelsData])
 
     // Auto-select default model when none selected yet.

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Check, Copy, ChevronDown, ChevronRight, ThumbsUp, ThumbsDown, Info, RotateCcw, AlertCircle } from "lucide-react"
 import { cn, formatMessageTime } from "@/lib/utils"
+import { copyToClipboard } from "@/lib/clipboard"
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -14,6 +15,7 @@ import { ProviderIcon } from "@/components/ProviderIcon"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { preferences } from "@/lib/api/preferences"
 import { defaultUserPreferences } from "@/lib/schemas/preferences"
+import { useDeviceSettingsStore } from "@/lib/stores/device-settings-store"
 import { extractText, type ContentPart } from "@/lib/schemas/content"
 import type { Message, AssembledToolCall } from "@/components/playground/chat/types"
 import { useTypewriter } from "@/components/playground/chat/use-typewriter"
@@ -70,6 +72,12 @@ export const ChatMessage = React.memo(({
 }: ChatMessageProps) => {
     const { role, content, reasoning_content, model_id, created_at, generation_id, rating: initialRating, error: messageError } = message
     const messageDate = created_at
+    // Wire device settings: showTimestamps gates the per-message
+    // timestamp chip, compactMode trims vertical spacing on bubbles
+    // + bumps content density. Selector form (not destructured) so
+    // each toggle re-renders only the messages that care.
+    const showTimestamps = useDeviceSettingsStore((s) => s.showTimestamps)
+    const compactMode = useDeviceSettingsStore((s) => s.compactMode)
     const [copied, setCopied] = React.useState(false)
     // Tracks the 2s "Copied!" → "Copy" timer so we can clear it on
     // unmount and avoid a setState-after-unmount no-op when the user
@@ -143,8 +151,9 @@ export const ChatMessage = React.memo(({
         && renderMode !== "instant"
         && (isTyping || typewriterAnimating)
 
-    const onCopy = React.useCallback(() => {
-        navigator.clipboard.writeText(displayContent)
+    const onCopy = React.useCallback(async () => {
+        const ok = await copyToClipboard(displayContent)
+        if (!ok) return
         if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
         setCopied(true)
         copyTimerRef.current = setTimeout(() => setCopied(false), 2000)
@@ -224,9 +233,15 @@ export const ChatMessage = React.memo(({
             className={cn(
                 "group relative transition-all m-0.5",
                 !isSibling && "flex w-full",
-                !isSibling && isPlain && "gap-3 sm:gap-4 px-4 sm:px-6 md:px-6 lg:px-6 py-4 sm:py-6 hover:bg-muted/30",
-                !isSibling && isBubble && "px-4 sm:px-6 py-3 sm:py-4",
-                !isSibling && isMinimal && "px-4 sm:px-6 py-2 sm:py-2.5 hover:bg-muted/20",
+                !isSibling && isPlain && (compactMode
+                    ? "gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 hover:bg-muted/30"
+                    : "gap-3 sm:gap-4 px-4 sm:px-6 md:px-6 lg:px-6 py-4 sm:py-6 hover:bg-muted/30"),
+                !isSibling && isBubble && (compactMode
+                    ? "px-3 sm:px-4 py-1.5 sm:py-2"
+                    : "px-4 sm:px-6 py-3 sm:py-4"),
+                !isSibling && isMinimal && (compactMode
+                    ? "px-3 sm:px-4 py-1 hover:bg-muted/20"
+                    : "px-4 sm:px-6 py-2 sm:py-2.5 hover:bg-muted/20"),
                 isSibling && "flex flex-col gap-3 border rounded-xl shadow-sm bg-card flex-shrink-0 px-4 py-4",
                 isSibling && siblingWidthClass,
                 isSibling && isSelected && "ring-0 ring-primary/20 border-primary/30 bg-card",
@@ -266,9 +281,11 @@ export const ChatMessage = React.memo(({
                         <span className="font-semibold text-sm md:truncate md:whitespace-nowrap break-all">
                             {role === 'assistant' ? (provider ? `${provider} / ${model_id || 'Assistant'}` : (model_id || 'Assistant')) : userName}
                         </span>
-                        <span suppressHydrationWarning className="text-[10px] text-muted-foreground tabular-nums select-none opacity-50 group-hover:opacity-100 transition-opacity">
-                            {formatMessageTime(messageDate)}
-                        </span>
+                        {showTimestamps && (
+                            <span suppressHydrationWarning className="text-[10px] text-muted-foreground tabular-nums select-none opacity-50 group-hover:opacity-100 transition-opacity">
+                                {formatMessageTime(messageDate)}
+                            </span>
+                        )}
                         {isSibling && isSelected && onSelect && (
                             <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium border border-primary/10">
                                 Active

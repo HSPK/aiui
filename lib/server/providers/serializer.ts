@@ -13,7 +13,6 @@ export function serializeProvider(p: Provider, modelCount?: number): ProviderDTO
         api_version: p.apiVersion ?? null,
         has_api_key: !!p.apiKeyEncrypted,
         default_params: (p.defaultParams ?? {}) as Record<string, unknown>,
-        http_proxy: p.httpProxy ?? null,
         document_page: p.documentPage ?? "",
         model_page: p.modelPage ?? "",
         health_check_url: p.healthCheckUrl ?? null,

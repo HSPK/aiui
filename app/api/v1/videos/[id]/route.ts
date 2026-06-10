@@ -22,12 +22,13 @@ export const GET = defineRoute({
     auth: "gateway",
     params: paramsSchema,
     query: querySchema,
-    handler: async ({ user, params, query }) =>
+    handler: async ({ req, user, params, query }) =>
         gatewayProxy({
             user,
             modelName: query.model,
             method: "GET",
             path: `/videos/${encodeURIComponent(params.id)}`,
+            signal: req.signal,
         }),
 });
 
@@ -35,11 +36,12 @@ export const DELETE = defineRoute({
     auth: "gateway",
     params: paramsSchema,
     query: querySchema,
-    handler: async ({ user, params, query }) =>
+    handler: async ({ req, user, params, query }) =>
         gatewayProxy({
             user,
             modelName: query.model,
             method: "DELETE",
             path: `/videos/${encodeURIComponent(params.id)}`,
+            signal: req.signal,
         }),
 });

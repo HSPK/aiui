@@ -76,6 +76,37 @@ export interface ProviderAdapter {
      * `model` (deployment routes via URL instead).
      */
     finalizeRequest?(body: Record<string, unknown>, args: UpstreamCallArgs): Record<string, unknown>;
+
+    /**
+     * URL composition for follow-up resource requests that ride on
+     * top of a previously-created resource (poll status, download,
+     * delete). Default: `${baseUrl}${path}?${query}`. Azure-OpenAI
+     * overrides to wrap with `/openai/deployments/{deployment}{path}
+     * ?api-version=...&{query}` so async polling actually reaches the
+     * right deployment.
+     */
+    resourceUrl?(args: ResourceCallArgs): string;
+
+    /**
+     * Auth headers for follow-up resource requests. Default: `Bearer
+     * apiKey`. Azure-OpenAI / Azure-Foundry override to `api-key:
+     * apiKey`. Distinct from `upstreamHeaders` because the caller
+     * doesn't have a `variant` selected — we only need auth + content
+     * negotiation.
+     */
+    resourceHeaders?(args: ResourceCallArgs, apiKey: string | null): Record<string, string>;
+}
+
+/** Context passed to follow-up resource methods (no variant — these
+ *  hit endpoints that aren't model invocations, just resource lookup
+ *  / mutation on top of a previously-created job). */
+export interface ResourceCallArgs {
+    provider: Provider;
+    model: Model;
+    /** Path relative to the provider's base URL, with leading slash. */
+    path: string;
+    /** Optional query string (no leading `?`). */
+    query?: string;
 }
 
 /** Context passed to every per-request adapter method. */

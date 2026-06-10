@@ -131,7 +131,15 @@ export function VideoPlayground() {
                     break
                 }
             }
-            setPolling(false)
+            // Only clear `polling` if this run is still the active one.
+            // A user clicking Stop polling → Generate within the 4s
+            // sleep window starts a SECOND run; this run's late-
+            // resolving sleep must NOT clobber the new run's
+            // polling=true state, or the new run polls silently
+            // without a Stop button — and the user can spawn a third
+            // concurrent loop. The abortRef pointer is the identity
+            // we test.
+            if (abortRef.current === localAbort) setPolling(false)
         } catch (e) {
             const msg = e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e)
             patchVideo({ error: msg })

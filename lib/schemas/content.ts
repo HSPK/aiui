@@ -12,9 +12,16 @@ import { z } from "zod";
  * end-to-end and rendered the same way.
  */
 
+// Bounds chosen to reject pathological payloads (someone POSTing a
+// 500 MB base64 blob) while leaving headroom for real-world images
+// and PDFs. Reject early at zod parse so neither the gateway upstream
+// fetch nor the SQLite write sees a bad payload.
+const MAX_TEXT_BYTES = 1_000_000;        // ~1 MB of plain text per part
+const MAX_INLINE_DATA_BYTES = 50_000_000; // ~50 MB base64 string (~37 MB binary)
+
 export const textPartSchema = z.object({
     type: z.literal("text"),
-    text: z.string(),
+    text: z.string().max(MAX_TEXT_BYTES, `text part exceeds ${MAX_TEXT_BYTES} bytes`),
 });
 
 export const imageUrlPartSchema = z.object({
@@ -22,7 +29,7 @@ export const imageUrlPartSchema = z.object({
     image_url: z.object({
         /** Either an https:// URL or a `data:` URL. Inline base64 is the
          *  default path from the FE — no server-side upload needed. */
-        url: z.string(),
+        url: z.string().max(MAX_INLINE_DATA_BYTES, `image url exceeds ${MAX_INLINE_DATA_BYTES} bytes`),
         detail: z.enum(["auto", "low", "high"]).optional(),
     }),
 });
@@ -30,11 +37,11 @@ export const imageUrlPartSchema = z.object({
 export const filePartSchema = z.object({
     type: z.literal("file"),
     file: z.object({
-        filename: z.string(),
+        filename: z.string().max(512),
         /** Inline `data:<mime>;base64,…` URL. */
-        file_data: z.string(),
+        file_data: z.string().max(MAX_INLINE_DATA_BYTES, `file_data exceeds ${MAX_INLINE_DATA_BYTES} bytes`),
         /** Convenience copy of the mime type, for FE chip icons. */
-        mime_type: z.string().optional(),
+        mime_type: z.string().max(200).optional(),
     }),
 });
 
@@ -68,12 +75,22 @@ export const toolCallPartSchema = z.object({
  * `tool_call_id`. Errors are marked via `is_error: true` so the UI
  * can style them distinctly.
  */
+// Shared cap pair exported for `lib/server/mcp/dispatch.ts:capToolContent`
+// so the runtime truncator and the wire schema agree. The TOTAL string
+// the schema accepts is `TOOL_CONTENT_BUDGET_BYTES`; the truncator
+// reserves `TOOL_CONTENT_MARKER_RESERVE_BYTES` of that budget for its
+// "\n…[truncated, N more bytes]" suffix so its output stays under the
+// schema's `.max()` and round-trips through any future log-import /
+// bulk-write path.
+export const TOOL_CONTENT_BUDGET_BYTES = 256 * 1024;
+export const TOOL_CONTENT_MARKER_RESERVE_BYTES = 64;
+
 export const toolResultPartSchema = z.object({
     type: z.literal("tool_result"),
     tool_result: z.object({
         tool_call_id: z.string(),
         name: z.string().optional(),
-        content: z.string(),
+        content: z.string().max(TOOL_CONTENT_BUDGET_BYTES, `tool_result.content exceeds ${TOOL_CONTENT_BUDGET_BYTES} bytes`),
         is_error: z.boolean().optional(),
         source: z.string().optional(),
     }),

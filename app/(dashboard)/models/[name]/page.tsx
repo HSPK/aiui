@@ -278,6 +278,17 @@ export default function ModelDashboardPage() {
                 onOpenChange={setModelDialog}
                 mode={modelDetail?.is_discovered ? "create" : "edit"}
                 model={modelDetail ?? null}
+                onSaved={(saved) => {
+                    // Promote (discovered → DB row) OR rename: the
+                    // URL slug is based on `modelName`, so when the
+                    // server-side name differs (either because it's
+                    // a fresh DB row or the admin edited the field)
+                    // we must navigate so the page doesn't 404 on
+                    // re-fetch with the stale slug.
+                    if (saved && saved.name !== modelName) {
+                        router.replace(`/models/${encodeURIComponent(saved.name)}`)
+                    }
+                }}
             />
         </div>
     )

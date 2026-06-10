@@ -17,7 +17,6 @@ export function serializeModel(
         proxy: providerProxy ?? null,
         timeout: m.timeout,
         max_retries: m.maxRetries,
-        http_proxy: m.httpProxy ?? null,
         default_params: (m.defaultParams ?? {}) as Record<string, unknown>,
         type: m.type,
         api_variant_id: m.apiVariantId ?? null,

@@ -24,6 +24,32 @@ export function ProfileSection() {
     const patch = (p: Parameters<typeof update.mutate>[0]) =>
         update.mutate(p, { onError: (e) => toast.error(e.message || "Failed to save") })
 
+    // Local mirror so typing doesn't trigger a PATCH per keystroke.
+    // Commit on blur / Enter, matching TimeoutsSection.
+    const [nameInput, setNameInput] = React.useState(prefs.user_name)
+    React.useEffect(() => { setNameInput(prefs.user_name) }, [prefs.user_name])
+
+    const commitName = (raw: string) => {
+        const next = raw.trim()
+        if (!next || next === prefs.user_name) {
+            setNameInput(prefs.user_name)
+            return
+        }
+        update.mutate(
+            { user_name: next },
+            {
+                onError: (e) => {
+                    toast.error(e.message || "Failed to save")
+                    // Revert the input back to the persisted value —
+                    // otherwise the textbox keeps showing the rejected
+                    // string and every subsequent blur retries the
+                    // failing PATCH.
+                    setNameInput(prefs.user_name)
+                },
+            },
+        )
+    }
+
     return (
         <SettingsSection
             icon={User}
@@ -35,8 +61,13 @@ export function ProfileSection() {
                 description="Shown in the header, chat messages, and conversation list."
             >
                 <Input
-                    value={prefs.user_name}
-                    onChange={(e) => patch({ user_name: e.target.value })}
+                    value={nameInput}
+                    onChange={(e) => setNameInput(e.target.value)}
+                    onBlur={(e) => commitName(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === "Enter") (e.target as HTMLInputElement).blur()
+                    }}
+                    maxLength={120}
                     placeholder="Your name"
                 />
             </SettingsField>

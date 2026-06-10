@@ -20,10 +20,15 @@ export function fail(msg: string, status = 400, code = -1, init?: ResponseInit):
 export class HttpError extends Error {
     status: number;
     code: number;
-    constructor(message: string, status = 400, code = -1) {
+    /** Extra response headers — used for things like `Retry-After` on
+     *  429 rate-limit responses. Folded into the NextResponse by
+     *  `handle()`. Empty by default. */
+    headers?: Record<string, string>;
+    constructor(message: string, status = 400, code = -1, headers?: Record<string, string>) {
         super(message);
         this.status = status;
         this.code = code;
+        this.headers = headers;
         this.name = "HttpError";
     }
 }
@@ -44,9 +49,18 @@ export function forbidden(msg = "Forbidden"): HttpError {
     return new HttpError(msg, 403, -1);
 }
 
+/** 429 Too Many Requests. `retryAfterSeconds` populates the
+ *  standard `Retry-After` header so client SDKs (OpenAI, Anthropic,
+ *  generic HTTP libs) can back off automatically — without it, the
+ *  caller can only scrape seconds out of the human-readable message. */
+export function tooManyRequests(msg: string, retryAfterSeconds: number): HttpError {
+    return new HttpError(msg, 429, -1, { "Retry-After": String(Math.max(1, Math.ceil(retryAfterSeconds))) });
+}
+
 export function handle(err: unknown): NextResponse {
     if (err instanceof HttpError) {
-        return fail(err.message, err.status, err.code);
+        const init = err.headers ? { headers: err.headers } : undefined;
+        return fail(err.message, err.status, err.code, init);
     }
     const message = err instanceof Error ? err.message : "Internal server error";
     console.error("[loom] unhandled error:", err);

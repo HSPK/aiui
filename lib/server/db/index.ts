@@ -32,7 +32,7 @@ function createDb() {
     sqlite.pragma("busy_timeout = 5000");
     sqlite.pragma("cache_size = -64000");
     sqlite.pragma("temp_store = MEMORY");
-    sqlite.pragma("foreign_keys = ON");
+    // Note: foreign_keys is set AFTER migrations run — see below.
 
     const db = drizzle(sqlite, { schema });
 
@@ -43,12 +43,35 @@ function createDb() {
     const packageRoot = process.env.LOOM_PACKAGE_ROOT || process.cwd();
     const migrationsFolder = resolve(packageRoot, "drizzle");
     if (existsSync(migrationsFolder)) {
+        // CRITICAL: foreign_keys MUST be OFF for the duration of any
+        // "12-step table rebuild" migration (CREATE __new_X / COPY /
+        // DROP X / RENAME). Drizzle wraps each migration in a BEGIN/
+        // COMMIT, and `PRAGMA foreign_keys` is a SILENT NO-OP inside
+        // a transaction — so a `PRAGMA foreign_keys=OFF` at the top
+        // of the .sql file does nothing. With FK enforcement still
+        // ON, every `DROP TABLE <parent>` cascade-deletes every
+        // child row (api_keys, sessions, conversations → messages,
+        // user_preferences, generation_logs, …). The toggle MUST
+        // happen at the JS level, outside any tx.
+        sqlite.pragma("foreign_keys = OFF");
         try {
             migrate(db, { migrationsFolder });
+            // Audit before re-enabling — if any FK violation slipped
+            // through (e.g. orphan row in a child table), surface it
+            // loudly rather than silently re-enabling and crashing
+            // later at runtime.
+            const violations = sqlite.pragma("foreign_key_check") as unknown[];
+            if (violations.length > 0) {
+                console.error("[loom] foreign_key_check violations after migration:", violations);
+            }
         } catch (err) {
             console.error("[loom] Failed to run migrations:", err);
             throw err;
+        } finally {
+            sqlite.pragma("foreign_keys = ON");
         }
+    } else {
+        sqlite.pragma("foreign_keys = ON");
     }
 
     return db;

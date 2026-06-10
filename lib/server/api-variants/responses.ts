@@ -22,6 +22,18 @@ interface ChatMessage {
     role?: string;
     content?: unknown;
     name?: string;
+    /** Assistant turn with tool calls — canonical chat-completion shape:
+     *  `{role:"assistant", content:null, tool_calls:[{id, type:"function",
+     *   function:{name, arguments}}]}`. Must become Responses
+     *  `function_call` items, NOT dropped. */
+    tool_calls?: Array<{
+        id?: string;
+        type?: string;
+        function?: { name?: string; arguments?: string };
+    }>;
+    /** Tool result turn — `{role:"tool", tool_call_id, content}`. Must
+     *  become a Responses `function_call_output` item. */
+    tool_call_id?: string;
     [k: string]: unknown;
 }
 
@@ -81,23 +93,79 @@ function flattenContent(content: unknown): string {
     return "";
 }
 
-/** Translate a chat message into a Responses-API input item. The Responses
- *  API expects message items shaped like
- *  `{ type: "message", role, content: [{type: "input_text"|"output_text", text}] }`.
- *  Multimodal parts map to `input_image` / `input_file` (Responses
- *  flavour) when present. */
-function chatMessageToInputItem(m: ChatMessage): Record<string, unknown> | null {
+/** Translate a chat message into ONE OR MORE Responses-API input items.
+ *  Returns an array so an assistant turn with both text + tool_calls can
+ *  emit a message item AND multiple function_call items in order.
+ *
+ *  Mapping:
+ *    - assistant {content, tool_calls} → [message?(text), function_call*]
+ *      (function_call items REPLACE chat-completion's nested
+ *      `tool_calls` array — the Responses API doesn't accept `tool_calls`
+ *      and silently dropping the assistant turn breaks multi-turn replay)
+ *    - tool {tool_call_id, content} → [function_call_output]
+ *      (Responses doesn't recognise role:"tool"; the canonical pair-up
+ *      is `function_call` from the assistant + `function_call_output`
+ *      from the runtime, both linked by `call_id`)
+ *    - user / system: standard message item, multimodal-aware
+ */
+function chatMessageToInputItems(m: ChatMessage): Array<Record<string, unknown>> {
     const role = m.role;
-    if (!role) return null;
-    const isAssistant = role === "assistant";
-    const partType = isAssistant ? "output_text" : "input_text";
+    if (!role) return [];
 
+    // Tool result turn → function_call_output. Content is always a
+    // plain string (R8 cap enforces 256 KB; flatten just in case the
+    // caller passed an array).
+    if (role === "tool") {
+        const callId = m.tool_call_id;
+        if (!callId) return [];
+        return [{
+            type: "function_call_output",
+            call_id: callId,
+            output: flattenContent(m.content),
+        }];
+    }
+
+    // Assistant turn — emit text (if any) + each tool_call as a
+    // function_call. Either may be absent independently; both
+    // present is the standard "I want to call N tools, here's why"
+    // pattern.
+    if (role === "assistant") {
+        const items: Array<Record<string, unknown>> = [];
+        const text = typeof m.content === "string"
+            ? m.content
+            : Array.isArray(m.content) ? flattenContent(m.content) : "";
+        if (text) {
+            items.push({
+                type: "message",
+                role: "assistant",
+                content: [{ type: "output_text", text }],
+            });
+        }
+        const tcs = Array.isArray(m.tool_calls) ? m.tool_calls : [];
+        for (const tc of tcs) {
+            if (!tc?.id || !tc.function?.name) continue;
+            items.push({
+                type: "function_call",
+                call_id: tc.id,
+                name: tc.function.name,
+                arguments: typeof tc.function.arguments === "string"
+                    ? tc.function.arguments
+                    : JSON.stringify(tc.function.arguments ?? {}),
+            });
+        }
+        return items;
+    }
+
+    // User / developer turns — standard message item with multimodal
+    // parts. (developer turns are upgraded to system in the wire
+    // layer; this branch handles the residual case.)
+    const partType = "input_text";
     if (typeof m.content === "string") {
-        return {
+        return [{
             type: "message",
             role,
             content: [{ type: partType, text: m.content }],
-        };
+        }];
     }
     if (Array.isArray(m.content)) {
         const parts = m.content
@@ -109,14 +177,9 @@ function chatMessageToInputItem(m: ChatMessage): Record<string, unknown> | null 
                     image_url?: { url?: string; detail?: string } | string;
                     file?: { filename?: string; file_data?: string; file_id?: string };
                 };
-                // image_url part — keep the same shape (Responses
-                // `input_image` accepts the same object).
                 if (obj?.type === "image_url" || obj?.image_url) {
                     return { type: "input_image", image_url: obj.image_url };
                 }
-                // file part — chat-completion's
-                // `{type:"file", file:{filename, file_data}}` maps to
-                // Responses' `{type:"input_file", filename, file_data}`.
                 if (obj?.type === "file" || obj?.file) {
                     const f = obj.file ?? {};
                     const out: Record<string, unknown> = { type: "input_file" };
@@ -128,11 +191,47 @@ function chatMessageToInputItem(m: ChatMessage): Record<string, unknown> | null 
                 if (typeof obj?.text === "string") return { type: partType, text: obj.text };
                 return null;
             })
-            .filter(Boolean);
-        if (parts.length === 0) return null;
-        return { type: "message", role, content: parts };
+            .filter(Boolean) as Array<Record<string, unknown>>;
+        if (parts.length === 0) return [];
+        return [{ type: "message", role, content: parts }];
     }
-    return null;
+    return [];
+}
+
+/** Translate chat-completion-shape `tools[]` to Responses-API shape.
+ *  Chat-completion: `[{type:"function", function:{name, description, parameters, strict?}}]`
+ *  Responses:       `[{type:"function", name, description, parameters, strict?}]`
+ *  (flatter — fields nested under `function` move to the same level as `type`).
+ *
+ *  Spread every key on `fn` AFTER the known ones so that fields we
+ *  don't model explicitly today (e.g. OpenAI's `strict` for structured
+ *  outputs, or any future field) get forwarded losslessly. Without
+ *  this, an opted-in `strict: true` would silently disable schema
+ *  enforcement when the caller targeted a Responses-routed model. */
+function translateTools(rawTools: unknown): unknown {
+    if (!Array.isArray(rawTools)) return rawTools;
+    return rawTools.map((t) => {
+        if (!t || typeof t !== "object") return t;
+        const tool = t as { type?: string; function?: Record<string, unknown> };
+        if (tool.type !== "function" || !tool.function) return t;
+        const fn = tool.function;
+        return { type: "function", ...fn };
+    });
+}
+
+/** Translate chat-completion-shape `tool_choice` to Responses-API shape.
+ *  Chat-completion: `"none" | "auto" | "required" | {type:"function", function:{name}}`
+ *  Responses:       `"none" | "auto" | "required" | {type:"function", name}`
+ *  (flatter — `function.name` moves to a top-level `name` field).
+ *  String forms pass through unchanged. Unknown shapes pass through
+ *  losslessly so future OpenAI additions (e.g. {type:"file_search"})
+ *  don't get clobbered. */
+function translateToolChoice(raw: unknown): unknown {
+    if (!raw || typeof raw !== "object") return raw;
+    const tc = raw as { type?: unknown; function?: { name?: unknown } & Record<string, unknown> };
+    if (tc.type !== "function" || !tc.function || typeof tc.function !== "object") return raw;
+    const { function: fn, ...rest } = tc;
+    return { ...rest, type: "function", ...fn };
 }
 
 const FIELDS_NOT_FOR_RESPONSES = new Set([
@@ -163,8 +262,7 @@ function translateRequest(body: Record<string, unknown>): Record<string, unknown
             if (t) instructions.push(t);
             continue;
         }
-        const item = chatMessageToInputItem(m);
-        if (item) inputItems.push(item);
+        inputItems.push(...chatMessageToInputItems(m));
     }
 
     const out: Record<string, unknown> = {};
@@ -174,6 +272,23 @@ function translateRequest(body: Record<string, unknown>): Record<string, unknown
     }
 
     out.input = inputItems;
+
+    // Translate tools[] from chat-completion's nested
+    // `{type:"function", function:{...}}` shape to Responses' flatter
+    // `{type:"function", name, description, parameters}` shape.
+    if (Array.isArray(body.tools)) {
+        out.tools = translateTools(body.tools);
+    }
+
+    // Same flattening for tool_choice — Responses wants the object
+    // shape `{type:"function", name}` while chat-completion uses the
+    // nested `{type:"function", function:{name}}`. Without this, a
+    // caller that explicitly names a function would 400 at the
+    // upstream ("`tool_choice.function`: extra inputs not permitted"
+    // or "missing `name`").
+    if (body.tool_choice !== undefined) {
+        out.tool_choice = translateToolChoice(body.tool_choice);
+    }
 
     // System messages → `instructions`, merged with any explicit one in body.
     const existingInstructions = typeof body.instructions === "string" ? body.instructions : "";
@@ -203,10 +318,21 @@ function translateRequest(body: Record<string, unknown>): Record<string, unknown
 // Response parsing
 // =============================================================================
 
-function extractText(output: ResponsesOutputItem[] | undefined): { content: string; reasoning: string } {
+interface AssembledToolCall {
+    id: string;
+    name: string;
+    arguments: string;
+}
+
+function extractFromOutput(output: ResponsesOutputItem[] | undefined): {
+    content: string;
+    reasoning: string;
+    toolCalls: AssembledToolCall[];
+} {
     let content = "";
     let reasoning = "";
-    if (!Array.isArray(output)) return { content, reasoning };
+    const toolCalls: AssembledToolCall[] = [];
+    if (!Array.isArray(output)) return { content, reasoning, toolCalls };
     for (const item of output) {
         if (item?.type === "message") {
             for (const part of item.content ?? []) {
@@ -223,9 +349,27 @@ function extractText(output: ResponsesOutputItem[] | undefined): { content: stri
                     }
                 }
             }
+        } else if (item?.type === "function_call") {
+            // Responses-API tool call. Mirror chat.completions' tool_calls
+            // shape so the gateway's orchestrator (which expects the
+            // canonical chat-completion contract) dispatches the call.
+            // Without this, the model's tool requests are silently
+            // dropped and the loop never enters the tool branch.
+            const it = item as unknown as {
+                call_id?: string;
+                id?: string;
+                name?: string;
+                arguments?: unknown;
+            };
+            const callId = it.call_id ?? it.id;
+            if (typeof callId !== "string" || typeof it.name !== "string") continue;
+            const args = typeof it.arguments === "string"
+                ? it.arguments
+                : JSON.stringify(it.arguments ?? {});
+            toolCalls.push({ id: callId, name: it.name, arguments: args });
         }
     }
-    return { content, reasoning };
+    return { content, reasoning, toolCalls };
 }
 
 function normalizeUsage(u: ResponsesUsage | undefined): Record<string, unknown> | null {
@@ -243,10 +387,24 @@ function toChatCompletion(
     r: ResponsesResponse,
     content: string,
     reasoning: string,
+    toolCalls: AssembledToolCall[],
 ): Record<string, unknown> {
     const message: Record<string, unknown> = { role: "assistant", content };
     if (reasoning) message.reasoning_content = reasoning;
+    if (toolCalls.length > 0) {
+        message.tool_calls = toolCalls.map((tc) => ({
+            id: tc.id,
+            type: "function",
+            function: { name: tc.name, arguments: tc.arguments },
+        }));
+    }
     const usage = normalizeUsage(r.usage);
+    // Pick finish_reason from tool_calls presence first (so external
+    // OpenAI-compat clients see "tool_calls" — the canonical signal
+    // for "the model wants to invoke a tool"); fall back to status.
+    const finishReason = toolCalls.length > 0
+        ? "tool_calls"
+        : (r.status === "completed" ? "stop" : (r.status ?? "stop"));
     const out: Record<string, unknown> = {
         id: r.id ?? "",
         object: "chat.completion",
@@ -256,7 +414,7 @@ function toChatCompletion(
             {
                 index: 0,
                 message,
-                finish_reason: r.status === "completed" ? "stop" : (r.status ?? "stop"),
+                finish_reason: finishReason,
             },
         ],
     };
@@ -280,14 +438,49 @@ export const responsesVariant: UpstreamApiVariant = {
 
     parseResponse(json) {
         const r = (json ?? {}) as ResponsesResponse;
-        const { content, reasoning } = extractText(r.output);
+        const { content, reasoning, toolCalls } = extractFromOutput(r.output);
         const usage = r.usage ?? {};
+        // Mirror the streaming path's failure detection: a non-stream
+        // /v1/responses can also come back as HTTP 200 with `status:
+        // Mirror the streaming path's failure detection: a non-stream
+        // /v1/responses can also come back as HTTP 200 with `status:
+        // "failed"` or `"incomplete"`. Surface that as `error` so the
+        // gateway logs the row as failed AND the FE shows a retry
+        // affordance — same UX gap R13 closed for streaming.
+        //
+        // EXCEPT `incomplete_details.reason: "max_output_tokens"` —
+        // hitting the caller-supplied token cap is a VALID partial
+        // completion (the OpenAI Responses-API analog of chat-
+        // completions `finish_reason: "length"`), NOT an upstream
+        // failure. Treating it as error makes the FE pop a retry card
+        // on every cap-bounded reply — the user retries, hits the
+        // cap again, retries forever. Only true failures (content
+        // filter, server errors) should mark the row failed.
+        let error: string | undefined;
+        if (r.status === "failed") {
+            const errMsg = (r as { error?: { message?: unknown } }).error?.message;
+            error = typeof errMsg === "string" ? errMsg : "response.failed";
+        } else if (r.status === "incomplete") {
+            const reason = (r as { incomplete_details?: { reason?: unknown } }).incomplete_details?.reason;
+            if (typeof reason === "string" && reason !== "max_output_tokens") {
+                error = `incomplete: ${reason}`;
+            }
+            // max_output_tokens or missing reason → not an error;
+            // finishReason="length" below tells the FE it was capped.
+        }
         return {
             output: content || null,
             promptTokens: usage.input_tokens ?? null,
             completionTokens: usage.output_tokens ?? null,
             totalTokens: usage.total_tokens ?? null,
-            normalized: toChatCompletion(r, content, reasoning),
+            normalized: toChatCompletion(r, content, reasoning, toolCalls),
+            toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+            finishReason: toolCalls.length > 0
+                ? "tool_calls"
+                : (r.status === "completed" ? "stop"
+                    : r.status === "incomplete" ? "length"
+                    : r.status),
+            error,
         };
     },
 
@@ -324,28 +517,99 @@ export const responsesVariant: UpstreamApiVariant = {
             return { content: "", reasoning: delta };
         }
 
+        // Tool-call stream: Responses emits the function_call shell
+        // first (`output_item.added` carries `item.type === "function_call"`,
+        // call_id and name), then per-arg-chunk
+        // `function_call_arguments.delta`. Map both into the gateway's
+        // canonical `{index, id, name, argumentsDelta}` shape so
+        // `toolAcc` accumulates correctly and the orchestrator enters
+        // the tool branch on terminal `tool_calls` finish_reason.
+        // Without this, the model's tool requests are silently dropped
+        // mid-stream.
+        if (type === "response.output_item.added") {
+            const item = ev.item as unknown as {
+                type?: string;
+                call_id?: string;
+                id?: string;
+                name?: string;
+            } | undefined;
+            const outIdx = (ev as { output_index?: number }).output_index;
+            if (item?.type === "function_call" && typeof outIdx === "number") {
+                return {
+                    content: "",
+                    reasoning: "",
+                    toolCalls: [{
+                        index: outIdx,
+                        id: item.call_id ?? item.id,
+                        name: item.name,
+                        argumentsDelta: "",
+                    }],
+                };
+            }
+            return null;
+        }
+
+        if (type === "response.function_call_arguments.delta") {
+            const outIdx = (ev as { output_index?: number }).output_index;
+            const delta = typeof ev.delta === "string" ? ev.delta : "";
+            if (typeof outIdx !== "number" || !delta) return null;
+            return {
+                content: "",
+                reasoning: "",
+                toolCalls: [{ index: outIdx, argumentsDelta: delta }],
+            };
+        }
+
         // Terminal event carries the final usage + canonical id/model.
+        // ALSO derive `finishReason: "tool_calls"` when the assembled
+        // output array contains function_call items — without this the
+        // gateway falls back to "stop" and never dispatches the call.
         if (type === "response.completed") {
             const r = ev.response;
+            const hasToolCalls = Array.isArray(r?.output) &&
+                r!.output!.some((it) => (it as { type?: string })?.type === "function_call");
             return {
                 content: "",
                 reasoning: "",
                 id: typeof r?.id === "string" ? r.id : undefined,
                 model: typeof r?.model === "string" ? r.model : undefined,
                 usage: normalizeUsage(r?.usage) ?? undefined,
+                finishReason: hasToolCalls ? "tool_calls" : "stop",
             };
         }
 
         if (type === "response.failed" || type === "response.incomplete") {
-            // Surface as an empty terminal — the gateway logs the upstream
-            // error separately via HTTP status if any.
+            // Surface as a terminal-error delta so the gateway's
+            // streaming finalize() marks the log as "failed". Without
+            // an explicit error signal, the gateway would treat
+            // absence of finishReason as a clean "stop" and persist
+            // the row as `completed` — masking real upstream failures.
+            //
+            // EXCEPT `response.incomplete` with reason
+            // `max_output_tokens` — hitting the caller-supplied token
+            // cap is a VALID partial completion (chat-completions
+            // analog: finish_reason="length"). Treating it as failure
+            // pops a retry card on every cap-bounded reply; the user
+            // retries, hits the cap again, retries forever.
             const r = ev.response;
+            const incReason = (r as { incomplete_details?: { reason?: unknown } } | undefined)?.incomplete_details?.reason;
+            const isCapHit = type === "response.incomplete" && incReason === "max_output_tokens";
+
+            const reasonText = (() => {
+                if (type === "response.failed") {
+                    const err = (r as { error?: { message?: unknown } } | undefined)?.error;
+                    return typeof err?.message === "string" ? err.message : "response.failed";
+                }
+                return typeof incReason === "string" ? `incomplete: ${incReason}` : "response.incomplete";
+            })();
             return {
                 content: "",
                 reasoning: "",
                 id: typeof r?.id === "string" ? r.id : undefined,
                 model: typeof r?.model === "string" ? r.model : undefined,
                 usage: normalizeUsage(r?.usage) ?? undefined,
+                finishReason: type === "response.incomplete" ? "length" : "stop",
+                error: isCapHit ? undefined : { reason: reasonText },
             };
         }
 

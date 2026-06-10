@@ -1,11 +1,11 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import { models, providers } from "../db/schema";
 import { decryptSecret, encryptSecret } from "../crypto";
 import { badRequest, notFound } from "../response";
-import { clearDiscoveryCache, discoverModels, discoveredCountByProvider, discoveredCountForProvider } from "../discovery";
+import { clearDiscoveryCache, clearDiscoveryCacheFor, discoverModels, discoveredCountByProvider, discoveredCountForProvider } from "../discovery";
 import { resolveAdapter } from "../adapters";
 import "../adapters/register";
 import { serializeProvider } from "./serializer";
@@ -102,22 +102,36 @@ export async function createProvider(input: ProviderCreateInput): Promise<Provid
     const id = randomUUID();
     const adapterId = resolveAdapterId({ adapter_id: input.adapter_id, base_url: baseUrl, api_version: input.api_version ?? null });
 
-    db.insert(providers).values({
-        id,
-        name,
-        adapterId,
-        baseUrl,
-        apiVersion: input.api_version?.trim() || null,
-        apiKeyEncrypted: encryptSecret(input.api_key ?? null),
-        defaultParams: input.default_params ?? {},
-        httpProxy: input.http_proxy ?? null,
-        documentPage: input.document_page ?? null,
-        modelPage: input.model_page ?? null,
-        healthCheckUrl: input.health_check_url?.trim() || null,
-        isLocal: !!input.is_local,
-        enabled: input.enabled ?? true,
-    }).run();
-    clearDiscoveryCache();
+    try {
+        db.insert(providers).values({
+            id,
+            name,
+            adapterId,
+            baseUrl,
+            apiVersion: input.api_version?.trim() || null,
+            apiKeyEncrypted: encryptSecret(input.api_key ?? null),
+            defaultParams: input.default_params ?? {},
+            documentPage: input.document_page ?? null,
+            modelPage: input.model_page ?? null,
+            healthCheckUrl: input.health_check_url?.trim() || null,
+            isLocal: !!input.is_local,
+            enabled: input.enabled ?? true,
+        }).run();
+    } catch (err) {
+        // Concurrent createProvider race: same shape as the R3
+        // createUser race. SELECT above missed for both callers;
+        // second INSERT hits UNIQUE constraint. Map to clean 400.
+        if (
+            err instanceof Error &&
+            "code" in err &&
+            (err as { code: string }).code === "SQLITE_CONSTRAINT_UNIQUE"
+        ) {
+            throw badRequest("Provider name already exists");
+        }
+        throw err;
+    }
+    // Fresh provider — no prior discovery entry to drop. No need to
+    // invalidate the rest of the fleet's caches.
 
     return getProvider(id);
 }
@@ -149,10 +163,18 @@ export async function updateProvider(idOrName: string, input: ProviderUpdateInpu
     }
     if (input.api_version !== undefined) updates.apiVersion = input.api_version?.trim() || null;
     if (input.api_key !== undefined) {
-        updates.apiKeyEncrypted = input.api_key ? encryptSecret(input.api_key) : null;
+        // Empty string from a REST/CLI caller is treated as
+        // "unchanged" — not "wipe the secret". The FE form already
+        // shields against this (deletes the field when blank), but
+        // direct API consumers commonly echo back blank-secret form
+        // state. Explicit `null` is the documented "clear" signal.
+        if (input.api_key === null) {
+            updates.apiKeyEncrypted = null;
+        } else if (input.api_key !== "") {
+            updates.apiKeyEncrypted = encryptSecret(input.api_key);
+        }
     }
     if (input.default_params !== undefined) updates.defaultParams = input.default_params ?? {};
-    if (input.http_proxy !== undefined) updates.httpProxy = input.http_proxy ?? null;
     if (input.document_page !== undefined) updates.documentPage = input.document_page;
     if (input.model_page !== undefined) updates.modelPage = input.model_page;
     if (input.health_check_url !== undefined) {
@@ -171,8 +193,47 @@ export async function updateProvider(idOrName: string, input: ProviderUpdateInpu
 
     updates.updatedAt = new Date().toISOString();
 
-    db.update(providers).set(updates).where(eq(providers.id, provider.id)).run();
-    clearDiscoveryCache();
+    try {
+        db.update(providers).set(updates).where(eq(providers.id, provider.id)).run();
+    } catch (err) {
+        // Concurrent rename race: same shape as createProvider above.
+        if (
+            err instanceof Error &&
+            "code" in err &&
+            (err as { code: string }).code === "SQLITE_CONSTRAINT_UNIQUE"
+        ) {
+            throw badRequest("Provider name already exists");
+        }
+        throw err;
+    }
+    // Only invalidate discovery when fields that actually drive the
+    // upstream `/models` call changed — base_url / api_version /
+    // adapter_id / api_key / enabled. Cosmetic edits (document_page,
+    // model_page, name, is_local, default_params, health_check_url)
+    // don't change the model list, so a blanket `clearDiscoveryCache()`
+    // would unnecessarily fan out upstream fetches across every OTHER
+    // provider on the very next `GET /providers` (which calls
+    // `discoveredCountByProvider`).
+    const affectsDiscovery =
+        updates.baseUrl !== undefined ||
+        updates.apiVersion !== undefined ||
+        updates.adapterId !== undefined ||
+        updates.apiKeyEncrypted !== undefined ||
+        updates.enabled !== undefined;
+    if (affectsDiscovery) clearDiscoveryCacheFor(provider.id);
+    // Cross-adapter projection mismatch — same reasoning as the
+    // `updateModel` defense at `models/service.ts:325-348`. When the
+    // provider's adapter changes, every dependent model still carries
+    // a `discovered_metadata` snapshot in the OLD adapter's raw shape.
+    // Feeding that through the new adapter's `extractModelMeta` mis-
+    // projects `capabilities` / `accepted_fields` / `supported_apis`
+    // — `applyFieldFilter` would then strip legitimate body fields or
+    // accept ones the new upstream rejects, depending on direction.
+    // Null the snapshots so `resolveModel` re-warms discovery against
+    // the new adapter on next call.
+    if (updates.adapterId !== undefined && updates.adapterId !== provider.adapterId) {
+        db.update(models).set({ discoveredMetadata: null }).where(eq(models.providerId, provider.id)).run();
+    }
     return getProvider(provider.id);
 }
 
@@ -180,7 +241,8 @@ export async function deleteProvider(idOrName: string): Promise<void> {
     const provider = findProviderByIdOrName(idOrName);
     if (!provider) throw notFound("Provider not found");
     db.delete(providers).where(eq(providers.id, provider.id)).run();
-    clearDiscoveryCache();
+    // Targeted eviction — other providers' caches stay warm.
+    clearDiscoveryCacheFor(provider.id);
 }
 
 /** Probe an arbitrary health-check URL. Pure I/O — no DB writes. Used
@@ -232,13 +294,25 @@ export async function checkProvider(idOrName: string): Promise<{ ok: boolean; mo
     if (!provider) throw notFound("Provider not found");
 
     if (provider.healthCheckUrl) {
+        // Capture wall-clock BEFORE the probe so concurrent checks
+        // can be ordered by start-time. Without this, two overlapping
+        // probes whose results land out of order (e.g. slow A started
+        // first, fast B started after, B writes first, A overwrites)
+        // would persist the OLDER observation as the newer one.
+        const startedAt = new Date().toISOString();
         const result = await probeHealthCheckUrl(provider.healthCheckUrl);
+        // Only commit if no LATER probe has already written. The
+        // `or(isNull, lt)` covers both first-write and out-of-order
+        // arrival cases.
         db.update(providers).set({
             lastHealthStatus: result.ok ? "ok" : "down",
-            lastHealthCheckedAt: new Date().toISOString(),
+            lastHealthCheckedAt: startedAt,
             lastHealthError: result.ok ? null : (result.error ?? null),
             updatedAt: new Date().toISOString(),
-        }).where(eq(providers.id, provider.id)).run();
+        }).where(and(
+            eq(providers.id, provider.id),
+            or(isNull(providers.lastHealthCheckedAt), lt(providers.lastHealthCheckedAt, startedAt)),
+        )).run();
         return result;
     }
 

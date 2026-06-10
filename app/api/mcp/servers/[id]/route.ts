@@ -7,8 +7,11 @@ import { deleteMcpServer, getMcpServer, updateMcpServer } from "@/lib/server/mcp
 const paramsSchema = z.object({ id: z.string().min(1) });
 
 export const GET = defineRoute({
+    // Same projection rule as the list endpoint — non-admin users
+    // get a redacted config so secrets in env / headers don't leak.
     params: paramsSchema,
-    handler: ({ params }) => getMcpServer(decodeURIComponent(params.id)),
+    handler: ({ user, params }) =>
+        getMcpServer(decodeURIComponent(params.id), { redactSecrets: user.role !== "admin" }),
 });
 
 export const PATCH = defineRoute({

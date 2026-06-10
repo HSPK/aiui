@@ -39,17 +39,32 @@ function encStr(value: unknown): unknown {
     return enc ? `${ENC_PREFIX}${enc}` : value;
 }
 
+/** Thrown by `decStr` when the ciphertext cannot be decrypted — the
+ *  master key has changed, the row was hand-edited, or the payload was
+ *  truncated. `decryptConfig` catches per-field so a single corrupted
+ *  env var doesn't blow up the whole DTO; the field is replaced with
+ *  an empty string and the per-config `decryptFailed` flag is raised.
+ *  The serializer surfaces the flag as `decryption_failed` on the DTO
+ *  so the admin form can refuse to save (otherwise the form would
+ *  re-encrypt the empty string and silently overwrite the real
+ *  ciphertext on the next save). */
+export class DecryptionFailedError extends Error {
+    constructor() {
+        super("MCP secret decryption failed — master key may have changed or the ciphertext is corrupt");
+        this.name = "DecryptionFailedError";
+    }
+}
+
 function decStr(value: unknown): unknown {
     if (typeof value !== "string") return value;
     if (!value.startsWith(ENC_PREFIX)) return value;
     try {
-        return decryptSecret(value.slice(ENC_PREFIX.length)) ?? value;
-    } catch {
-        // A corrupt / wrong-key payload: surface the sentinel so the
-        // admin sees it broke rather than silently sending garbage to
-        // a child process. The check endpoint will fail with a clear
-        // upstream error and the admin can re-enter the secret.
-        return "<decrypt-failed>";
+        const result = decryptSecret(value.slice(ENC_PREFIX.length));
+        if (result === undefined || result === null) throw new DecryptionFailedError();
+        return result;
+    } catch (err) {
+        if (err instanceof DecryptionFailedError) throw err;
+        throw new DecryptionFailedError();
     }
 }
 
@@ -77,14 +92,30 @@ export function encryptConfig(
     return { ...config, headers };
 }
 
+/** Decrypt the secret-bearing fields. Returns `{ config, decryptFailed }`
+ *  — `decryptFailed=true` means at least one ciphertext field couldn't be
+ *  recovered (master key changed, corrupt payload). The failing fields
+ *  are replaced with empty strings so the DTO shape is preserved; the
+ *  caller (serializer → DTO → form) is expected to surface the flag and
+ *  block the user from saving the cleared state back. Without this
+ *  signalling, a re-save would re-encrypt the empty string and PERMANENTLY
+ *  destroy the original ciphertext. */
 export function decryptConfig(
     transport: McpTransport,
     config: Record<string, unknown>,
-): Record<string, unknown> {
+): { config: Record<string, unknown>; decryptFailed: boolean } {
+    let decryptFailed = false;
+    const safeDec = (v: unknown): unknown => {
+        try { return decStr(v); }
+        catch (err) {
+            if (err instanceof DecryptionFailedError) { decryptFailed = true; return ""; }
+            throw err;
+        }
+    };
     if (transport === "stdio") {
-        const env = mapObject(config.env, decStr);
-        return { ...config, env };
+        const env = mapObject(config.env, safeDec);
+        return { config: { ...config, env }, decryptFailed };
     }
-    const headers = mapObject(config.headers, decStr);
-    return { ...config, headers };
+    const headers = mapObject(config.headers, safeDec);
+    return { config: { ...config, headers }, decryptFailed };
 }

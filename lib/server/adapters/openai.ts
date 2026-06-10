@@ -1,5 +1,5 @@
 import "server-only";
-import { registerAdapter, type ProviderAdapter, type UpstreamCallArgs } from ".";
+import { registerAdapter, type ProviderAdapter, type ResourceCallArgs, type UpstreamCallArgs } from ".";
 import { classifyModel } from "../capabilities";
 import type { NormalizedModelMeta } from "@/lib/schemas/adapter";
 import type { Provider } from "../db/schema";
@@ -30,12 +30,40 @@ export function bearerAuthHeaders(_args: UpstreamCallArgs, apiKey: string | null
     return h;
 }
 
+/** Default `${baseUrl}${path}?${query}` builder for follow-up
+ *  resource paths (poll status, download, delete). Azure adapters
+ *  override to wrap with deployment + api-version. */
+export function defaultResourceUrl(args: ResourceCallArgs): string {
+    const base = args.provider.baseUrl.replace(/\/$/, "");
+    let url = `${base}${args.path}`;
+    if (args.query) url += `?${args.query}`;
+    return url;
+}
+
+/** Default `Authorization: Bearer …` for follow-up resource requests.
+ *  Azure adapters override to `api-key: …`. */
+export function bearerResourceHeaders(
+    _args: ResourceCallArgs,
+    apiKey: string | null,
+): Record<string, string> {
+    const h: Record<string, string> = {};
+    if (apiKey) h["Authorization"] = `Bearer ${apiKey}`;
+    return h;
+}
+
+/** Default timeout for discovery `/models` requests. Long-tail to
+ *  cover slow providers (Azure deployments, on-prem), but bounded so
+ *  a wedged TCP doesn't permanently hang the discovery refresh —
+ *  which would block every call to a non-DB model AND every
+ *  unfiltered `GET /api/models` (both walk providers in parallel). */
+const DISCOVERY_TIMEOUT_MS = 15_000;
+
 /** Standard OpenAI `/v1/models` list endpoint. */
 export async function fetchOpenAIModels(provider: Provider, apiKey: string | null): Promise<unknown[]> {
     const url = `${provider.baseUrl.replace(/\/$/, "")}/models`;
     const headers: Record<string, string> = { Accept: "application/json" };
     if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-    const res = await fetch(url, { headers });
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(DISCOVERY_TIMEOUT_MS) });
     if (!res.ok) {
         throw new Error(`models discovery HTTP ${res.status} from ${url}`);
     }
@@ -129,6 +157,8 @@ export const openaiAdapter: ProviderAdapter = {
 
     upstreamUrl: defaultUpstreamUrl,
     upstreamHeaders: bearerAuthHeaders,
+    resourceUrl: defaultResourceUrl,
+    resourceHeaders: bearerResourceHeaders,
 
     finalizeRequest(body, args) {
         // Stamp the upstream id so callers can reference a model by its

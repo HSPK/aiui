@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Bot, MessageSquare, Palette, RotateCcw, Sliders, User, Wrench } from "lucide-react"
+import { Bot, Lock, MessageSquare, Palette, RotateCcw, Sliders, Timer, User, Wrench } from "lucide-react"
 import { toast } from "sonner"
 
 import { preferences } from "@/lib/api/preferences"
@@ -15,9 +15,11 @@ import { BehaviorSection } from "./_sections/behavior"
 import { ChatSection } from "./_sections/chat"
 import { ModelsSection } from "./_sections/models"
 import { ProfileSection } from "./_sections/profile"
+import { SecuritySection } from "./_sections/security"
+import { TimeoutsSection } from "./_sections/timeouts"
 import { ToolsSection } from "./_sections/tools"
 
-type SectionId = "profile" | "appearance" | "models" | "chat" | "behavior" | "tools"
+type SectionId = "profile" | "security" | "appearance" | "models" | "chat" | "timeouts" | "behavior" | "tools"
 
 interface SectionDef {
     id: SectionId
@@ -28,9 +30,11 @@ interface SectionDef {
 
 const SECTIONS: SectionDef[] = [
     { id: "profile", label: "Profile", icon: User, Component: ProfileSection },
+    { id: "security", label: "Security", icon: Lock, Component: SecuritySection },
     { id: "appearance", label: "Appearance", icon: Palette, Component: AppearanceSection },
     { id: "models", label: "Models", icon: Bot, Component: ModelsSection },
     { id: "chat", label: "Chat", icon: MessageSquare, Component: ChatSection },
+    { id: "timeouts", label: "Timeouts", icon: Timer, Component: TimeoutsSection },
     { id: "behavior", label: "Behavior", icon: Sliders, Component: BehaviorSection },
     { id: "tools", label: "Tools", icon: Wrench, Component: ToolsSection },
 ]

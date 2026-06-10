@@ -30,10 +30,12 @@ import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import { Plus, Trash2, Copy } from "lucide-react"
 import { formatToLocal } from "@/lib/utils"
+import { copyToClipboard } from "@/lib/clipboard"
 
 export default function ApiKeysPage() {
     const [createOpen, setCreateOpen] = useState(false)
     const [keyName, setKeyName] = useState("")
+    const [expiryDays, setExpiryDays] = useState<"never" | "30" | "90" | "365">("never")
     const [newKey, setNewKey] = useState<{ name: string; key: string } | null>(null)
     const [toDelete, setToDelete] = useState<ApiKeyDTO | null>(null)
 
@@ -43,6 +45,7 @@ export default function ApiKeysPage() {
         onSuccess: (key) => {
             setCreateOpen(false)
             setKeyName("")
+            setExpiryDays("never")
             setNewKey({ name: key.name, key: key.key })
         },
         onError: (e) => toast.error(e.message || "Create failed"),
@@ -55,6 +58,15 @@ export default function ApiKeysPage() {
         },
         onError: (e) => toast.error(e.message || "Delete failed"),
     })
+
+    const handleCreate = () => {
+        const name = keyName.trim()
+        if (!name) return
+        const expires_at = expiryDays === "never"
+            ? null
+            : new Date(Date.now() + Number(expiryDays) * 86400_000).toISOString()
+        createMutation.mutate({ name, expires_at })
+    }
 
     return (
         <div className="h-full overflow-y-auto scrollbar-thin p-4 md:p-6 space-y-4">
@@ -82,6 +94,7 @@ export default function ApiKeysPage() {
                                 <TableHead className="pl-4">Name</TableHead>
                                 <TableHead>Prefix</TableHead>
                                 <TableHead className="hidden md:table-cell">Created</TableHead>
+                                <TableHead className="hidden md:table-cell">Expires</TableHead>
                                 <TableHead className="hidden md:table-cell">Last used</TableHead>
                                 <TableHead className="w-[60px] text-right pr-4">Actions</TableHead>
                             </TableRow>
@@ -89,27 +102,35 @@ export default function ApiKeysPage() {
                         <TableBody>
                             {isLoading && (
                                 <TableRow>
-                                    <TableCell colSpan={5} className="py-6">
+                                    <TableCell colSpan={6} className="py-6">
                                         <LoadingState variant="inline" className="justify-center" />
                                     </TableCell>
                                 </TableRow>
                             )}
                             {!isLoading && keys.length === 0 && (
-                                <TableRow><TableCell colSpan={5} className="text-muted-foreground text-center py-6">No API keys yet.</TableCell></TableRow>
+                                <TableRow><TableCell colSpan={6} className="text-muted-foreground text-center py-6">No API keys yet.</TableCell></TableRow>
                             )}
-                            {keys.map((k) => (
-                                <TableRow key={k.id}>
-                                    <TableCell className="font-medium pl-4">{k.name}</TableCell>
-                                    <TableCell><Badge variant="outline" className="font-mono text-xs">{k.prefix}…</Badge></TableCell>
-                                    <TableCell className="text-xs text-muted-foreground hidden md:table-cell whitespace-nowrap">{formatToLocal(k.created_at)}</TableCell>
-                                    <TableCell className="text-xs text-muted-foreground hidden md:table-cell whitespace-nowrap">{k.last_used_at ? formatToLocal(k.last_used_at) : "—"}</TableCell>
-                                    <TableCell className="text-right pr-4">
-                                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setToDelete(k)}>
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                        </Button>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
+                            {keys.map((k) => {
+                                const expired = k.expires_at && Date.parse(k.expires_at) < Date.now()
+                                return (
+                                    <TableRow key={k.id}>
+                                        <TableCell className="font-medium pl-4">{k.name}</TableCell>
+                                        <TableCell><Badge variant="outline" className="font-mono text-xs">{k.prefix}…</Badge></TableCell>
+                                        <TableCell className="text-xs text-muted-foreground hidden md:table-cell whitespace-nowrap">{formatToLocal(k.created_at)}</TableCell>
+                                        <TableCell className="text-xs hidden md:table-cell whitespace-nowrap">
+                                            {k.expires_at
+                                                ? <span className={expired ? "text-destructive" : "text-muted-foreground"}>{formatToLocal(k.expires_at)}</span>
+                                                : <span className="text-muted-foreground">Never</span>}
+                                        </TableCell>
+                                        <TableCell className="text-xs text-muted-foreground hidden md:table-cell whitespace-nowrap">{k.last_used_at ? formatToLocal(k.last_used_at) : "—"}</TableCell>
+                                        <TableCell className="text-right pr-4">
+                                            <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setToDelete(k)}>
+                                                <Trash2 className="h-3.5 w-3.5" />
+                                            </Button>
+                                        </TableCell>
+                                    </TableRow>
+                                )
+                            })}
                         </TableBody>
                     </Table>
                 </CardContent>
@@ -121,13 +142,29 @@ export default function ApiKeysPage() {
                         <DialogTitle>New API Key</DialogTitle>
                         <DialogDescription>You&apos;ll see the secret only once.</DialogDescription>
                     </DialogHeader>
-                    <div className="grid gap-2 py-2">
-                        <Label htmlFor="k-name" className="text-xs">Name</Label>
-                        <Input id="k-name" autoFocus value={keyName} onChange={(e) => setKeyName(e.target.value)} placeholder="my-backend" className="h-9 text-sm" />
+                    <div className="grid gap-3 py-2">
+                        <div className="grid gap-2">
+                            <Label htmlFor="k-name" className="text-xs">Name</Label>
+                            <Input id="k-name" autoFocus value={keyName} onChange={(e) => setKeyName(e.target.value)} placeholder="my-backend" className="h-9 text-sm" />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label htmlFor="k-exp" className="text-xs">Expiration</Label>
+                            <select
+                                id="k-exp"
+                                value={expiryDays}
+                                onChange={(e) => setExpiryDays(e.target.value as typeof expiryDays)}
+                                className="h-9 text-sm border border-input rounded-md bg-background px-2"
+                            >
+                                <option value="never">Never</option>
+                                <option value="30">30 days</option>
+                                <option value="90">90 days</option>
+                                <option value="365">1 year</option>
+                            </select>
+                        </div>
                     </div>
                     <DialogFooter>
                         <Button variant="outline" size="sm" onClick={() => setCreateOpen(false)}>Cancel</Button>
-                        <Button size="sm" disabled={!keyName.trim() || createMutation.isPending} onClick={() => createMutation.mutate(keyName.trim())}>
+                        <Button size="sm" disabled={!keyName.trim() || createMutation.isPending} onClick={handleCreate}>
                             Create
                         </Button>
                     </DialogFooter>
@@ -148,11 +185,11 @@ export default function ApiKeysPage() {
                             variant="outline"
                             size="icon"
                             className="shrink-0"
-                            onClick={() => {
-                                if (newKey) {
-                                    navigator.clipboard.writeText(newKey.key)
-                                    toast.success("Copied to clipboard")
-                                }
+                            onClick={async () => {
+                                if (!newKey) return
+                                const ok = await copyToClipboard(newKey.key)
+                                if (ok) toast.success("Copied to clipboard")
+                                else toast.error("Copy failed — select the key manually")
                             }}
                         >
                             <Copy className="h-4 w-4" />

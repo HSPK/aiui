@@ -1,5 +1,6 @@
 import "server-only";
 import type { McpServerDTO } from "@/lib/schemas/mcp";
+import { TOOL_CONTENT_BUDGET_BYTES, TOOL_CONTENT_MARKER_RESERVE_BYTES } from "@/lib/schemas/content";
 import { listMcpServers } from "./service";
 import { CALL_TIMEOUT_MS, getClient, withTimeout } from "./runtime";
 import { listToolsForServer } from "./protocol";
@@ -42,11 +43,15 @@ export interface AggregatedTool {
     serverName: string;
 }
 
-/** Tool invocation result — content is a flattened string. */
+/** Tool invocation result — content is a flattened string. `serverName`
+ *  is `null` for failures that couldn't be attributed to a real server
+ *  (malformed qualified name from the model, unknown prefix). The FE
+ *  renders a generic source badge in that case instead of pretending
+ *  there's a server literally named "unknown". */
 export interface ToolExecutionResult {
     content: string;
     isError: boolean;
-    serverName: string;
+    serverName: string | null;
 }
 
 // ---- name mangling ----
@@ -104,6 +109,24 @@ function aggregateFromCache(server: McpServerDTO): AggregatedTool[] | null {
     }))
 }
 
+/** Hard cap on per-server `listToolsForServer` latency inside the
+ *  aggregation. Without this, a cold MCP server that's mid-`npx`
+ *  install would block the chat orchestrator for up to
+ *  STDIO_CONNECT_TIMEOUT_MS (1 hour) BEFORE any response header
+ *  reaches the user — reverse proxies (CF 100s, ALB 60s) 504 long
+ *  before, with the user just seeing a hung send. 10s lets a warm
+ *  reuse + tools/list complete easily while bounding the worst case.
+ *
+ *  Trade-off: the `Promise.race` cancels our await, NOT the underlying
+ *  spawn. listToolsForServer continues to completion (cached for future
+ *  callers). Today this is safe because dispatch passes no hooks —
+ *  the orphan acquire/release inside listToolsForServer doesn't leak
+ *  any extra resources. If a future contributor wires hooks into the
+ *  chat dispatch path (e.g. surfacing MCP spawn logs to the user),
+ *  this race-leaves-loser pattern needs an AbortSignal so the loser's
+ *  refcount cleanup doesn't double-count against the entry. */
+const AGGREGATE_TOOLS_PER_SERVER_TIMEOUT_MS = 10_000;
+
 export async function aggregateTools(serverIds: string[]): Promise<{
     tools: AggregatedTool[];
     errors: Array<{ serverId: string; serverName: string; message: string }>;
@@ -124,7 +147,15 @@ export async function aggregateTools(serverIds: string[]): Promise<{
                 return
             }
             try {
-                const t = await listToolsForServer(s);
+                const t = await Promise.race([
+                    listToolsForServer(s),
+                    new Promise<AggregatedTool[]>((_, reject) =>
+                        setTimeout(
+                            () => reject(new Error(`Aggregation timeout after ${AGGREGATE_TOOLS_PER_SERVER_TIMEOUT_MS}ms — server not ready, skipping its tools this turn`)),
+                            AGGREGATE_TOOLS_PER_SERVER_TIMEOUT_MS,
+                        ),
+                    ),
+                ]);
                 tools.push(...t);
             } catch (err) {
                 errors.push({
@@ -138,16 +169,46 @@ export async function aggregateTools(serverIds: string[]): Promise<{
     return { tools, errors };
 }
 
-/** Dispatch a single tool call by its qualified name. Throws when the
- *  qualified name cannot be resolved (the model hallucinated a server). */
+/** Dispatch a single tool call by its qualified name. NEVER throws —
+ *  every failure path (malformed name, unknown server, disabled server,
+ *  JSON-parse error, RPC error, transport closed mid-call) returns a
+ *  `ToolExecutionResult` with `isError: true`. Callers can treat the
+ *  return as a sum-type and never need try/catch around it. This is
+ *  load-bearing for the playground orchestrator: its `Promise.all` over
+ *  pending tool calls runs in a `ReadableStream.start` async block, so
+ *  any thrown rejection errors the controller and kills the SSE stream
+ *  with no `loom_error` payload. */
 export async function executeTool(
     qualifiedName: string,
     rawArgs: string,
 ): Promise<ToolExecutionResult> {
     const split = unqualify(qualifiedName);
-    if (!split) throw new Error(`Bad qualified tool name "${qualifiedName}"`);
+    if (!split) {
+        return {
+            content: `Bad qualified tool name "${qualifiedName}" — expected "<server>__<tool>".`,
+            isError: true,
+            serverName: null,
+        };
+    }
     const server = listMcpServers().find((s) => sanitize(s.name) === split.serverPrefix);
-    if (!server) throw new Error(`No MCP server matches prefix "${split.serverPrefix}"`);
+    if (!server) {
+        return {
+            content: `No MCP server matches prefix "${split.serverPrefix}".`,
+            isError: true,
+            serverName: null,
+        };
+    }
+    // Defence in depth — aggregateTools already filters disabled servers
+    // out of the catalogue we hand to the model, so the model should
+    // never call one. But a stale tool definition in the conversation
+    // history (admin disabled mid-chat) could still trigger this path.
+    if (!server.enabled) {
+        return {
+            content: `MCP server "${server.name}" is disabled.`,
+            isError: true,
+            serverName: server.name,
+        };
+    }
 
     let args: Record<string, unknown>;
     try {
@@ -160,15 +221,15 @@ export async function executeTool(
         };
     }
 
+    let cc: Awaited<ReturnType<typeof getClient>> | null = null;
     try {
-        const cc = await getClient(server);
+        cc = await getClient(server);
         const result = await withTimeout(
             cc.client.callTool({ name: split.toolName, arguments: args }),
             CALL_TIMEOUT_MS,
             `tools/call ${qualifiedName}`,
         );
-        cc.lastUsed = Date.now();
-        const flat = flattenContent(result.content as unknown);
+        const flat = capToolContent(flattenContent(result.content as unknown));
         return {
             content: flat,
             isError: !!result.isError,
@@ -180,7 +241,27 @@ export async function executeTool(
             isError: true,
             serverName: server.name,
         };
+    } finally {
+        cc?.release();
     }
+}
+
+/** Tool results flow into `messages.content` JSON AND get replayed
+ *  upstream on every subsequent turn within the history window. A
+ *  `fetch`-style MCP returning a multi-MB web page would bloat the
+ *  DB, blow the SSE payload to the FE, and exceed the upstream's
+ *  context cap. Cap to fit inside the wire schema's `.max()` budget
+ *  (256 KB) — reserve `TOOL_CONTENT_MARKER_RESERVE_BYTES` for the
+ *  truncation marker so the function's OWN output never trips its
+ *  own schema validator (the defense-in-depth mirror in
+ *  `lib/schemas/content.ts`). Mirrors R1's user-input cap but for
+ *  the SERVER-generated tool path. */
+const MAX_TOOL_CONTENT_BYTES = TOOL_CONTENT_BUDGET_BYTES - TOOL_CONTENT_MARKER_RESERVE_BYTES;
+function capToolContent(s: string): string {
+    if (s.length <= MAX_TOOL_CONTENT_BYTES) return s;
+    const truncated = s.slice(0, MAX_TOOL_CONTENT_BYTES);
+    const dropped = s.length - MAX_TOOL_CONTENT_BYTES;
+    return `${truncated}\n…[truncated, ${dropped} more bytes]`;
 }
 
 /** Convert MCP's structured content blocks to a single string the

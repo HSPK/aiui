@@ -19,6 +19,7 @@ import { applyFieldFilter } from "../adapters/openai";
 import { getVariant, type VariantContext } from "../api-variants";
 // Side-effect import: registers every built-in upstream API variant.
 import "../api-variants/register";
+import { getPreferences } from "../preferences";
 import { badRequest, HttpError, notFound } from "../response";
 import type { Model, Provider } from "../db/schema";
 
@@ -58,7 +59,7 @@ function transientModel(name: string, provider: Provider, upstreamModelId: strin
         pricing: null,
         description: null,
         knowledgeDate: null,
-        timeout: 60,
+        timeout: 3600,
         maxRetries: 2,
         httpProxy: null,
         enabled: true,
@@ -115,7 +116,22 @@ export async function resolveModel(name: string): Promise<ResolvedModel> {
  *
  *  Precedence (low → high): provider.default_params → model.default_params
  *  → caller body. Model defaults inherit from provider; caller body
- *  always wins. The gateway never injects fields on its own. */
+ *  always wins. The gateway never injects fields on its own.
+ *
+ *  Special-case ONE-LEVEL deep merge for `stream_options`,
+ *  `reasoning`, and `response_format` — these are nested-object knobs
+ *  whose admin defaults a caller usually wants to *augment* rather
+ *  than *replace*. Without this, e.g. `provider.default_params =
+ *  {stream_options: {include_usage: true}}` would silently lose
+ *  include_usage the moment a caller body had any other
+ *  `stream_options` key (a common shape for OpenAI Python SDK on
+ *  reasoning models). Other top-level keys keep last-write-wins. */
+const NESTED_MERGE_KEYS = new Set(["stream_options", "reasoning", "response_format"]);
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+    return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
 export function mergeParams(
     body: Record<string, unknown>,
     model: Model,
@@ -123,7 +139,22 @@ export function mergeParams(
 ): Record<string, unknown> {
     const providerDefaults = (provider.defaultParams ?? {}) as Record<string, unknown>;
     const modelDefaults = (model.defaultParams ?? {}) as Record<string, unknown>;
-    return { ...providerDefaults, ...modelDefaults, ...body };
+    const merged: Record<string, unknown> = { ...providerDefaults, ...modelDefaults, ...body };
+    // Re-merge whitelisted nested-object keys so per-key admin defaults
+    // survive a caller that touches the same parent key.
+    //
+    // EXCEPT when the caller explicitly passes a NON-OBJECT value at
+    // that key (e.g. `null` to clear a default, `false`, etc.) — the
+    // doc contract says caller always wins, so a deliberate
+    // suppression must not be silently overwritten by re-merging
+    // admin defaults under it.
+    for (const k of NESTED_MERGE_KEYS) {
+        const callerVal = body[k];
+        if (k in body && !isPlainObject(callerVal)) continue;
+        const layers = [providerDefaults[k], modelDefaults[k], callerVal].filter(isPlainObject);
+        if (layers.length > 1) merged[k] = Object.assign({}, ...layers);
+    }
+    return merged;
 }
 
 // =============================================================================
@@ -177,11 +208,24 @@ export async function forwardGeneration(
     const ctx: VariantContext = { provider, model, meta, capability, stream };
     const callArgs: UpstreamCallArgs = { provider, model, meta, capability, variant, stream };
 
-    // Build the upstream body in stages.
-    const merged = mergeParams(body, model, provider);
-    const filtered = applyFieldFilter(merged, meta);
-    const transformed = variant.transformRequest?.(filtered, ctx) ?? filtered;
-    const upstreamBody = adapter.finalizeRequest?.(transformed, callArgs) ?? transformed;
+    // Build the upstream body in stages. Wrap the request-translation
+    // segment so a misshapen body / variant-translator throw surfaces
+    // as 400 (client error) rather than a 500 with a raw stack — these
+    // are caller-input errors, not gateway internal failures.
+    let merged: Record<string, unknown>;
+    let upstreamBody: Record<string, unknown>;
+    try {
+        merged = mergeParams(body, model, provider);
+        const filtered = applyFieldFilter(merged, meta);
+        const transformed = variant.transformRequest?.(filtered, ctx) ?? filtered;
+        upstreamBody = adapter.finalizeRequest?.(transformed, callArgs) ?? transformed;
+    } catch (err) {
+        if (err instanceof HttpError) throw err;
+        const message = err instanceof Error ? err.message : String(err);
+        throw badRequest(
+            `Failed to translate request body for variant "${variant.id}": ${message}`,
+        );
+    }
 
     // Summarize the canonical (pre-translation) body so logs reflect intent.
     const inputSummary = capability.summarizeInput?.(merged) ?? null;
@@ -196,31 +240,75 @@ export async function forwardGeneration(
     });
 
     const started = Date.now();
-    // Honour the model's configured timeout (admin sets it on the
-    // model row; defaults to 60s). Combine with the caller-supplied
-    // signal so EITHER a client disconnect OR the deadline aborts
-    // the upstream request. Streaming responses don't tick down the
-    // timeout per-chunk — it's a TTFB-ish bound that errors out if
-    // the upstream hangs before sending headers.
-    const timeoutMs = Math.max(1, model.timeout) * 1000;
+    // Effective timeout = MIN(model.timeout, user_pref.gateway_timeout_seconds).
+    // Both default to 3600s. The min semantics:
+    //   - Admin can cap per-model (e.g. set model.timeout=120 for a
+    //     fast endpoint so callers don't tie up resources).
+    //   - User can cap globally (e.g. set 60s in their personal
+    //     prefs to fail-fast all calls regardless of the model).
+    //   - Whichever is stricter wins, so neither setting can be
+    //     silently bypassed by the other. Earlier code did
+    //     `userTimeoutSec || model.timeout` which always picked the
+    //     user pref (since the schema enforces `.min(1)` so it's
+    //     never falsy) and the per-model column was unreachable —
+    //     editing model timeout did nothing.
+    // Streaming responses don't tick down the timeout per-chunk —
+    // it's a TTFB-ish bound that errors out if the upstream hangs
+    // before sending headers.
+    const userTimeoutSec = getPreferences(user.id).gateway_timeout_seconds;
+    const effectiveSec = Math.max(1, Math.min(userTimeoutSec, model.timeout));
+    const timeoutMs = effectiveSec * 1000;
     const timeoutSignal = AbortSignal.timeout(timeoutMs);
     const combinedSignal = opts.signal
         ? AbortSignal.any([opts.signal, timeoutSignal])
         : timeoutSignal;
 
     let upstream: Response;
-    try {
-        upstream = await fetch(adapter.upstreamUrl(callArgs), {
-            method: "POST",
-            headers: adapter.upstreamHeaders(callArgs, apiKey),
-            body: JSON.stringify(upstreamBody),
-            signal: combinedSignal,
-        });
-    } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        completeLog(logId, { status: "failed", reason: message, totalLatencyMs: Date.now() - started });
-        throw new HttpError(`Upstream request failed: ${message}`, 502);
+    // Per-model retry budget — `model.max_retries` (default 2) is the
+    // number of EXTRA attempts after the initial one for retriable
+    // failures (network reject, upstream 5xx, upstream 429). 4xx ≠ 429
+    // are NOT retried (they're caller errors). Retries are NOT applied
+    // to caller-disconnect aborts (signal already fired). Backoff
+    // doubles each retry up to a 5s cap so a flaky upstream doesn't
+    // hold the connection forever.
+    const maxRetries = Math.max(0, model.maxRetries);
+    let attempt = 0;
+    let lastErrMessage: string | null = null;
+    while (true) {
+        try {
+            upstream = await fetch(adapter.upstreamUrl(callArgs), {
+                method: "POST",
+                headers: adapter.upstreamHeaders(callArgs, apiKey),
+                body: JSON.stringify(upstreamBody),
+                signal: combinedSignal,
+            });
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            // Don't retry caller aborts / timeouts — the signal already
+            // tells us the deadline is gone.
+            const isAbort = combinedSignal.aborted ||
+                (err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError"));
+            if (isAbort || attempt >= maxRetries) {
+                completeLog(logId, { status: "failed", reason: message, totalLatencyMs: Date.now() - started });
+                throw new HttpError(`Upstream request failed: ${message}`, 502);
+            }
+            lastErrMessage = message;
+            attempt += 1;
+            await new Promise((r) => setTimeout(r, Math.min(5_000, 250 * 2 ** (attempt - 1))));
+            continue;
+        }
+        // Retriable HTTP: 5xx or 429.
+        if ((upstream.status >= 500 || upstream.status === 429) && attempt < maxRetries) {
+            // Drain to free the connection before retrying.
+            try { await upstream.body?.cancel(); } catch { /* swallow */ }
+            lastErrMessage = `Upstream HTTP ${upstream.status}`;
+            attempt += 1;
+            await new Promise((r) => setTimeout(r, Math.min(5_000, 250 * 2 ** (attempt - 1))));
+            continue;
+        }
+        break;
     }
+    void lastErrMessage;
 
     if (!upstream.ok) {
         const text = await upstream.text().catch(() => upstream.statusText);

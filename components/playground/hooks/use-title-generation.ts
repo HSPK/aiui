@@ -67,6 +67,12 @@ export function useTitleGeneration({
             generatedRef.current.add(conversationId)
             return
         }
+        // Snapshot the title we observed before the LLM call so the
+        // server-side compare-and-swap can refuse to overwrite a
+        // manual rename that landed between now and the LLM result
+        // arriving. `expected_title ?? ""` matches the seeded default
+        // when the conv isn't in any cache yet.
+        const expectedTitle = cachedTitle ?? ""
 
         generatedRef.current.add(conversationId)
         const summaryModel = defaultSummaryModel || defaultModel || getModelIds()[0]
@@ -78,10 +84,16 @@ export function useTitleGeneration({
                 user: extractText(userMsg.content),
                 assistant: extractText(assistantMsg.content),
             })
-            .then((title) => {
-                conversations.updateTitle(conversationId, title).catch(() => {
+            .then(async (title) => {
+                // Await the PATCH before invalidating — otherwise the
+                // sidebar refetch races with the in-flight write and
+                // the list cache latches on the OLD title for up to
+                // staleTime (60s).
+                try {
+                    await conversations.updateTitle(conversationId, title, expectedTitle)
+                } catch {
                     /* sidebar still shows existing title; ignore */
-                })
+                }
                 invalidateConversations()
             })
             .catch((err) => console.error("Failed to generate title:", err))

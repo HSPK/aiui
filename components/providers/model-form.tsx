@@ -136,10 +136,21 @@ export function ModelForm({ mode, model, defaultProviderId, onSaved, onCancel }:
             enabled,
         }
 
-        // When promoting a discovered model into an override, snapshot the
-        // raw upstream entry so the gateway can re-project metadata even
-        // when the discovery cache is cold.
-        if (isOverride && model?.meta?.raw != null) {
+        // When promoting a discovered model into an override, snapshot
+        // the raw upstream entry so the gateway can re-project metadata
+        // even when the discovery cache is cold. CRITICAL: only attach
+        // when the admin DIDN'T change `upstream_model_id` — otherwise
+        // we'd attribute the original entry's metadata (context_window,
+        // supported_apis, accepted_fields, …) to a different upstream
+        // id, exactly the silent mis-classification the snapshot
+        // mechanism is meant to prevent. When the upstream id changes,
+        // drop the snapshot — `createModel` will warm discovery for the
+        // new id instead.
+        if (
+            isOverride &&
+            model?.meta?.raw != null &&
+            payload.upstream_model_id === model.model_id
+        ) {
             payload.discovered_metadata = model.meta.raw
         }
 

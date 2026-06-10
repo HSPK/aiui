@@ -4,6 +4,7 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Copy, Pencil, Trash2 } from "lucide-react"
+import { copyToClipboard } from "@/lib/clipboard"
 
 import type { ModelDTO } from "@/lib/schemas/model"
 import { Badge } from "@/components/ui/badge"
@@ -71,17 +72,26 @@ export function ModelsTable({ models, onEdit, onDelete }: Props) {
                         >
                             <DataTableCell className="font-mono max-w-[300px]">
                                 <div className="flex items-center justify-between gap-2 w-full">
-                                    <span className="truncate text-xs" title={model.name}>
+                                    <span
+                                        className={`truncate text-xs ${model.enabled === false ? "line-through text-muted-foreground" : ""}`}
+                                        title={model.enabled === false ? `${model.name} (disabled)` : model.name}
+                                    >
                                         {model.name}
                                     </span>
+                                    {model.enabled === false && (
+                                        <Badge variant="outline" className="shrink-0 text-[10px] text-muted-foreground border-muted-foreground/40">
+                                            Disabled
+                                        </Badge>
+                                    )}
                                     <Button
                                         variant="ghost"
                                         size="icon"
                                         className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                                        onClick={(e) => {
+                                        onClick={async (e) => {
                                             e.stopPropagation()
-                                            navigator.clipboard.writeText(model.name)
-                                            toast.success("Model name copied to clipboard")
+                                            const ok = await copyToClipboard(model.name)
+                                            if (ok) toast.success("Model name copied to clipboard")
+                                            else toast.error("Copy failed")
                                         }}
                                     >
                                         <Copy className="h-3 w-3 text-muted-foreground" />

@@ -14,7 +14,6 @@ export const modelDTOSchema = z.object({
     proxy: z.string().nullable(),
     timeout: z.number().int(),
     max_retries: z.number().int(),
-    http_proxy: z.record(z.string(), z.string()).nullable(),
     default_params: z.record(z.string(), z.unknown()),
     /** Capability id (chat | embedding | image | audio.* | rerank | ...). */
     type: z.string(),
@@ -65,7 +64,6 @@ export const modelCreateSchema = z.object({
     knowledge_date: z.string().nullable().optional(),
     timeout: z.number().int().positive().optional(),
     max_retries: z.number().int().min(0).optional(),
-    http_proxy: z.record(z.string(), z.string()).nullable().optional(),
     enabled: z.boolean().optional(),
     /** Verbatim entry from the provider's `/models` endpoint at the time of
      *  override creation. Persisted so re-projection via the adapter works

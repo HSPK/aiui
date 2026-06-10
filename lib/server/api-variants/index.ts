@@ -51,6 +51,15 @@ export interface NormalizedNonStreamResult {
      *  `normalized`. Empty / undefined when the model did not call a tool. */
     toolCalls?: Array<{ id: string; name: string; arguments: string }>;
     finishReason?: string;
+    /** Mirror of `NormalizedStreamDelta.error`. Set when the upstream
+     *  signaled a terminal failure while HTTP status was still 200
+     *  (e.g. /v1/responses non-stream returns
+     *  `{status:"failed", error:{message}, output:[]}`). The gateway
+     *  promotes this into `generation_logs.status = "failed"` and into
+     *  `onComplete.error` so the playground orchestrator sets
+     *  `lastError` + emits `loom_error` — without this, the row
+     *  persists as a clean success and the FE shows no retry button. */
+    error?: string;
 }
 
 export interface NormalizedStreamDelta {
@@ -76,6 +85,13 @@ export interface NormalizedStreamDelta {
      *  "tool_calls", "length", …). Surfaced so the gateway knows when
      *  to switch into the tool-execution branch. */
     finishReason?: string;
+    /** Set on terminal events that signal upstream FAILURE while the
+     *  HTTP status is still 200 (e.g. `/v1/responses` emits
+     *  `response.failed` / `response.incomplete` mid-stream). The
+     *  gateway maps a non-null error into `generation_logs.status =
+     *  "failed"` instead of "completed". Without this, an in-stream
+     *  failure would be silently logged as a successful turn. */
+    error?: { reason: string } | null;
 }
 
 export interface UpstreamApiVariant {
@@ -101,6 +117,33 @@ export interface UpstreamApiVariant {
      *  Return `null` for housekeeping events the gateway should
      *  forward to the client but not accumulate. */
     parseStreamChunk(json: unknown, ctx: VariantContext): NormalizedStreamDelta | null;
+}
+
+/** Shared upstream-error extractor for variants whose upstreams return
+ *  HTTP 200 with `{error: {message}}` or a similar shape instead of a
+ *  proper response (vLLM, LM Studio, LocalAI, llama-server, Ollama
+ *  proxy all do this for soft errors). Returns the error message
+ *  string when the json carries an error envelope, else `undefined`.
+ *
+ *  Every variant's parseResponse + parseStreamChunk MUST call this so
+ *  the gateway can promote the failure into `completeLog(failed)` +
+ *  `onComplete.error` → orchestrator `lastError` → `loom_error` SSE
+ *  to the FE. Without the symmetric wiring on every variant, a 200-
+ *  status-but-failed upstream silently logs as completed and the chat
+ *  UI shows a green bubble with no retry. */
+export function extractUpstreamError(json: unknown): string | undefined {
+    if (!json || typeof json !== "object") return undefined;
+    const err = (json as { error?: unknown }).error;
+    if (err && typeof err === "object") {
+        const msg = (err as { message?: unknown }).message;
+        if (typeof msg === "string" && msg) return msg;
+        // Some upstreams put the human-readable text in `code` /
+        // `type` / a stringified inner object; fall through with a
+        // generic marker so the failure is at least visible.
+        return "upstream error";
+    }
+    if (typeof err === "string" && err) return err;
+    return undefined;
 }
 
 // ---- registry ----

@@ -44,6 +44,18 @@ interface ImageGalleryProps {
     emptyMessage?: string
 }
 
+/** Defense-in-depth against XSS via upstream-forged URLs: only
+ *  same-origin paths starting with our artifact route are renderable.
+ *  Server-side `persistImageArtifacts` strips upstream-set
+ *  `loom_artifact`/`loom_artifacts` markers, so a forged entry should
+ *  never reach here — but a `javascript:` URL inside `<a href>` would
+ *  execute with admin cookies if it ever did slip through. Keep both
+ *  guards. */
+function isSafeArtifactUrl(u: unknown): u is string {
+    if (typeof u !== "string") return false
+    return u.startsWith("/api/logs/generations/")
+}
+
 function collectArtifacts(generation: unknown): Artifact[] {
     if (!generation || typeof generation !== "object") return []
     const g = generation as Record<string, unknown>
@@ -51,7 +63,7 @@ function collectArtifacts(generation: unknown): Artifact[] {
     // Preferred shape: explicit top-level `loom_artifacts`.
     if (Array.isArray(g.loom_artifacts)) {
         return (g.loom_artifacts as Artifact[]).filter(
-            (a) => a && typeof a.url === "string",
+            (a) => a && isSafeArtifactUrl(a.url),
         )
     }
 
@@ -61,7 +73,7 @@ function collectArtifacts(generation: unknown): Artifact[] {
     if (Array.isArray(g.data)) {
         const out: Artifact[] = []
         ;(g.data as ImageEntry[]).forEach((entry, i) => {
-            if (entry?.loom_artifact && typeof entry.url === "string") {
+            if (entry?.loom_artifact && isSafeArtifactUrl(entry.url)) {
                 out.push({
                     index: i,
                     url: entry.url,

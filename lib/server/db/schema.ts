@@ -1,7 +1,15 @@
 import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
-const now = sql`CURRENT_TIMESTAMP`;
+// ISO-8601 with milliseconds and explicit `Z` so timestamps written
+// via the column default match what `new Date().toISOString()`
+// produces on every other write path. Without this, rows created
+// via the SQLite default land as `2024-01-15 12:34:56` (no T, no Z,
+// no fractional) and don't round-trip with rows the app writes
+// explicitly — POST-create returns ISO while subsequent GET-list
+// returns SQLite-naive, breaking client-side equality / sort /
+// dedupe by created_at.
+const now = sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`;
 
 export const users = sqliteTable("users", {
     id: text("id").primaryKey(),
@@ -18,6 +26,11 @@ export const sessions = sqliteTable("sessions", {
     createdAt: text("created_at").notNull().default(now),
 }, (t) => [
     index("sessions_user_idx").on(t.userId),
+    // Hot-path: `purgeExpired()` runs `DELETE WHERE expires_at < now`
+    // on every login. Without this index SQLite full-scans the table
+    // every time; with N sessions accumulated over months that scan
+    // becomes the bottleneck of the login response.
+    index("sessions_expires_idx").on(t.expiresAt),
 ]);
 
 export const apiKeys = sqliteTable("api_keys", {
@@ -27,6 +40,10 @@ export const apiKeys = sqliteTable("api_keys", {
     prefix: text("prefix").notNull(),
     keyHash: text("key_hash").notNull().unique(),
     lastUsedAt: text("last_used_at"),
+    /** Optional ISO timestamp after which the key is invalid. `null`
+     *  means never expires (legacy behaviour). bearer auth checks this
+     *  before accepting the token. */
+    expiresAt: text("expires_at"),
     createdAt: text("created_at").notNull().default(now),
 }, (t) => [
     index("api_keys_user_idx").on(t.userId),
@@ -78,7 +95,7 @@ export const models = sqliteTable("models", {
     pricing: text("pricing", { mode: "json" }).$type<Record<string, unknown> | null>(),
     description: text("description"),
     knowledgeDate: text("knowledge_date"),
-    timeout: integer("timeout").notNull().default(60),
+    timeout: integer("timeout").notNull().default(3600),
     maxRetries: integer("max_retries").notNull().default(2),
     httpProxy: text("http_proxy", { mode: "json" }).$type<Record<string, string> | null>(),
     enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
@@ -267,6 +284,14 @@ export const mcpServers = sqliteTable("mcp_servers", {
         instructions?: string;
         capabilities?: Record<string, unknown>;
     } | null>(),
+    /** Stable sentinel that advances ONLY when transport / config
+     *  changes — distinct from `updatedAt` (which is row mtime and
+     *  bumps on any field edit). The runtime state machine uses
+     *  `configVersion` to decide "the live connection is built against
+     *  stale config; tear down and rebuild". Renames / description
+     *  edits keep the same `configVersion` so the cached child process
+     *  isn't pointlessly respawned. */
+    configVersion: text("config_version").notNull().default(""),
     createdAt: text("created_at").notNull().default(now),
     updatedAt: text("updated_at").notNull().default(now),
 });

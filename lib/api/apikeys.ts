@@ -1,11 +1,11 @@
 "use client";
 import { useMutation, type UseMutationOptions } from "@tanstack/react-query";
 import { defineResource } from "./resource";
-import type { ApiKeyCreatedDTO, ApiKeyDTO } from "@/lib/schemas/apikey";
+import type { ApiKeyCreateInput, ApiKeyCreatedDTO, ApiKeyDTO } from "@/lib/schemas/apikey";
 
 const base = defineResource<
     ApiKeyDTO,
-    { name: string },
+    ApiKeyCreateInput,
     never,
     Record<string, unknown>,
     ApiKeyDTO[]
@@ -18,15 +18,15 @@ const base = defineResource<
 export const apiKeys = {
     ...base,
 
-    /** API keys take a plain string name + return the plain key once. */
-    create: (name: string) =>
-        base.create({ name }) as unknown as Promise<ApiKeyCreatedDTO>,
+    /** API keys take a name + optional expiry, return the plain key once. */
+    create: (input: ApiKeyCreateInput) =>
+        base.create(input) as unknown as Promise<ApiKeyCreatedDTO>,
 
     useCreate: (
-        opts?: Omit<UseMutationOptions<ApiKeyCreatedDTO, Error, string>, "mutationFn">,
+        opts?: Omit<UseMutationOptions<ApiKeyCreatedDTO, Error, ApiKeyCreateInput>, "mutationFn">,
     ) => {
         const invalidate = base.useInvalidate();
-        return useMutation<ApiKeyCreatedDTO, Error, string>({
+        return useMutation<ApiKeyCreatedDTO, Error, ApiKeyCreateInput>({
             mutationFn: apiKeys.create,
             ...opts,
             onSuccess: (data, vars, onMutateResult, context) => {

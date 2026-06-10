@@ -1,5 +1,5 @@
 import "server-only";
-import { registerVariant, type UpstreamApiVariant } from ".";
+import { extractUpstreamError, registerVariant, type UpstreamApiVariant } from ".";
 
 /**
  * /v1/chat/completions — the canonical chat shape. The gateway uses
@@ -40,6 +40,11 @@ export const chatCompletionsVariant: UpstreamApiVariant = {
                 arguments: typeof tc?.function?.arguments === "string" ? tc.function.arguments : "",
             }))
             .filter((tc) => tc.name);
+        // OpenAI-compat upstreams (vLLM / LM Studio / LocalAI /
+        // llama-server / Ollama proxy) commonly return HTTP 200 with
+        // `{error:{message}}` for soft failures instead of a proper
+        // response. Surface that as `error` so the gateway promotes
+        // the row to status=failed + the FE shows retry.
         return {
             output: message?.content ?? null,
             promptTokens: usage.prompt_tokens ?? null,
@@ -49,6 +54,7 @@ export const chatCompletionsVariant: UpstreamApiVariant = {
             normalized: j as unknown as Record<string, unknown>,
             toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
             finishReason: typeof finishReason === "string" ? finishReason : undefined,
+            error: extractUpstreamError(j),
         };
     },
 
@@ -84,6 +90,11 @@ export const chatCompletionsVariant: UpstreamApiVariant = {
                     typeof tc.function?.arguments === "string" ? tc.function.arguments : undefined,
             }))
             : undefined;
+        // Mid-stream error envelope (commonly emitted by self-hosted
+        // upstreams when the model context overflows or sampling
+        // diverges) — surface as terminal-error delta so the gateway
+        // logs failed AND emits loom_error.
+        const upstreamError = extractUpstreamError(j);
         return {
             content: typeof delta?.content === "string" ? delta.content : "",
             reasoning: typeof delta?.reasoning_content === "string" ? delta.reasoning_content : "",
@@ -94,6 +105,7 @@ export const chatCompletionsVariant: UpstreamApiVariant = {
             systemFingerprint:
                 typeof j?.system_fingerprint === "string" ? j.system_fingerprint : undefined,
             usage: j?.usage,
+            error: upstreamError ? { reason: upstreamError } : undefined,
         };
     },
 };
