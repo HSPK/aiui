@@ -72,22 +72,18 @@ jobs:
           # When triggered manually, inputs.ref is a tag or SHA — use it directly.
           echo "tag=$ref" >> "$GITHUB_OUTPUT"
 
-      - name: Create / update GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -e
-          tag="${{ steps.tag.outputs.tag }}"
-          tarball="${{ steps.pack.outputs.tarball }}"
-          alias_tarball="${{ steps.pack.outputs.alias_tarball }}"
-          notes=$(printf '%s\n%s\n%s\n' \
-            "Install latest:" \
-            "    bun add -g https://github.com/HSPK/loom/releases/latest/download/loom.tgz" \
-            "" \
-            "Install pinned:" \
-            "    bun add -g https://github.com/HSPK/loom/releases/download/$tag/$tarball")
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" "$tarball" "$alias_tarball" --clobber
-          else
-            gh release create "$tag" "$tarball" "$alias_tarball" --title "$tag" --notes "$notes"
-          fi
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          files: |
+            ${{ steps.pack.outputs.tarball }}
+            ${{ steps.pack.outputs.alias_tarball }}
+          body: |
+            Install latest:
+                bun add -g https://github.com/HSPK/loom/releases/latest/download/loom.tgz
+
+            Install pinned:
+                bun add -g https://github.com/HSPK/loom/releases/download/${{ steps.tag.outputs.tag }}/${{ steps.pack.outputs.tarball }}
+          fail_on_unmatched_files: true

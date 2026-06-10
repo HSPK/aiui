@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Build-time: scan .next/node_modules for the package-hash symlinks that
 // Turbopack emits for `serverExternalPackages`, and write a manifest mapping
-// hashed-name -> real package name. The manifest is then consumed by the
-// install-time postinstall hook to recreate the symlinks, since `npm pack`
-// silently drops any `node_modules` directory from the tarball.
+// hashed-name -> real package name. The manifest is then consumed at CLI
+// startup by `ensureExternalAliases()` (lib/cli/external-aliases.ts) to
+// recreate the symlinks on-demand, since `npm pack` silently drops any
+// `node_modules` directory from the tarball.
 
 import { existsSync, mkdirSync, readdirSync, readlinkSync, statSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
