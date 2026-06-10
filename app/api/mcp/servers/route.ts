@@ -2,6 +2,7 @@ import "server-only";
 import { defineRoute } from "@/lib/server/route";
 import { mcpServerCreateSchema } from "@/lib/schemas/mcp";
 import { createMcpServer, listMcpServers } from "@/lib/server/mcp";
+import { getPreferences } from "@/lib/server/preferences";
 
 export const GET = defineRoute({
     // Authenticated users (e.g. chat playground showing available MCP
@@ -13,5 +14,8 @@ export const GET = defineRoute({
 export const POST = defineRoute({
     auth: "admin",
     body: mcpServerCreateSchema,
-    handler: ({ body }) => createMcpServer(body),
+    handler: ({ user, body }) =>
+        createMcpServer(body, {
+            connectTimeoutMs: getPreferences(user.id).mcp_connect_timeout_seconds * 1000,
+        }),
 });

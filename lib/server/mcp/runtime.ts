@@ -543,7 +543,18 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
         return await Promise.race([
             promise,
             new Promise<T>((_, reject) => {
-                timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+                timer = setTimeout(() => {
+                    // Help the operator localise the source: stdio cold
+                    // spawn behind a slow npm mirror, HTTP MCP endpoint
+                    // not reachable, or an unrealistically low user
+                    // preference. The hint is appended once — caller
+                    // wraps in HttpError / persists to last_check_error.
+                    const seconds = Math.round(ms / 100) / 10;
+                    const hint = label === "mcp connect"
+                        ? ` — raise mcp_connect_timeout_seconds in your user settings if the upstream genuinely needs more time (current: ${seconds}s)`
+                        : "";
+                    reject(new Error(`${label} timed out after ${ms}ms${hint}`));
+                }, ms);
             }),
         ]);
     } finally {

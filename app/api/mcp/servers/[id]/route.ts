@@ -3,6 +3,7 @@ import { z } from "zod";
 import { defineRoute } from "@/lib/server/route";
 import { mcpServerUpdateSchema } from "@/lib/schemas/mcp";
 import { deleteMcpServer, getMcpServer, updateMcpServer } from "@/lib/server/mcp";
+import { getPreferences } from "@/lib/server/preferences";
 
 const paramsSchema = z.object({ id: z.string().min(1) });
 
@@ -18,7 +19,10 @@ export const PATCH = defineRoute({
     auth: "admin",
     params: paramsSchema,
     body: mcpServerUpdateSchema,
-    handler: ({ params, body }) => updateMcpServer(decodeURIComponent(params.id), body),
+    handler: ({ user, params, body }) =>
+        updateMcpServer(decodeURIComponent(params.id), body, {
+            connectTimeoutMs: getPreferences(user.id).mcp_connect_timeout_seconds * 1000,
+        }),
 });
 
 export const DELETE = defineRoute({

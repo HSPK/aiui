@@ -72,9 +72,13 @@ function assertNameSafe(
 /** Fire-and-forget validation. We deliberately don't await it from the
  *  CRUD response — the spawn can take seconds (npx cold cache, uv
  *  install, etc.) and we don't want the dialog to hang. The FE polls
- *  the resource for the updated `last_check_*` fields. */
-function scheduleCheck(id: string): void {
-    void checkMcpServer(id).catch(() => { /* persisted as error */ });
+ *  the resource for the updated `last_check_*` fields. The optional
+ *  `connectTimeoutMs` should come from the requesting admin's
+ *  `mcp_connect_timeout_seconds` preference so slow networks (Aliyun
+ *  reaching npm/PyPI mirrors) don't silently fall back to the 15s HTTP
+ *  default. */
+function scheduleCheck(id: string, connectTimeoutMs?: number): void {
+    void checkMcpServer(id, connectTimeoutMs).catch(() => { /* persisted as error */ });
 }
 
 export function listMcpServers(opts?: { redactSecrets?: boolean }): McpServerDTO[] {
@@ -87,7 +91,7 @@ export function getMcpServer(idOrName: string, opts?: { redactSecrets?: boolean 
     return serializeMcpServer(s, opts);
 }
 
-export function createMcpServer(input: McpServerCreateInput): McpServerDTO {
+export function createMcpServer(input: McpServerCreateInput, opts: { connectTimeoutMs?: number } = {}): McpServerDTO {
     const name = input.name.trim();
     // Wrap the read-then-write pair in a single transaction so two
     // concurrent admin requests can't both pass the uniqueness +
@@ -112,11 +116,11 @@ export function createMcpServer(input: McpServerCreateInput): McpServerDTO {
             configVersion: randomUUID(),
         }).run();
     });
-    scheduleCheck(id);
+    scheduleCheck(id, opts.connectTimeoutMs);
     return getMcpServer(id);
 }
 
-export function updateMcpServer(idOrName: string, input: McpServerUpdateInput): McpServerDTO {
+export function updateMcpServer(idOrName: string, input: McpServerUpdateInput, opts: { connectTimeoutMs?: number } = {}): McpServerDTO {
     const s = findByIdOrName(idOrName);
     if (!s) throw notFound("MCP server not found");
 
@@ -199,7 +203,7 @@ export function updateMcpServer(idOrName: string, input: McpServerUpdateInput): 
     if (input.enabled === false && s.enabled) {
         void disposeMcpClient(s.id).catch(() => { /* ignore */ });
     } else if (needsCheck) {
-        scheduleCheck(s.id);
+        scheduleCheck(s.id, opts.connectTimeoutMs);
     }
     return getMcpServer(s.id);
 }
