@@ -49,11 +49,11 @@ jobs:
 
       - name: Publish to npm
         env:
-          NPM_CONFIG_PROVENANCE: "true"
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -e
-          echo "--- diagnostics ---"
           npm --version
           node --version
           npm config get registry
-          npm publish
+          npm whoami
+          npm publish --access public
