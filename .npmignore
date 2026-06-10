@@ -6,6 +6,25 @@
 .next/cache
 .next/dev
 .next/trace
+.next/trace-build
 .next/diagnostics
 .next/build
 .next/types
+
+# Source maps — 60%+ of the production tarball with zero runtime
+# value for a CLI distribution. End users hitting stack traces can
+# rerun against the GitHub source instead.
+**/*.js.map
+**/*.css.map
+
+# Misc build telemetry / metadata not needed at runtime.
+.next/next-server.js.nft.json
+.next/next-minimal-server.js.nft.json
+
+# TypeScript build info
+**/*.tsbuildinfo
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
