@@ -36,13 +36,21 @@ function createDb() {
 
     const db = drizzle(sqlite, { schema });
 
+    // Skip migrations during Next.js build (`next build` spawns parallel
+    // workers per route during page-data collection — multiple workers
+    // racing on the same DB file produce SQLITE_ERROR "table already
+    // exists" since Drizzle's transaction-wrapped CREATE TABLEs are
+    // not serialized across processes). Migrations run at runtime
+    // startup instead, where there's a single process.
+    const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
+
     // Migrations live alongside the package source, not the user's
     // project. `LOOM_PACKAGE_ROOT` is set by the CLI; in dev (bun run
     // dev / next start from repo) it's absent and `process.cwd()`
     // happens to be the package root, so the fallback still works.
     const packageRoot = process.env.LOOM_PACKAGE_ROOT || process.cwd();
     const migrationsFolder = resolve(packageRoot, "drizzle");
-    if (existsSync(migrationsFolder)) {
+    if (!isBuildPhase && existsSync(migrationsFolder)) {
         // CRITICAL: foreign_keys MUST be OFF for the duration of any
         // "12-step table rebuild" migration (CREATE __new_X / COPY /
         // DROP X / RENAME). Drizzle wraps each migration in a BEGIN/
@@ -70,7 +78,7 @@ function createDb() {
         } finally {
             sqlite.pragma("foreign_keys = ON");
         }
-    } else {
+    } else if (!isBuildPhase) {
         sqlite.pragma("foreign_keys = ON");
     }
 
@@ -78,8 +86,11 @@ function createDb() {
 }
 
 export const db = globalThis.__loom_db__ ?? createDb();
-if (process.env.NODE_ENV !== "production") {
-    globalThis.__loom_db__ = db;
-}
+// Cache globally in ALL environments — multiple imports within the same
+// process (Next.js dev HMR, build workers, production warm requests)
+// should share the same connection. Per-process caching does NOT solve
+// the multi-process migration race during `next build`; that's handled
+// by the `isBuildPhase` skip inside `createDb`.
+globalThis.__loom_db__ = db;
 
 export { schema };
