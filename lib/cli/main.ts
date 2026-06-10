@@ -7,6 +7,7 @@ import { defineCommand } from "citty";
 import { devCommand } from "./commands/dev";
 import { initCommand } from "./commands/init";
 import { startCommand } from "./commands/start";
+import { updateCommand } from "./commands/update";
 
 export const main = defineCommand({
     meta: {
@@ -18,6 +19,7 @@ export const main = defineCommand({
         start: startCommand,
         dev: devCommand,
         init: initCommand,
+        update: updateCommand,
     },
     // No subcommand → fall through to `start` so `loom` and
     // `loom -p 4000` Just Work. (citty calls main.run() AFTER the
