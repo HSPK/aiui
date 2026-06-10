@@ -51,15 +51,10 @@ jobs:
         env:
           NPM_CONFIG_PROVENANCE: "true"
         run: |
-          echo "--- npm config ---"
-          npm config get registry
+          echo "--- diagnostics ---"
           npm --version
           node --version
-          echo "--- OIDC claim (sub) ---"
-          if [ -n "$ACTIONS_ID_TOKEN_REQUEST_URL" ]; then
-            curl -sH "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-              "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=npm:registry.npmjs.org" \
-              | python3 -c "import sys,json,base64; t=json.load(sys.stdin)['value']; p=t.split('.')[1]; p+='='*(4-len(p)%4); c=json.loads(base64.urlsafe_b64decode(p)); print('sub:', c.get('sub')); print('repo:', c.get('repository')); print('workflow_ref:', c.get('workflow_ref')); print('job_workflow_ref:', c.get('job_workflow_ref')); print('event_name:', c.get('event_name')); print('ref:', c.get('ref'))"
-          fi
-          echo "--- publish ---"
-          npm publish --access public --loglevel verbose 2>&1 | tail -40
+          npm config get registry
+          npm whoami 2>&1 || true
+          echo "--- publish (no --access flag; package access already public) ---"
+          npm publish --loglevel verbose 2>&1 | tail -40
