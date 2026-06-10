@@ -51,10 +51,9 @@ jobs:
         env:
           NPM_CONFIG_PROVENANCE: "true"
         run: |
+          set -e
           echo "--- diagnostics ---"
           npm --version
           node --version
           npm config get registry
-          npm whoami 2>&1 || true
-          echo "--- publish (no --access flag; package access already public) ---"
-          npm publish --loglevel verbose 2>&1 | tail -40
+          npm publish
