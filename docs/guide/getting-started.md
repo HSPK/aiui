@@ -1,6 +1,7 @@
 # Getting started
 
-Loom installs as a single npm package and runs as a single Node process backed by SQLite.
+Loom ships as a single Node CLI distributed via GitHub Releases (no npm registry).
+It runs as a single Node process backed by SQLite.
 
 ## Requirements
 
@@ -10,25 +11,31 @@ Loom installs as a single npm package and runs as a single Node process backed b
 
 ## Install
 
-=== "Global install"
+Pre-built tarballs are attached to every GitHub Release. Re-run the same
+command to upgrade.
+
+=== "Latest"
 
     ```bash
-    npm install -g @hspk/loom
+    bun add -g https://github.com/HSPK/loom/releases/latest/download/loom.tgz
     ```
 
-    Adds the `loom` binary to your `$PATH`.
-
-=== "On-demand (npx)"
+=== "Pin version"
 
     ```bash
-    npx @hspk/loom <command>
+    bun add -g https://github.com/HSPK/loom/releases/download/v1.3.4/loom-1.3.4.tgz
     ```
 
-=== "On-demand (bunx)"
+=== "With npm"
 
     ```bash
-    bunx @hspk/loom <command>
+    npm i -g https://github.com/HSPK/loom/releases/latest/download/loom.tgz
     ```
+
+Both add the `loom` binary to your `$PATH`. No lifecycle scripts run on tarball
+install — Loom recreates its install-time symlinks at CLI startup, so the
+package works identically on bun, npm, pnpm, and yarn without any trust
+prompts or `--allow-scripts` flags.
 
 ## Initialize
 

@@ -6,7 +6,7 @@ A self-hosted **AI testing platform** for trying out models and MCP servers,
 recording every request, and — when you're ready — fronting your applications
 through the same OpenAI-compatible gateway.
 
-[![npm](https://img.shields.io/npm/v/@hspk/loom?style=flat-square&color=4338ca&label=%40hspk%2Floom)](https://www.npmjs.com/package/@hspk/loom)
+[![Release](https://img.shields.io/github/v/release/HSPK/loom?style=flat-square&color=4338ca&label=release)](https://github.com/HSPK/loom/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg?style=flat-square)](#requirements)
 [![Docs](https://img.shields.io/badge/docs-mkdocs-success?style=flat-square)](https://hspk.github.io/loom)
@@ -67,10 +67,27 @@ sqlite3 data/loom.db '
 
 ## Quickstart
 
-```bash
-# Install
-npm install -g @hspk/loom
+### Install
 
+Loom ships as a single Node CLI. Pre-built tarballs are attached to each
+GitHub Release (we don't publish to the npm registry).
+
+```bash
+# Latest — re-run the same command later to upgrade.
+bun add -g https://github.com/HSPK/loom/releases/latest/download/loom.tgz
+
+# Or pin to a specific version:
+bun add -g https://github.com/HSPK/loom/releases/download/v1.3.4/loom-1.3.4.tgz
+```
+
+`npm i -g <url>` works identically if you prefer npm. No special flags
+needed — bun and npm both skip lifecycle scripts on tarball install,
+and Loom recreates its install-time symlinks at CLI startup so no
+post-install step is necessary.
+
+### Run
+
+```bash
 # Interactive setup wizard — picks providers, generates a master key,
 # writes loom.config.yaml
 loom init

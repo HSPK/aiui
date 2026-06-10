@@ -1,9 +1,9 @@
 // Runtime helpers for spawning the embedded Next.js server.
 //
-// Three install scenarios must work — source checkout, `npm install
-// -g @hspk/loom`, `npx @hspk/loom` (temp cache). `createRequire` lets Node's
-// module resolver do the climb for us instead of hardcoding relative
-// paths, so all three Just Work.
+// Three install scenarios must work — source checkout, the prebuilt tarball
+// from GitHub Releases (`bun add -g <url>`), and on-demand execution from a
+// cached tarball. `createRequire` lets Node's module resolver do the climb
+// for us instead of hardcoding relative paths, so all three Just Work.
 
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
@@ -19,8 +19,8 @@ export function resolveNextBin(): string {
         return requireFromPkg.resolve("next/dist/bin/next");
     } catch (err) {
         console.error("Couldn't locate the `next` binary.");
-        console.error("If you installed via npm/bunx, this usually means the install was incomplete.");
-        console.error("Run `npm install -g @hspk/loom` (or your package manager's equivalent) and try again.");
+        console.error("If you installed via a tarball, the install was incomplete — try reinstalling:");
+        console.error("  bun add -g https://github.com/HSPK/loom/releases/latest/download/loom.tgz");
         console.error("Details:", err);
         process.exit(1);
     }
