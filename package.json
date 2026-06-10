@@ -44,7 +44,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "bun run build:cli && next build && bun run build:aliases",
+    "build": "bun run build:cli && LOOM_SKIP_MIGRATIONS=1 next build && bun run build:aliases",
     "build:cli": "node scripts/build-cli.mjs",
     "build:aliases": "node scripts/generate-external-aliases.mjs",
     "start": "next start",

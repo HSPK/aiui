@@ -36,13 +36,21 @@ function createDb() {
 
     const db = drizzle(sqlite, { schema });
 
-    // Skip migrations during Next.js build (`next build` spawns parallel
-    // workers per route during page-data collection — multiple workers
-    // racing on the same DB file produce SQLITE_ERROR "table already
-    // exists" since Drizzle's transaction-wrapped CREATE TABLEs are
-    // not serialized across processes). Migrations run at runtime
-    // startup instead, where there's a single process.
-    const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
+    // Skip migrations when explicitly disabled OR during Next.js
+    // production build's page-data collection. `next build` spawns
+    // parallel workers per route — each imports server code and
+    // triggers `createDb()` → `migrate()`. Concurrent CREATE TABLE
+    // statements on the same SQLite file race past Drizzle's
+    // transaction-tracked migration ledger and fail with SQLITE_ERROR
+    // "table api_keys already exists" non-deterministically.
+    //
+    // Build scripts set `LOOM_SKIP_MIGRATIONS=1` explicitly; we also
+    // honor `NEXT_PHASE === 'phase-production-build'` as a fallback
+    // signal so adhoc `next build` outside our build script stays safe.
+    // Migrations run at runtime startup (single process, no race).
+    const skipMigrations =
+        process.env.LOOM_SKIP_MIGRATIONS === "1" ||
+        process.env.NEXT_PHASE === "phase-production-build";
 
     // Migrations live alongside the package source, not the user's
     // project. `LOOM_PACKAGE_ROOT` is set by the CLI; in dev (bun run
@@ -50,7 +58,7 @@ function createDb() {
     // happens to be the package root, so the fallback still works.
     const packageRoot = process.env.LOOM_PACKAGE_ROOT || process.cwd();
     const migrationsFolder = resolve(packageRoot, "drizzle");
-    if (!isBuildPhase && existsSync(migrationsFolder)) {
+    if (!skipMigrations && existsSync(migrationsFolder)) {
         // CRITICAL: foreign_keys MUST be OFF for the duration of any
         // "12-step table rebuild" migration (CREATE __new_X / COPY /
         // DROP X / RENAME). Drizzle wraps each migration in a BEGIN/
@@ -78,7 +86,7 @@ function createDb() {
         } finally {
             sqlite.pragma("foreign_keys = ON");
         }
-    } else if (!isBuildPhase) {
+    } else if (!skipMigrations) {
         sqlite.pragma("foreign_keys = ON");
     }
 
