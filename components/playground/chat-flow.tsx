@@ -95,6 +95,24 @@ export function ChatFlow({ conversationId }: { conversationId: string }) {
     useTitleGeneration({ conversationId, messages, isLoading, getModelIds })
     useMessageSync({ conversationId, messages, isLoading, pageSize: INITIAL_PAGE_SIZE })
 
+    // Promote `/playground/chat` → `/playground/chat?c=<id>` once the
+    // user actually sends a message (so the conversation is bookmarkable
+    // / refresh-survivable). Uses `window.history.replaceState` rather
+    // than `router.replace` because some deployment setups silently
+    // stall Next.js's soft-nav transitions — and we don't need React
+    // to re-render here anyway (the chat surface already knows
+    // conversationId via prop). Next.js's `useSearchParams` won't pick
+    // up the change until the next user-initiated navigation, which is
+    // fine: a router.push from the sidebar will sync everything.
+    React.useEffect(() => {
+        if (messages.length === 0) return
+        if (typeof window === "undefined") return
+        const url = new URL(window.location.href)
+        if (url.searchParams.get("c") === conversationId) return
+        url.searchParams.set("c", conversationId)
+        window.history.replaceState({}, "", url.toString())
+    }, [messages.length, conversationId])
+
     // Block new sends when the latest interaction failed: the user
     // should retry that turn (in-place upsert preserves the parent
     // pointer chain) before starting a new one. We walk back from

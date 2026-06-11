@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import {
     Check,
     MessageSquare,
@@ -23,18 +24,12 @@ import { Skeleton } from "@/components/ui/skeleton"
 /**
  * Single conversation row in the sidebar list.
  *
- * Navigation uses a PLAIN `<a href>` (not Next.js `<Link>`) so the
- * browser handles the URL change with a full document load. Some
- * deployment setups (Caddy / Tailscale / specific Next 16 + React 19
- * combinations) silently swallow Next.js's soft-nav transitions —
- * Link suffers the same bug because it calls router.push() internally.
- * A plain `<a>` is heavier (full reload, loses sidebar scroll +
- * in-flight queries) but BULLETPROOF: the browser's native click
- * handler always commits the URL change.
- *
- * The dropdown is nested inside the anchor; its trigger button calls
- * preventDefault+stopPropagation to suppress the nav when the user
- * clicks the menu icon instead of the row body.
+ * Navigation uses Next.js `<Link>` so clicking does an SPA soft-nav —
+ * no full page reload, sidebar scroll preserved, in-flight queries
+ * survive. This requires Next.js's router to actually commit the URL
+ * change, which depends on the page itself not blocking the navigation
+ * transition (see chat page header for the history of why we removed
+ * the auto-mint router.replace effect).
  */
 export const ConversationItem = React.memo(function ConversationItem({
     conv,
@@ -49,9 +44,7 @@ export const ConversationItem = React.memo(function ConversationItem({
     isSelected: boolean
     /** Already-computed URL for this row (sidebar owns formatting). */
     href: string
-    /** Optional post-click side effect (e.g., close mobile sheet).
-     *  Fires synchronously alongside the navigation — browser already
-     *  has the URL change queued by the time the handler runs. */
+    /** Optional post-click side effect (e.g., close mobile sheet). */
     onPick?: (conv: ConversationDTO) => void
     onDeleteRequest: (conv: ConversationDTO) => void
     onRename: (conv: ConversationDTO, newTitle: string) => void
@@ -135,17 +128,28 @@ export const ConversationItem = React.memo(function ConversationItem({
     }
 
     return (
-        <a
+        <Link
             href={href}
+            prefetch={false}
             onClick={(e) => {
-                // If clicking the already-selected row, suppress the
-                // reload (it would be wasteful).
                 if (isSelected) {
                     e.preventDefault()
                     return
                 }
                 onPick?.(conv)
-                // Don't preventDefault — let the browser navigate.
+                // Soft-nav fallback: some deployment setups (Caddy /
+                // Tailscale / specific Next 16 + React 19 combos)
+                // silently stall Next.js router transitions. If the
+                // URL hasn't picked up the target id within 300 ms,
+                // fall back to a full browser navigation so the user's
+                // click NEVER goes unanswered. No-op when soft-nav
+                // works as expected (the common case).
+                const targetSearch = `c=${encodeURIComponent(conv.id)}`
+                setTimeout(() => {
+                    if (typeof window === "undefined") return
+                    if (window.location.search.includes(targetSearch)) return
+                    window.location.assign(href)
+                }, 300)
             }}
             className={cn(
                 "group/item relative flex items-center gap-2 rounded-md cursor-pointer transition-colors no-underline",
@@ -189,7 +193,7 @@ export const ConversationItem = React.memo(function ConversationItem({
                     </DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>
-        </a>
+        </Link>
     )
 })
 

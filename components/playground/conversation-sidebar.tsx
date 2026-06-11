@@ -2,7 +2,7 @@
 
 import { useQueryClient } from "@tanstack/react-query"
 import * as React from "react"
-import { useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import {
     Loader2,
     MessageSquare,
@@ -87,9 +87,13 @@ function groupByUpdatedAt(items: ConversationDTO[]): ConvGroup[] {
 // ---------- main ----------
 
 export function ConversationSidebar() {
-    // Note: no useRouter here — all navigation is via plain `<a href>`
-    // or `window.location.assign(...)` to bypass Next.js's soft-nav
-    // (silently stalls on some Caddy / Tailscale / Next 16 setups).
+    const router = useRouter()
+    // Note: navigation is via router.push() (SPA soft nav). The page
+    // no longer does an auto-mint router.replace() on mount, which
+    // historically blocked sidebar pushes by leaving a perpetually-
+    // pending transition (v1.4.4 bug). New drafts are minted client-
+    // side via useState in the page; no programmatic URL update
+    // happens until the user sends the first message.
     const searchParams = useSearchParams()
     const activeId = searchParams?.get("c") ?? null
 
@@ -167,18 +171,25 @@ export function ConversationSidebar() {
 
     const groups = React.useMemo(() => groupByUpdatedAt(convList), [convList])
 
-    // Programmatic "go to a fresh draft" — used by the New chat buttons
-    // and post-delete redirect. Hard nav via window.location: same
-    // reason as ConversationItem's plain <a> — bypasses Next.js soft
-    // nav, which is flaky on some Caddy / Tailscale / Next 16 setups.
-    const goToNewChat = React.useCallback(() => {
-        if (typeof window === "undefined") return
-        window.location.assign(`/playground/chat?fresh=${Date.now()}`)
-    }, [])
-
+    // Programmatic "go to a fresh draft". Bare router.push to
+    // /playground/chat — the page's draft re-mint logic kicks in on
+    // urlConvId real→null transition. When already on a draft, this
+    // is technically a no-op for Next.js (same URL) so we use the
+    // `_=<ts>` cache-buster to force a render-cycle the page can
+    // react to. Soft-nav fallback at the bottom catches deployments
+    // where Next.js's router stalls.
     const handleNewChat = React.useCallback(() => {
-        goToNewChat()
-    }, [goToNewChat])
+        const href = activeId == null
+            ? `/playground/chat?_=${Date.now()}`
+            : "/playground/chat"
+        router.push(href)
+        setTimeout(() => {
+            if (typeof window === "undefined") return
+            // Successful soft-nav if the URL no longer has ?c=
+            if (!window.location.search.includes("c=")) return
+            window.location.assign(href)
+        }, 300)
+    }, [router, activeId])
 
     const handleRename = React.useCallback(
         (conv: ConversationDTO, newTitle: string) =>
