@@ -2,7 +2,7 @@
 
 import { useQueryClient } from "@tanstack/react-query"
 import * as React from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 import {
     Loader2,
     MessageSquare,
@@ -87,7 +87,9 @@ function groupByUpdatedAt(items: ConversationDTO[]): ConvGroup[] {
 // ---------- main ----------
 
 export function ConversationSidebar() {
-    const router = useRouter()
+    // Note: no useRouter here — all navigation is via plain `<a href>`
+    // or `window.location.assign(...)` to bypass Next.js's soft-nav
+    // (silently stalls on some Caddy / Tailscale / Next 16 setups).
     const searchParams = useSearchParams()
     const activeId = searchParams?.get("c") ?? null
 
@@ -127,7 +129,9 @@ export function ConversationSidebar() {
             // Use ?fresh= to force a new draft mint even though we're
             // replacing into the bare /playground/chat path (the page's
             // auto-mint effect reacts to the freshToken change).
-            if (activeId === convId) router.replace(`/playground/chat?fresh=${Date.now()}`)
+            if (activeId === convId && typeof window !== "undefined") {
+                window.location.assign(`/playground/chat?fresh=${Date.now()}`)
+            }
             toast.success("Conversation deleted")
         },
         onError: () => toast.error("Failed to delete conversation"),
@@ -163,14 +167,18 @@ export function ConversationSidebar() {
 
     const groups = React.useMemo(() => groupByUpdatedAt(convList), [convList])
 
-    // handleOpen / handleNewChat are kept for programmatic-nav callers
-    // (e.g., post-delete redirect, mobile sheet close). Conversation
-    // rows themselves now use Link / href (see ConversationItem) so the
-    // browser handles the URL change natively — robust against Next.js
-    // soft-nav stalls.
+    // Programmatic "go to a fresh draft" — used by the New chat buttons
+    // and post-delete redirect. Hard nav via window.location: same
+    // reason as ConversationItem's plain <a> — bypasses Next.js soft
+    // nav, which is flaky on some Caddy / Tailscale / Next 16 setups.
+    const goToNewChat = React.useCallback(() => {
+        if (typeof window === "undefined") return
+        window.location.assign(`/playground/chat?fresh=${Date.now()}`)
+    }, [])
+
     const handleNewChat = React.useCallback(() => {
-        router.push(`/playground/chat?fresh=${Date.now()}`)
-    }, [router])
+        goToNewChat()
+    }, [goToNewChat])
 
     const handleRename = React.useCallback(
         (conv: ConversationDTO, newTitle: string) =>
@@ -182,8 +190,7 @@ export function ConversationSidebar() {
         setPendingDelete(conv)
     }, [])
 
-    // Mobile sheet close hook — fires after the Link's native nav so
-    // the sheet doesn't unmount mid-click and orphan the click event.
+    // Mobile sheet close hook — fires alongside the link's navigation.
     const handlePickedMobile = React.useCallback(
         () => setMobileSheetOpen(false),
         [setMobileSheetOpen],

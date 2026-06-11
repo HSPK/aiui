@@ -1,5 +1,8 @@
 import { defineCommand } from "citty";
 import { spawn, spawnSync } from "node:child_process";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { resolve } from "node:path";
 
 const RELEASES_API = "https://api.github.com/repos/HSPK/loom/releases/latest";
 const LATEST_TARBALL_URL = "https://github.com/HSPK/loom/releases/latest/download/loom.tgz";
@@ -262,8 +265,23 @@ export const updateCommand = defineCommand({
             console.log("");
         }
 
+        // Auto-tidy the bun global package.json + lockfile BEFORE the
+        // install. Bun appends a new "loom" entry without deduping the
+        // existing one each time we install via URL — left alone, the
+        // global package.json accumulates 2, 3, 5 duplicate "loom":
+        // entries and bun spams "Duplicate key" warnings on every
+        // command (eventually causing a real DependencyLoop on bun
+        // <1.3.14 — see R20 / v1.3.x history). Cleaning silently
+        // before bun even runs keeps the output clean and the lockfile
+        // tidy. No-op when bun isn't the PM or files don't exist.
+        if (pm.cmd === "bun") tidyBunGlobals();
+
         console.log(style.dim(`Running install...`));
         const code = await run(pm.cmd, pm.install(installUrl));
+
+        // ...and once more AFTER install to clean any duplicates the
+        // bun install itself appended.
+        if (pm.cmd === "bun") tidyBunGlobals();
 
         if (code === 0) {
             console.log("");
@@ -280,6 +298,52 @@ export const updateCommand = defineCommand({
         }
     },
 });
+
+/** Dedupe duplicate keys in bun's global package.json + lockfile.
+ *
+ *  Bun appends a new line for the same package each time you install
+ *  via a remote URL — even when the URL is identical to the existing
+ *  entry. After N installs the global package.json has N "loom"
+ *  entries, which (a) spams "Duplicate key" warnings on every bun
+ *  command, (b) historically caused an actual DependencyLoop error
+ *  (R20 v1.3.x). JSON.parse takes the LAST duplicate value, so a
+ *  parse-and-restringify cycle naturally dedupes. Lockfile gets the
+ *  same treatment — same line-level duplication pattern there.
+ *
+ *  Silent + best-effort: if files don't exist (npm-only setup, fresh
+ *  bun install) or are unparseable (mid-install corruption), bail
+ *  without touching anything. Never fails the update flow. */
+function tidyBunGlobals(): void {
+    const dir = resolve(homedir(), ".bun", "install", "global");
+    tidyJsonFile(resolve(dir, "package.json"));
+    tidyJsonFile(resolve(dir, "bun.lock"));
+}
+
+function tidyJsonFile(path: string): void {
+    if (!existsSync(path)) return;
+    let raw: string;
+    try {
+        raw = readFileSync(path, "utf8");
+    } catch {
+        return;
+    }
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(raw);
+    } catch {
+        // bun.lock isn't strict JSON (it's JSONC with comments). Skip
+        // unparseable files — leaving duplicates is better than
+        // mangling the lockfile.
+        return;
+    }
+    const rewritten = JSON.stringify(parsed, null, 2) + "\n";
+    if (rewritten === raw) return;
+    try {
+        writeFileSync(path, rewritten, "utf8");
+    } catch {
+        /* read-only fs etc. — ignore */
+    }
+}
 
 /** Render a published-at ISO timestamp as a friendly relative time. */
 function formatRelativeTime(iso: string): string {

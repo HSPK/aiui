@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import {
     Check,
     MessageSquare,
@@ -22,16 +21,20 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 
 /**
- * Single conversation row in the sidebar list — display + inline
- * rename + delete dropdown. Wrapped in React.memo so the parent's
- * shallow re-renders (typing in search box, scroll-driven pagination)
- * skip rows whose data hasn't changed. Callbacks must be stable refs
- * (useCallback in parent) for the memo to actually win.
+ * Single conversation row in the sidebar list.
  *
- * Navigation uses a real `<Link>` with an `href` so the browser handles
- * the URL change natively — no programmatic router.push() that could be
- * silently swallowed by a buggy Next.js soft-nav state. The `onPick`
- * prop (mobile only) closes the sheet after click.
+ * Navigation uses a PLAIN `<a href>` (not Next.js `<Link>`) so the
+ * browser handles the URL change with a full document load. Some
+ * deployment setups (Caddy / Tailscale / specific Next 16 + React 19
+ * combinations) silently swallow Next.js's soft-nav transitions —
+ * Link suffers the same bug because it calls router.push() internally.
+ * A plain `<a>` is heavier (full reload, loses sidebar scroll +
+ * in-flight queries) but BULLETPROOF: the browser's native click
+ * handler always commits the URL change.
+ *
+ * The dropdown is nested inside the anchor; its trigger button calls
+ * preventDefault+stopPropagation to suppress the nav when the user
+ * clicks the menu icon instead of the row body.
  */
 export const ConversationItem = React.memo(function ConversationItem({
     conv,
@@ -46,9 +49,9 @@ export const ConversationItem = React.memo(function ConversationItem({
     isSelected: boolean
     /** Already-computed URL for this row (sidebar owns formatting). */
     href: string
-    /** Optional post-click side effect (e.g., close mobile sheet). The
-     *  navigation itself is handled by Link's href — this callback is
-     *  for chrome state only. */
+    /** Optional post-click side effect (e.g., close mobile sheet).
+     *  Fires synchronously alongside the navigation — browser already
+     *  has the URL change queued by the time the handler runs. */
     onPick?: (conv: ConversationDTO) => void
     onDeleteRequest: (conv: ConversationDTO) => void
     onRename: (conv: ConversationDTO, newTitle: string) => void
@@ -132,10 +135,18 @@ export const ConversationItem = React.memo(function ConversationItem({
     }
 
     return (
-        <Link
+        <a
             href={href}
-            prefetch={false}
-            onClick={handleRowClick}
+            onClick={(e) => {
+                // If clicking the already-selected row, suppress the
+                // reload (it would be wasteful).
+                if (isSelected) {
+                    e.preventDefault()
+                    return
+                }
+                onPick?.(conv)
+                // Don't preventDefault — let the browser navigate.
+            }}
             className={cn(
                 "group/item relative flex items-center gap-2 rounded-md cursor-pointer transition-colors no-underline",
                 compact ? "px-2 py-1.5 text-sm" : "px-3 h-11 text-base",
@@ -178,7 +189,7 @@ export const ConversationItem = React.memo(function ConversationItem({
                     </DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>
-        </Link>
+        </a>
     )
 })
 
