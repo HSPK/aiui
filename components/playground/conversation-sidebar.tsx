@@ -163,13 +163,26 @@ export function ConversationSidebar() {
     const handleOpen = React.useCallback(
         (conv: ConversationDTO) => {
             if (activeId === conv.id) return
-            router.push(`/playground/chat?c=${encodeURIComponent(conv.id)}`)
+            const href = `/playground/chat?c=${encodeURIComponent(conv.id)}`
+            if (typeof window !== "undefined") {
+                console.debug("[loom] sidebar: handleOpen", { activeId, target: conv.id, href })
+            }
+            router.push(href)
         },
         [router, activeId]
     )
 
     const handleNewChat = React.useCallback(() => {
-        if (activeId) router.push("/playground/chat")
+        // Use ?n=<timestamp> to force a fresh mint even when already
+        // on a draft. The chat page's auto-mint effect treats each
+        // distinct `n` value as a new session signal — bare
+        // /playground/chat would be a no-op when activeId is null
+        // (Next.js dedupes identical-URL navigations).
+        const href = `/playground/chat?n=${Date.now()}`
+        if (typeof window !== "undefined") {
+            console.debug("[loom] sidebar: handleNewChat", { activeId, href })
+        }
+        router.push(href)
     }, [router, activeId])
 
     const handleRename = React.useCallback(
