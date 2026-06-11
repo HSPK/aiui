@@ -397,6 +397,13 @@ export function ConversationSidebar() {
                     side="left"
                     hideClose
                     className="w-80 max-w-[85vw] p-0 flex flex-col"
+                    // Radix auto-focuses the first focusable element on
+                    // open — for this sheet that's the search input,
+                    // which immediately pops the virtual keyboard on
+                    // mobile (covers half the conversation list the
+                    // user opened the sheet to see). Suppress; the
+                    // user can tap search if they want to type.
+                    onOpenAutoFocus={(e) => e.preventDefault()}
                 >
                     {renderBody({ compact: false, onItemPick: () => setMobileSheetOpen(false) })}
                 </SheetContent>

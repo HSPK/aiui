@@ -32,6 +32,15 @@ export const userPreferencesDTOSchema = z.object({
     // are generous (1h) and the bounds permit anything up to 24h.
     gateway_timeout_seconds: z.number().int().min(1).max(86_400),
     mcp_connect_timeout_seconds: z.number().int().min(1).max(86_400),
+
+    // Periodic health-check intervals (minutes; 0 = disabled).
+    // Client-driven polling — when the dashboard tab is open, the
+    // browser fires a per-server `/check` round on the cadence. We
+    // don't run a server-side scheduler because Loom is a single
+    // self-hosted process with no job queue; tying the cadence to
+    // tab-open avoids stranded probes when nobody is watching.
+    mcp_auto_check_interval_minutes: z.number().int().min(0).max(1440),
+    provider_auto_check_interval_minutes: z.number().int().min(0).max(1440),
 });
 
 /** All fields optional → PATCH semantics. Sent fields replace; unsent stay. */
@@ -51,6 +60,8 @@ export const defaultUserPreferences: UserPreferencesDTO = {
     chat_bubble_style: "plain",
     gateway_timeout_seconds: 3600,
     mcp_connect_timeout_seconds: 3600,
+    mcp_auto_check_interval_minutes: 0,
+    provider_auto_check_interval_minutes: 0,
 };
 
 export type UserPreferencesDTO = z.infer<typeof userPreferencesDTOSchema>;

@@ -1,5 +1,6 @@
 import * as React from "react"
 import { Topbar } from "@/components/Topbar"
+import { AutoHealthChecks } from "@/components/AutoHealthChecks"
 
 export default function DashboardLayout({
     children,
@@ -12,6 +13,7 @@ export default function DashboardLayout({
             <main className="flex-1 overflow-hidden bg-muted/10">
                 {children}
             </main>
+            <AutoHealthChecks />
         </div>
     )
 }

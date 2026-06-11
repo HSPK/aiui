@@ -120,6 +120,20 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* App-shell scroll model: html/body never scroll — every scrollable
+   * surface (chat thread, conversation list, settings panes…) handles
+   * its own overflow. This prevents the mobile-viewport tug-of-war
+   * where the body scrolls behind the chat ScrollArea when the URL
+   * bar shows/hides (100vh changing under the layout), and kills
+   * pull-to-refresh / horizontal swipe-back inside the app.
+   *
+   * Inner scrollers stay fully functional because they explicitly opt
+   * in with overflow-auto / scrollbar-thin. */
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
   body {
     @apply bg-background text-foreground;
   }

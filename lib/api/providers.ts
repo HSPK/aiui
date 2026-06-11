@@ -1,4 +1,5 @@
 "use client";
+import * as React from "react";
 import { useMutation, useQuery, useQueryClient, type UseMutationOptions } from "@tanstack/react-query";
 import { defineResource } from "./resource";
 import { fetcher } from "./client";
@@ -93,5 +94,46 @@ export const providers = {
                 opts?.onSuccess?.(data, vars, onMutateResult, context);
             },
         });
+    },
+
+    /** Per-id check hook for list pages — one mutation instance shared
+     *  across N rows, but each row's pending state is tracked in a
+     *  Set so concurrent checks don't clobber each other's spinners
+     *  (the regular `useCheck` was bound to a single `id` per render). */
+    useCheckMany: (
+        opts?: { onSuccess?: (id: string, result: ProviderCheckResult) => void; onError?: (id: string, err: Error) => void },
+    ) => {
+        const invalidate = base.useInvalidate();
+        const [pendingIds, setPendingIds] = React.useState<Set<string>>(() => new Set());
+        const mutation = useMutation<ProviderCheckResult, Error, string>({
+            mutationFn: (id) => providers.check(id),
+            onMutate: (id) => {
+                setPendingIds((prev) => {
+                    const next = new Set(prev);
+                    next.add(id);
+                    return next;
+                });
+            },
+            onSettled: (_data, _err, id) => {
+                setPendingIds((prev) => {
+                    if (!prev.has(id)) return prev;
+                    const next = new Set(prev);
+                    next.delete(id);
+                    return next;
+                });
+            },
+            onSuccess: (data, id) => {
+                invalidate();
+                opts?.onSuccess?.(id, data);
+            },
+            onError: (err, id) => opts?.onError?.(id, err),
+        });
+        return {
+            mutate: mutation.mutate,
+            mutateAsync: mutation.mutateAsync,
+            isPendingId: (id: string) => pendingIds.has(id),
+            anyPending: pendingIds.size > 0,
+            pendingCount: pendingIds.size,
+        };
     },
 };

@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
-import { LayoutGrid, Plus, Sparkles } from "lucide-react"
+import { LayoutGrid, Loader2, Plus, RefreshCcw, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 
 import { mcpServers } from "@/lib/api/mcp"
@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { McpFormDialog } from "@/components/tools/mcp-form-dialog"
 import { McpServersTable } from "@/components/tools/mcp-table"
 import { McpServerDetailsSheet } from "@/components/tools/mcp-details-sheet"
+import { cn } from "@/lib/utils"
 
 type McpDialogState = { open: boolean; mode: "create" | "edit"; server?: McpServerDTO | null }
 
@@ -65,6 +66,33 @@ export default function McpPage() {
         onError: (e) => toast.error(e.message || "Delete failed"),
     })
 
+    // Bulk re-check sweep. Sequential probe of every enabled server so a
+    // single click doesn't fire N parallel upstream installs. Failures
+    // are surfaced via toast count rather than per-row error spam.
+    const [bulkCheckPending, setBulkCheckPending] = React.useState(false)
+    const handleCheckAll = React.useCallback(async () => {
+        const enabled = (mcpList ?? []).filter((s) => s.enabled)
+        if (enabled.length === 0) {
+            toast.info("No enabled MCP servers to check.")
+            return
+        }
+        setBulkCheckPending(true)
+        let ok = 0
+        let failed = 0
+        for (const s of enabled) {
+            try {
+                const res = await mcpServers.check(s.id)
+                if (res.last_check_status === "ok") ok += 1
+                else failed += 1
+            } catch {
+                failed += 1
+            }
+        }
+        setBulkCheckPending(false)
+        if (failed === 0) toast.success(`Checked ${ok} server${ok === 1 ? "" : "s"} — all healthy.`)
+        else toast.error(`Checked ${ok + failed} servers — ${failed} failed.`)
+    }, [mcpList])
+
     return (
         <div className="h-full flex flex-col p-4 overflow-y-hidden">
             <Tabs
@@ -86,6 +114,19 @@ export default function McpPage() {
                                     Catalogue
                                 </Button>
                             </Link>
+                            <Button
+                                size="sm"
+                                variant="secondary"
+                                className="h-8 text-xs gap-1.5"
+                                onClick={handleCheckAll}
+                                disabled={bulkCheckPending || (mcpList ?? []).length === 0}
+                                title="Re-check every enabled MCP server"
+                            >
+                                {bulkCheckPending
+                                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    : <RefreshCcw className={cn("h-3.5 w-3.5")} />}
+                                Check all
+                            </Button>
                             {isAdmin && (
                                 <Button
                                     size="icon"

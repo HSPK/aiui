@@ -155,12 +155,12 @@ export function McpServersTable({ servers, onSelect, onEdit, onDelete, selectedI
                                                     e.stopPropagation()
                                                     check.mutate(s.id)
                                                 }}
-                                                disabled={check.isPending && check.variables === s.id}
+                                                disabled={check.isPendingId(s.id)}
                                                 title="Re-check connection"
                                             >
                                                 <RefreshCcw className={cn(
                                                     "h-3.5 w-3.5",
-                                                    check.isPending && check.variables === s.id && "animate-spin",
+                                                    check.isPendingId(s.id) && "animate-spin",
                                                 )} />
                                             </Button>
                                         )}

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Timer } from "lucide-react"
+import { Activity, Timer } from "lucide-react"
 import { toast } from "sonner"
 
 import { preferences } from "@/lib/api"
@@ -27,82 +27,131 @@ export function TimeoutsSection() {
     // PATCH endpoint. Local mirror reflects the input instantly.
     const [gatewayInput, setGatewayInput] = React.useState(String(prefs.gateway_timeout_seconds))
     const [mcpInput, setMcpInput] = React.useState(String(prefs.mcp_connect_timeout_seconds))
+    const [mcpAutoInput, setMcpAutoInput] = React.useState(String(prefs.mcp_auto_check_interval_minutes))
+    const [providerAutoInput, setProviderAutoInput] = React.useState(String(prefs.provider_auto_check_interval_minutes))
     React.useEffect(() => { setGatewayInput(String(prefs.gateway_timeout_seconds)) }, [prefs.gateway_timeout_seconds])
     React.useEffect(() => { setMcpInput(String(prefs.mcp_connect_timeout_seconds)) }, [prefs.mcp_connect_timeout_seconds])
+    React.useEffect(() => { setMcpAutoInput(String(prefs.mcp_auto_check_interval_minutes)) }, [prefs.mcp_auto_check_interval_minutes])
+    React.useEffect(() => { setProviderAutoInput(String(prefs.provider_auto_check_interval_minutes)) }, [prefs.provider_auto_check_interval_minutes])
 
-    const commit = (
-        key: "gateway_timeout_seconds" | "mcp_connect_timeout_seconds",
-        raw: string,
-    ) => {
+    const fieldRefs = {
+        gateway_timeout_seconds: { value: prefs.gateway_timeout_seconds, set: setGatewayInput, min: 1, max: 86_400 },
+        mcp_connect_timeout_seconds: { value: prefs.mcp_connect_timeout_seconds, set: setMcpInput, min: 1, max: 86_400 },
+        mcp_auto_check_interval_minutes: { value: prefs.mcp_auto_check_interval_minutes, set: setMcpAutoInput, min: 0, max: 1440 },
+        provider_auto_check_interval_minutes: { value: prefs.provider_auto_check_interval_minutes, set: setProviderAutoInput, min: 0, max: 1440 },
+    } as const
+
+    const commit = (key: keyof typeof fieldRefs, raw: string) => {
+        const ref = fieldRefs[key]
         const trimmed = raw.trim()
         if (!trimmed) {
-            // Revert to persisted value if user cleared the input.
-            if (key === "gateway_timeout_seconds") setGatewayInput(String(prefs.gateway_timeout_seconds))
-            else setMcpInput(String(prefs.mcp_connect_timeout_seconds))
+            ref.set(String(ref.value))
             return
         }
         const n = Number(trimmed)
-        if (!Number.isFinite(n) || n < 1 || n > 86_400) {
-            toast.error("Timeout must be between 1 and 86400 seconds")
-            if (key === "gateway_timeout_seconds") setGatewayInput(String(prefs.gateway_timeout_seconds))
-            else setMcpInput(String(prefs.mcp_connect_timeout_seconds))
+        if (!Number.isFinite(n) || n < ref.min || n > ref.max) {
+            toast.error(`Value must be between ${ref.min} and ${ref.max}`)
+            ref.set(String(ref.value))
             return
         }
         const next = Math.floor(n)
-        if (next === prefs[key]) return
+        if (next === ref.value) return
         update.mutate(
             { [key]: next },
             {
                 onError: (e) => {
                     toast.error(e.message || "Failed to save")
-                    if (key === "gateway_timeout_seconds") setGatewayInput(String(prefs.gateway_timeout_seconds))
-                    else setMcpInput(String(prefs.mcp_connect_timeout_seconds))
+                    ref.set(String(ref.value))
                 },
             },
         )
     }
 
     return (
-        <SettingsSection
-            icon={Timer}
-            title="Timeouts"
-            description="Wall-clock budgets for upstream calls."
-        >
-            <SettingsField
-                label="Gateway request (seconds)"
-                description="Chat, image, embedding, audio, rerank, video."
+        <>
+            <SettingsSection
+                icon={Timer}
+                title="Timeouts"
+                description="Wall-clock budgets for upstream calls."
             >
-                <Input
-                    type="number"
-                    min={1}
-                    max={86_400}
-                    value={gatewayInput}
-                    onChange={(e) => setGatewayInput(e.target.value)}
-                    onBlur={(e) => commit("gateway_timeout_seconds", e.target.value)}
-                    onKeyDown={(e) => {
-                        if (e.key === "Enter") (e.target as HTMLInputElement).blur()
-                    }}
-                    className="w-32 text-right"
-                />
-            </SettingsField>
+                <SettingsField
+                    label="Gateway request (seconds)"
+                    description="Chat, image, embedding, audio, rerank, video."
+                >
+                    <Input
+                        type="number"
+                        min={1}
+                        max={86_400}
+                        value={gatewayInput}
+                        onChange={(e) => setGatewayInput(e.target.value)}
+                        onBlur={(e) => commit("gateway_timeout_seconds", e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur()
+                        }}
+                        className="w-32 text-right"
+                    />
+                </SettingsField>
 
-            <SettingsField
-                label="MCP connect (seconds)"
-                description="Initialize handshake + package install on cold cache."
+                <SettingsField
+                    label="MCP connect (seconds)"
+                    description="Initialize handshake + package install on cold cache."
+                >
+                    <Input
+                        type="number"
+                        min={1}
+                        max={86_400}
+                        value={mcpInput}
+                        onChange={(e) => setMcpInput(e.target.value)}
+                        onBlur={(e) => commit("mcp_connect_timeout_seconds", e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur()
+                        }}
+                        className="w-32 text-right"
+                    />
+                </SettingsField>
+            </SettingsSection>
+
+            <SettingsSection
+                icon={Activity}
+                title="Auto health checks"
+                description="Polled while the dashboard tab is open. 0 = disabled."
             >
-                <Input
-                    type="number"
-                    min={1}
-                    max={86_400}
-                    value={mcpInput}
-                    onChange={(e) => setMcpInput(e.target.value)}
-                    onBlur={(e) => commit("mcp_connect_timeout_seconds", e.target.value)}
-                    onKeyDown={(e) => {
-                        if (e.key === "Enter") (e.target as HTMLInputElement).blur()
-                    }}
-                    className="w-32 text-right"
-                />
-            </SettingsField>
-        </SettingsSection>
+                <SettingsField
+                    label="MCP servers (minutes)"
+                    description="Re-probes every enabled MCP server on this cadence."
+                >
+                    <Input
+                        type="number"
+                        min={0}
+                        max={1440}
+                        value={mcpAutoInput}
+                        onChange={(e) => setMcpAutoInput(e.target.value)}
+                        onBlur={(e) => commit("mcp_auto_check_interval_minutes", e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur()
+                        }}
+                        className="w-32 text-right"
+                    />
+                </SettingsField>
+
+                <SettingsField
+                    label="Providers (minutes)"
+                    description="Re-probes the health-check URL of every provider that has one."
+                >
+                    <Input
+                        type="number"
+                        min={0}
+                        max={1440}
+                        value={providerAutoInput}
+                        onChange={(e) => setProviderAutoInput(e.target.value)}
+                        onBlur={(e) => commit("provider_auto_check_interval_minutes", e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur()
+                        }}
+                        className="w-32 text-right"
+                    />
+                </SettingsField>
+            </SettingsSection>
+        </>
     )
 }

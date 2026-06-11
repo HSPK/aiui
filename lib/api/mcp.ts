@@ -51,16 +51,47 @@ export const mcpServers = {
         fetcher<McpServerDTO>(`/mcp/servers/${encodeURIComponent(id)}/check`, {
             method: "POST",
         }),
+    /** Per-row check hook. The mutation INSTANCE is shared but the
+     *  in-flight set is tracked locally so multiple rows can spin
+     *  simultaneously — checking row B mid-flight no longer clears row
+     *  A's spinner (previously `mutation.variables` was a scalar that
+     *  every concurrent call clobbered).
+     *
+     *  Callers should use `check.isPendingId(id)` instead of `check.isPending`
+     *  to drive per-row UI. */
     useCheck: (opts?: { onSuccess?: (server: McpServerDTO) => void; onError?: (err: Error) => void }) => {
         const qc = useQueryClient()
-        return useMutation({
+        const [pendingIds, setPendingIds] = React.useState<Set<string>>(() => new Set())
+        const mutation = useMutation({
             mutationFn: (id: string) => mcpServers.check(id),
+            onMutate: (id) => {
+                setPendingIds((prev) => {
+                    const next = new Set(prev)
+                    next.add(id)
+                    return next
+                })
+            },
+            onSettled: (_data, _err, id) => {
+                setPendingIds((prev) => {
+                    if (!prev.has(id)) return prev
+                    const next = new Set(prev)
+                    next.delete(id)
+                    return next
+                })
+            },
             onSuccess: (server) => {
                 qc.invalidateQueries({ queryKey: base.keys.all() })
                 opts?.onSuccess?.(server)
             },
             onError: (err: Error) => opts?.onError?.(err),
         })
+        return {
+            mutate: mutation.mutate,
+            mutateAsync: mutation.mutateAsync,
+            isPendingId: (id: string) => pendingIds.has(id),
+            anyPending: pendingIds.size > 0,
+            pendingCount: pendingIds.size,
+        }
     },
 
     // ---- check (SSE stream) ----

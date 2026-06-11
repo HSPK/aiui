@@ -9,7 +9,7 @@ import type { ModelDTO } from "@/lib/schemas/model";
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "sonner"
-import { Search, ArrowUpDown, Plus, Pencil, Trash2 } from "lucide-react"
+import { Search, ArrowUpDown, Plus, Pencil, RefreshCcw, Trash2, Loader2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
@@ -28,6 +28,7 @@ import { ModelsTable } from "@/components/providers/models-table"
 import { ProviderFormDialog } from "@/components/providers/provider-form-dialog"
 import { ModelFormDialog } from "@/components/providers/model-form-dialog"
 import { useAuth } from "@/context/auth-context"
+import { cn } from "@/lib/utils"
 
 export default function ProvidersPage() {
     const router = useRouter()
@@ -107,6 +108,53 @@ export default function ProvidersPage() {
         },
         onError: (e) => toast.error(e.message || "Delete failed"),
     })
+
+    // Per-row health probe with shared pending-set so multiple in-flight
+    // checks each animate their own spinner (R19 fix — single mutation
+    // instance's `variables` was getting overwritten by each click).
+    const checkProvider = providers.useCheckMany({
+        onSuccess: (id, res) => {
+            const p = providerList?.find((x) => x.id === id)
+            const label = p?.provider_name ?? "provider"
+            if (res.ok) toast.success(`${label}: healthy${res.latency_ms != null ? ` (${res.latency_ms}ms)` : ""}`)
+            else toast.error(`${label}: ${res.error ?? "down"}`)
+        },
+        onError: (id, e) => {
+            const p = providerList?.find((x) => x.id === id)
+            const label = p?.provider_name ?? "provider"
+            toast.error(`${label}: ${e.message || "check failed"}`)
+        },
+    })
+
+    // Bulk re-check sweep — sequential to avoid hammering the same
+    // upstream queue + Loom's writer with N parallel /check rounds.
+    const [bulkCheckPending, setBulkCheckPending] = React.useState(false)
+    const handleCheckAll = React.useCallback(async () => {
+        // Discovery-fallback probes burn upstream model-list calls
+        // every time, so the bulk button only re-probes providers
+        // with a configured health_check_url. Per-card check stays
+        // available for the discovery-fallback case.
+        const enabled = (providerList ?? []).filter((p) => p.enabled && !!p.health_check_url)
+        if (enabled.length === 0) {
+            toast.info("No providers with a configured health_check_url.")
+            return
+        }
+        setBulkCheckPending(true)
+        let ok = 0
+        let failed = 0
+        for (const p of enabled) {
+            try {
+                const res = await providers.check(p.id)
+                if (res.ok) ok += 1
+                else failed += 1
+            } catch {
+                failed += 1
+            }
+        }
+        setBulkCheckPending(false)
+        if (failed === 0) toast.success(`Checked ${ok} provider${ok === 1 ? "" : "s"} — all healthy.`)
+        else toast.error(`Checked ${ok + failed} providers — ${failed} failed.`)
+    }, [providerList])
 
     return (
         <div className="h-full flex flex-col p-4 overflow-y-hidden">
@@ -194,6 +242,21 @@ export default function ProvidersPage() {
                                 ? `${filteredProviders.length} providers`
                                 : `${filteredModels.length} models`}
                         </span>
+                        {activeTab === "providers" && (
+                            <Button
+                                size="sm"
+                                variant="secondary"
+                                className="h-8 text-xs gap-1.5"
+                                onClick={handleCheckAll}
+                                disabled={bulkCheckPending || (providerList ?? []).length === 0}
+                                title="Re-probe every provider that has a health_check_url"
+                            >
+                                {bulkCheckPending
+                                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    : <RefreshCcw className="h-3.5 w-3.5" />}
+                                Check all
+                            </Button>
+                        )}
                         <div className="shrink-0 pl-2 border-l border-border/50">
                             <RefreshButton
                                 onClick={() => reloadMutation.mutate()}
@@ -218,16 +281,33 @@ export default function ProvidersPage() {
                                 key={provider.id || provider.name}
                                 provider={provider}
                                 onClick={() => router.push(`/providers/${encodeURIComponent(provider.name)}`)}
-                                hoverActions={isAdmin ? (
+                                hoverActions={(
                                     <>
-                                        <Button variant="secondary" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); setProviderDialog({ open: true, mode: "edit", provider }) }} title="Edit">
-                                            <Pencil className="h-3.5 w-3.5" />
+                                        <Button
+                                            variant="secondary"
+                                            size="icon"
+                                            className="h-7 w-7"
+                                            onClick={(e) => { e.stopPropagation(); checkProvider.mutate(provider.id) }}
+                                            disabled={checkProvider.isPendingId(provider.id)}
+                                            title="Re-check health"
+                                        >
+                                            <RefreshCcw className={cn(
+                                                "h-3.5 w-3.5",
+                                                checkProvider.isPendingId(provider.id) && "animate-spin",
+                                            )} />
                                         </Button>
-                                        <Button variant="secondary" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={(e) => { e.stopPropagation(); setDeleteProvider(provider) }} title="Delete">
-                                            <Trash2 className="h-3.5 w-3.5" />
-                                        </Button>
+                                        {isAdmin && (
+                                            <>
+                                                <Button variant="secondary" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); setProviderDialog({ open: true, mode: "edit", provider }) }} title="Edit">
+                                                    <Pencil className="h-3.5 w-3.5" />
+                                                </Button>
+                                                <Button variant="secondary" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={(e) => { e.stopPropagation(); setDeleteProvider(provider) }} title="Delete">
+                                                    <Trash2 className="h-3.5 w-3.5" />
+                                                </Button>
+                                            </>
+                                        )}
                                     </>
-                                ) : null}
+                                )}
                             />
                         ))}
                         {!isLoadingProviders && filteredProviders.length === 0 && (
