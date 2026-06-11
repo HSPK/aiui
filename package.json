@@ -1,6 +1,6 @@
 {
   "name": "loom",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "description": "Self-hosted AI testing platform — try models and MCP servers, log every request, and front your apps through an OpenAI-compatible gateway.",
   "keywords": [
     "ai",

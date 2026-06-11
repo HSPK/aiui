@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import {
     Check,
     MessageSquare,
@@ -26,18 +27,29 @@ import { Skeleton } from "@/components/ui/skeleton"
  * shallow re-renders (typing in search box, scroll-driven pagination)
  * skip rows whose data hasn't changed. Callbacks must be stable refs
  * (useCallback in parent) for the memo to actually win.
+ *
+ * Navigation uses a real `<Link>` with an `href` so the browser handles
+ * the URL change natively — no programmatic router.push() that could be
+ * silently swallowed by a buggy Next.js soft-nav state. The `onPick`
+ * prop (mobile only) closes the sheet after click.
  */
 export const ConversationItem = React.memo(function ConversationItem({
     conv,
     isSelected,
-    onOpen,
+    href,
+    onPick,
     onDeleteRequest,
     onRename,
     compact = true,
 }: {
     conv: ConversationDTO
     isSelected: boolean
-    onOpen: (conv: ConversationDTO) => void
+    /** Already-computed URL for this row (sidebar owns formatting). */
+    href: string
+    /** Optional post-click side effect (e.g., close mobile sheet). The
+     *  navigation itself is handled by Link's href — this callback is
+     *  for chrome state only. */
+    onPick?: (conv: ConversationDTO) => void
     onDeleteRequest: (conv: ConversationDTO) => void
     onRename: (conv: ConversationDTO, newTitle: string) => void
     /** Desktop sidebar (`true`, default) uses tight padding + text-sm.
@@ -86,7 +98,7 @@ export const ConversationItem = React.memo(function ConversationItem({
         onDeleteRequest(conv)
     }
 
-    const handleRowClick = () => onOpen(conv)
+    const handleRowClick = () => onPick?.(conv)
 
     if (isEditing) {
         return (
@@ -120,10 +132,12 @@ export const ConversationItem = React.memo(function ConversationItem({
     }
 
     return (
-        <div
+        <Link
+            href={href}
+            prefetch={false}
             onClick={handleRowClick}
             className={cn(
-                "group/item relative flex items-center gap-2 rounded-md cursor-pointer transition-colors",
+                "group/item relative flex items-center gap-2 rounded-md cursor-pointer transition-colors no-underline",
                 compact ? "px-2 py-1.5 text-sm" : "px-3 h-11 text-base",
                 isSelected
                     ? "bg-secondary text-secondary-foreground"
@@ -134,7 +148,8 @@ export const ConversationItem = React.memo(function ConversationItem({
             <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
                 <DropdownMenuTrigger asChild>
                     <button
-                        onClick={(e) => e.stopPropagation()}
+                        type="button"
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation() }}
                         className={cn(
                             "shrink-0 rounded transition-opacity inline-flex items-center justify-center",
                             "hover:bg-black/10 dark:hover:bg-white/10",
@@ -163,7 +178,7 @@ export const ConversationItem = React.memo(function ConversationItem({
                     </DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>
-        </div>
+        </Link>
     )
 })
 

@@ -163,19 +163,12 @@ export function ConversationSidebar() {
 
     const groups = React.useMemo(() => groupByUpdatedAt(convList), [convList])
 
-    const handleOpen = React.useCallback(
-        (conv: ConversationDTO) => {
-            if (activeId === conv.id) return
-            router.push(`/playground/chat?c=${encodeURIComponent(conv.id)}`)
-        },
-        [router, activeId]
-    )
-
+    // handleOpen / handleNewChat are kept for programmatic-nav callers
+    // (e.g., post-delete redirect, mobile sheet close). Conversation
+    // rows themselves now use Link / href (see ConversationItem) so the
+    // browser handles the URL change natively — robust against Next.js
+    // soft-nav stalls.
     const handleNewChat = React.useCallback(() => {
-        // `?fresh=<ts>` forces a new draft even when the user is
-        // already on a draft URL — Next.js otherwise dedupes
-        // identical-pathname pushes. The chat page strips the token
-        // and replaces with `?c=<uuid>` once the mint commits.
         router.push(`/playground/chat?fresh=${Date.now()}`)
     }, [router])
 
@@ -189,19 +182,11 @@ export function ConversationSidebar() {
         setPendingDelete(conv)
     }, [])
 
-    // Desktop list never closes the sheet; mobile passes a closer.
-    // Stable identity per shell instance so memoised rows skip
-    // re-renders when only sibling state (search/pagination) changes.
-    const handleOpenDesktop = React.useCallback(
-        (conv: ConversationDTO) => handleOpen(conv),
-        [handleOpen],
-    )
-    const handleOpenMobile = React.useCallback(
-        (conv: ConversationDTO) => {
-            handleOpen(conv)
-            setMobileSheetOpen(false)
-        },
-        [handleOpen, setMobileSheetOpen],
+    // Mobile sheet close hook — fires after the Link's native nav so
+    // the sheet doesn't unmount mid-click and orphan the click event.
+    const handlePickedMobile = React.useCallback(
+        () => setMobileSheetOpen(false),
+        [setMobileSheetOpen],
     )
 
     const trimmedSearch = debouncedSearch
@@ -214,7 +199,9 @@ export function ConversationSidebar() {
     // closure-captured component inside the parent would mount a new
     // identity on every parent render, throwing away its subtree state.
     function renderBody({ onItemPick, compact }: { onItemPick?: () => void; compact: boolean }) {
-        const onOpenForRows = onItemPick ? handleOpenMobile : handleOpenDesktop
+        // Mobile sheet passes a closer via `onItemPick`; desktop just
+        // lets the Link's native nav handle the click.
+        const onPick = onItemPick ? handlePickedMobile : undefined
         return (
         <>
             <div className={cn(
@@ -333,7 +320,8 @@ export function ConversationSidebar() {
                                             key={conv.id}
                                             conv={conv}
                                             isSelected={activeId === conv.id}
-                                            onOpen={onOpenForRows}
+                                            href={`/playground/chat?c=${encodeURIComponent(conv.id)}`}
+                                            onPick={onPick}
                                             onDeleteRequest={handleDeleteRequest}
                                             onRename={handleRename}
                                             compact={compact}
