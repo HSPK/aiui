@@ -36,6 +36,7 @@ export const ConversationItem = React.memo(function ConversationItem({
     isSelected,
     href,
     onPick,
+    onHoverPrefetch,
     onDeleteRequest,
     onRename,
     compact = true,
@@ -46,6 +47,11 @@ export const ConversationItem = React.memo(function ConversationItem({
     href: string
     /** Optional post-click side effect (e.g., close mobile sheet). */
     onPick?: (conv: ConversationDTO) => void
+    /** Optional hover prefetch hook — fires once per hover-in so the
+     *  messages cache is warm before the click. Owns the "prefetched
+     *  this id once already" tracking in the parent to avoid duplicate
+     *  fetches when the user mouses in/out repeatedly. */
+    onHoverPrefetch?: (conv: ConversationDTO) => void
     onDeleteRequest: (conv: ConversationDTO) => void
     onRename: (conv: ConversationDTO, newTitle: string) => void
     /** Desktop sidebar (`true`, default) uses tight padding + text-sm.
@@ -131,6 +137,8 @@ export const ConversationItem = React.memo(function ConversationItem({
         <Link
             href={href}
             prefetch={false}
+            onMouseEnter={() => onHoverPrefetch?.(conv)}
+            onFocus={() => onHoverPrefetch?.(conv)}
             onClick={(e) => {
                 if (isSelected) {
                     e.preventDefault()

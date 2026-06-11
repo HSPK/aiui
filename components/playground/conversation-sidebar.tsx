@@ -16,6 +16,8 @@ import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
 import { conversations } from "@/lib/api/conversations"
+import { ApiError } from "@/lib/api/client"
+import { transformMessage } from "@/components/playground/hooks/use-paginated-messages"
 import type { ConversationDTO } from "@/lib/schemas/conversation"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
 import { useModalityStore } from "@/lib/stores/modality-store"
@@ -207,6 +209,37 @@ export function ConversationSidebar() {
         [setMobileSheetOpen],
     )
 
+    // Hover prefetch — warm the messages cache on mouse-enter so the
+    // click feels instant (no fetch round-trip while the user waits
+    // for the new chat surface to populate). React Query dedupes the
+    // request to the EXACT same key the chat surface will hit, so on
+    // click usePaginatedMessages reads cached data + skips the fetch
+    // entirely. We track which ids we've already prefetched in a
+    // module-lifetime Set to avoid duplicate work for users who hover
+    // the same row repeatedly.
+    const prefetchedRef = React.useRef<Set<string>>(new Set())
+    const handleHoverPrefetch = React.useCallback((conv: ConversationDTO) => {
+        if (prefetchedRef.current.has(conv.id)) return
+        prefetchedRef.current.add(conv.id)
+        void queryClient.prefetchQuery({
+            queryKey: conversations.messagesCacheKey(conv.id, 20),
+            queryFn: async () => {
+                try {
+                    const res = await conversations.listMessages(conv.id, {
+                        page: 1,
+                        page_size: 20,
+                        sort: "-created_at",
+                    })
+                    return res.items.slice().reverse().map(transformMessage)
+                } catch (e) {
+                    if (e instanceof ApiError && e.status === 404) return []
+                    throw e
+                }
+            },
+            staleTime: 5 * 60 * 1000,
+        })
+    }, [queryClient])
+
     const trimmedSearch = debouncedSearch
     const showEmpty = !isLoading && convList.length === 0
 
@@ -340,6 +373,7 @@ export function ConversationSidebar() {
                                             isSelected={activeId === conv.id}
                                             href={`/playground/chat?c=${encodeURIComponent(conv.id)}`}
                                             onPick={onPick}
+                                            onHoverPrefetch={handleHoverPrefetch}
                                             onDeleteRequest={handleDeleteRequest}
                                             onRename={handleRename}
                                             compact={compact}

@@ -246,11 +246,13 @@ export function ChatFlow({ conversationId }: { conversationId: string }) {
                 />
             </div>
 
-            <LogDetails
-                logId={selectedGenerationId}
-                open={!!selectedGenerationId}
-                onOpenChange={(open) => !open && setSelectedGenerationId(null)}
-            />
+            {selectedGenerationId && (
+                <LogDetails
+                    logId={selectedGenerationId}
+                    open={true}
+                    onOpenChange={(open) => !open && setSelectedGenerationId(null)}
+                />
+            )}
         </div>
     )
 }
