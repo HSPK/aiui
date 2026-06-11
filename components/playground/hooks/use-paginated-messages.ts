@@ -80,6 +80,17 @@ export function usePaginatedMessages({
     const pageRef = React.useRef(2)
     const hydratedRef = React.useRef<string | null>(null)
 
+    // Snapshot whether the messages cache already has data for this
+    // conversation at MOUNT time. If yes, skip the page-1 fetch entirely
+    // — the chat page pre-seeds an empty [] for client-minted draft ids
+    // so that a brand-new chat doesn't fire a /messages?page=1 → 404
+    // round-trip. Computed once per mount (ChatFlow re-keys on convId
+    // change so each new convo gets a fresh snapshot).
+    const hasCachedInitial = React.useMemo(
+        () => readCachedMessages(queryClient, conversationId, pageSize) !== null,
+        [queryClient, conversationId, pageSize],
+    )
+
     const query = useQuery({
         queryKey: conversationId
             ? conversations.messagesCacheKey(conversationId, pageSize)
@@ -96,11 +107,19 @@ export function usePaginatedMessages({
             } catch (e) {
                 // 404 = no server-side conversation row yet (FE generates the
                 // id up-front; the server creates the row on first message).
+                // Still caught as a defence-in-depth: the `enabled` gate
+                // below should already skip the fetch for client-minted ids.
                 if (e instanceof ApiError && e.status === 404) return []
                 throw e
             }
         },
-        enabled: !!conversationId,
+        // Skip the fetch entirely when the cache is already populated for
+        // this id (set by the chat page's auto-mint pre-seed). Without
+        // this, useQuery's default `refetchOnMount: true` would still
+        // hit the network even though `data` is already available —
+        // surfacing as the harmless-but-noisy 404 the user observed in
+        // their Network panel.
+        enabled: !!conversationId && !hasCachedInitial,
         staleTime: 5 * 60 * 1000,
         gcTime: 10 * 60 * 1000,
     })
