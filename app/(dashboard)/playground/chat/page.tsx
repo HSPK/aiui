@@ -17,49 +17,36 @@ export default function ChatPlaygroundPage() {
     const searchParams = useSearchParams()
     const queryClient = useQueryClient()
     const urlConvId = searchParams?.get("c") ?? null
-    // "New chat" pushes /playground/chat?n=<ts> to force a fresh mint
-    // when the user is already on a draft (bare /playground/chat would
-    // be a no-op since Next.js dedupes identical navigations). The
-    // newSessionToken is a one-shot signal the auto-mint reacts to.
-    const newSessionToken = searchParams?.get("n") ?? null
+    // `?fresh=<ts>` is the "force a new draft" signal — sidebar pushes
+    // this for New chat / delete-active so the page knows to mint EVEN
+    // when the user was already on a draft URL (Next.js otherwise
+    // dedupes identical-pathname pushes). The token is consumed by the
+    // router.replace below, so it never sticks around in the URL the
+    // user sees.
+    const freshToken = searchParams?.get("fresh")
 
-    // Route-driven id: when the user lands here with no ?c= (fresh
-    // visit OR sidebar "New chat" click), mint a fresh id and
-    // router.replace to put it in the URL.
-    //
-    // Pre-seed the messages cache for the new id so usePaginatedMessages
-    // sees `data = []` immediately on first render. Without this, the
-    // query fires a /messages?page=1 round-trip that 404s (the server
-    // creates the row on first send), and the chat surface shows a
-    // "Loading conversation…" spinner for the 100-500ms RTT.
-    //
-    // Guard against re-running on stale urlConvId snapshots: only mint
-    // when both (a) URL has no ?c=, AND (b) we haven't already minted
-    // for the current newSessionToken. Without (b), useSearchParams's
-    // transient null state during a sidebar-initiated navigation could
-    // cause this effect to fire a SECOND mint that overwrites the
-    // user's destination URL — surfacing as "clicking sidebar does
-    // nothing" because the URL gets immediately replaced back.
-    const lastMintedTokenRef = React.useRef<string | null>(null)
+    // Auto-mint a fresh client-only id whenever the URL has no `?c=`.
+    // Deferred via setTimeout so a transient empty-search-params reading
+    // during a router.push() transition cannot race the user's intended
+    // destination — the cleanup function cancels the pending mint if
+    // `urlConvId` becomes truthy before the timer fires. 50 ms is well
+    // below the ~100 ms perception threshold and short enough that the
+    // new-draft flow doesn't feel laggy.
     React.useEffect(() => {
-        if (urlConvId) {
-            // URL has a real id — record the session so we don't mint
-            // again until the user explicitly clears via New chat.
-            lastMintedTokenRef.current = newSessionToken ?? "__initial__"
-            return
-        }
-        // Only mint when we see a NEW session token (or first ever).
-        const currentToken = newSessionToken ?? "__initial__"
-        if (lastMintedTokenRef.current === currentToken) return
-        lastMintedTokenRef.current = currentToken
-
-        const fresh = crypto.randomUUID()
-        queryClient.setQueryData<Message[]>(
-            conversations.messagesCacheKey(fresh, INITIAL_PAGE_SIZE),
-            [],
-        )
-        router.replace(`/playground/chat?c=${fresh}`)
-    }, [urlConvId, newSessionToken, router, queryClient])
+        if (urlConvId) return
+        const timer = setTimeout(() => {
+            const fresh = crypto.randomUUID()
+            // Pre-seed the messages cache so usePaginatedMessages skips
+            // the page-1 fetch — without this the brand-new conv id
+            // would 404 on the freshly-spawned XHR.
+            queryClient.setQueryData<Message[]>(
+                conversations.messagesCacheKey(fresh, INITIAL_PAGE_SIZE),
+                [],
+            )
+            router.replace(`/playground/chat?c=${fresh}`)
+        }, 50)
+        return () => clearTimeout(timer)
+    }, [urlConvId, freshToken, router, queryClient])
 
     return (
         <div className="h-full flex overflow-hidden bg-background">

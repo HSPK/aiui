@@ -82,7 +82,18 @@ function attachmentToPart(a: Attachment): ContentPart {
 }
 
 // ---- Component ----
-
+//
+// ChatInput intentionally relies on React.memo's DEFAULT shallow compare
+// rather than a custom comparator. An earlier custom-comparator that
+// ignored callback props caused a HIGH-severity bug: when the parent
+// (ChatFlow) re-created `onSubmit` / `onStop` after a settings change
+// (e.g., system prompt edit, model param update), the memo skipped the
+// re-render, the body never ran, and the inside-the-body ref-update
+// pattern (`onSubmitRef.current = onSubmit`) never executed — so the
+// next Send invoked a STALE closure that dropped the user's latest
+// settings. Default shallow compare correctly forces a re-render when
+// any prop changes; if parent useCallbacks are stable (the common
+// case), memo still skips. (R21 audit finding.)
 export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProps>(function ChatInput({
     conversationId,
     onSubmit,
@@ -99,13 +110,6 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     const isComposingRef = React.useRef(false)
 
     const sendOnEnter = useDeviceSettingsStore((s) => s.sendOnEnter)
-    const sendOnEnterRef = React.useRef(sendOnEnter)
-    sendOnEnterRef.current = sendOnEnter
-
-    const onSubmitRef = React.useRef(onSubmit)
-    onSubmitRef.current = onSubmit
-    const onStopRef = React.useRef(onStop)
-    onStopRef.current = onStop
 
     React.useImperativeHandle(ref, () => ({
         focus: () => textareaRef.current?.focus(),
@@ -185,10 +189,10 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
         if (isLoading || blockedByFailedTail) return
         const content = buildContent()
         if (!content) return
-        onSubmitRef.current(content)
+        onSubmit(content)
         setText("")
         setAttachments([])
-    }, [buildContent, isLoading, blockedByFailedTail])
+    }, [buildContent, isLoading, blockedByFailedTail, onSubmit])
 
     // ---- events ----
 
@@ -201,7 +205,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
         if (composing) return
 
         const cmdEnter = e.metaKey || e.ctrlKey
-        if (sendOnEnterRef.current) {
+        if (sendOnEnter) {
             if (!e.shiftKey) {
                 e.preventDefault()
                 handleSubmit()
@@ -210,7 +214,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
             e.preventDefault()
             handleSubmit()
         }
-    }, [handleSubmit])
+    }, [handleSubmit, sendOnEnter])
 
     const handlePaste = React.useCallback(async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
         const items = e.clipboardData?.items
@@ -344,7 +348,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
                                 size="icon"
                                 onClick={(e) => {
                                     e.preventDefault()
-                                    onStopRef.current()
+                                    onStop()
                                 }}
                                 className="h-10 w-10 md:h-8 md:w-8 rounded-full ml-1 bg-secondary text-secondary-foreground hover:bg-secondary/80"
                             >
@@ -365,9 +369,14 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
         </form>
     )
 }), (prev, next) => (
+    // Default-equivalent shallow compare. Listed explicitly so any future
+    // prop additions are intentional (and to call out the historical bug
+    // — see the component-header comment).
     prev.conversationId === next.conversationId &&
     prev.isLoading === next.isLoading &&
-    !!prev.blockedByFailedTail === !!next.blockedByFailedTail
+    prev.blockedByFailedTail === next.blockedByFailedTail &&
+    prev.onSubmit === next.onSubmit &&
+    prev.onStop === next.onStop
 ))
 
 // ---- attachment chip ----

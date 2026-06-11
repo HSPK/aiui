@@ -356,9 +356,17 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
                 while (true) {
                     if (abortController.signal.aborted) break;
                     if (hops >= MAX_TOOL_HOPS) {
-                        emitEvent("loom_tool_error", {
-                            message: `Max tool hops (${MAX_TOOL_HOPS}) reached without final answer`,
-                        });
+                        // Treat hop-cap as a real failure: mark the
+                        // assistant row with `error:` so it persists
+                        // across reload and the FE renders the retry
+                        // card (R21 fix — previously only emitted a
+                        // disappearing toast, leaving the row in a
+                        // half-finished state with no retry surface
+                        // and silently replaying the dangling tool
+                        // chain on subsequent turns).
+                        lastError = `Reached maximum tool execution hops (${MAX_TOOL_HOPS}) without a final answer.`;
+                        upsertAssistant();
+                        emitEvent("loom_error", { message: lastError });
                         break;
                     }
 
@@ -457,9 +465,17 @@ export async function sendPlaygroundChat(user: SessionUser, body: PlaygroundChat
                         accumParts.push({ type: "text", text: roundContent });
                     }
                     if (roundReasoning) {
-                        // Reasoning is overwritten with the latest round
-                        // (final round answer matters most).
-                        lastReasoning = roundReasoning;
+                        // Accumulate across rounds with a blank-line
+                        // separator (mirrors content). Reasoning models
+                        // doing a tool loop typically emit "I should
+                        // call X to figure out Y" each hop — discarding
+                        // earlier rounds makes the persisted reasoning
+                        // incomprehensible relative to the tool calls
+                        // it accompanied, and produced visibly different
+                        // output between streaming and reload (R21 fix).
+                        lastReasoning = lastReasoning
+                            ? `${lastReasoning}\n\n${roundReasoning}`
+                            : roundReasoning;
                     }
 
                     // Mid-stream upstream failure (HTTP 200 + terminal

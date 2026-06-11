@@ -124,7 +124,10 @@ export function ConversationSidebar() {
         onSuccess: (_, convId) => {
             removeSettings(convId)
             queryClient.removeQueries({ queryKey: conversations.keys.one(convId) })
-            if (activeId === convId) router.replace("/playground/chat")
+            // Use ?fresh= to force a new draft mint even though we're
+            // replacing into the bare /playground/chat path (the page's
+            // auto-mint effect reacts to the freshToken change).
+            if (activeId === convId) router.replace(`/playground/chat?fresh=${Date.now()}`)
             toast.success("Conversation deleted")
         },
         onError: () => toast.error("Failed to delete conversation"),
@@ -163,27 +166,18 @@ export function ConversationSidebar() {
     const handleOpen = React.useCallback(
         (conv: ConversationDTO) => {
             if (activeId === conv.id) return
-            const href = `/playground/chat?c=${encodeURIComponent(conv.id)}`
-            if (typeof window !== "undefined") {
-                console.debug("[loom] sidebar: handleOpen", { activeId, target: conv.id, href })
-            }
-            router.push(href)
+            router.push(`/playground/chat?c=${encodeURIComponent(conv.id)}`)
         },
         [router, activeId]
     )
 
     const handleNewChat = React.useCallback(() => {
-        // Use ?n=<timestamp> to force a fresh mint even when already
-        // on a draft. The chat page's auto-mint effect treats each
-        // distinct `n` value as a new session signal — bare
-        // /playground/chat would be a no-op when activeId is null
-        // (Next.js dedupes identical-URL navigations).
-        const href = `/playground/chat?n=${Date.now()}`
-        if (typeof window !== "undefined") {
-            console.debug("[loom] sidebar: handleNewChat", { activeId, href })
-        }
-        router.push(href)
-    }, [router, activeId])
+        // `?fresh=<ts>` forces a new draft even when the user is
+        // already on a draft URL — Next.js otherwise dedupes
+        // identical-pathname pushes. The chat page strips the token
+        // and replaces with `?c=<uuid>` once the mint commits.
+        router.push(`/playground/chat?fresh=${Date.now()}`)
+    }, [router])
 
     const handleRename = React.useCallback(
         (conv: ConversationDTO, newTitle: string) =>
@@ -388,7 +382,7 @@ export function ConversationSidebar() {
                                 <Button
                                     variant="ghost"
                                     size="icon"
-                                    onClick={() => router.push("/playground/chat")}
+                                    onClick={handleNewChat}
                                     className="h-7 w-7 mt-0.5 text-muted-foreground hover:text-foreground"
                                 >
                                     <SquarePen className="h-3.5 w-3.5" />
