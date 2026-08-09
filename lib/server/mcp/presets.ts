@@ -72,9 +72,11 @@ export const MCP_PRESETS: McpPreset[] = [
         transport: "stdio",
         category: "official",
         config: {
-            // Pinned: mcp SDK 2.0 renamed McpError → MCPError and this
-            // package's dependency range is unbounded, so an unpinned
-            // uvx run dies with ImportError before the handshake.
+            // Pinned: mcp SDK 2.0 is a breaking release (McpError renamed to
+            // MCPError, Server.list_tools removed, mcp.server.fastmcp moved)
+            // and this package's dependency range is unbounded, so an
+            // unpinned uvx run dies before the handshake. Probed all 11 uvx
+            // presets against the live registry: six need this, five don't.
             command: "uvx",
             args: ["--with", "mcp<2", "mcp-server-time", "--local-timezone=UTC"],
             env: {},
@@ -135,11 +137,12 @@ export const MCP_PRESETS: McpPreset[] = [
         transport: "stdio",
         category: "dev",
         config: {
+            // Pinned for the same reason as `time` — see above.
             command: "uvx",
-            args: ["mcp-server-git", "--repository", "<REPO_PATH>"],
+            args: ["--with", "mcp<2", "mcp-server-git", "--repository", "<REPO_PATH>"],
             env: {},
         },
-        slots: [{ path: "args[2]", label: "Git repository root path", kind: "path" }],
+        slots: [{ path: "args[4]", label: "Git repository root path", kind: "path" }],
         homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/git",
     },
 
@@ -151,11 +154,12 @@ export const MCP_PRESETS: McpPreset[] = [
         transport: "stdio",
         category: "data",
         config: {
+            // Pinned for the same reason as `time` — see above.
             command: "uvx",
-            args: ["mcp-server-sqlite", "--db-path", "<DB_PATH>"],
+            args: ["--with", "mcp<2", "mcp-server-sqlite", "--db-path", "<DB_PATH>"],
             env: {},
         },
-        slots: [{ path: "args[2]", label: "SQLite database file path", kind: "path" }],
+        slots: [{ path: "args[4]", label: "SQLite database file path", kind: "path" }],
         homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/sqlite",
     },
 
@@ -166,7 +170,8 @@ export const MCP_PRESETS: McpPreset[] = [
         description: "Search arXiv + Google Scholar in one server. No API key needed.",
         transport: "stdio",
         category: "academic",
-        config: { command: "uvx", args: ["mcp-scholarly"], env: {} },
+        // Pinned for the same reason as `time` — see above.
+        config: { command: "uvx", args: ["--with", "mcp<2", "mcp-scholarly"], env: {} },
         slots: [],
         homepage: "https://pypi.org/project/mcp-scholarly/",
     },

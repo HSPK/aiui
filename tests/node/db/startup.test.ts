@@ -225,6 +225,9 @@ describe("repairMcpConfigsBrokenByUpstream", () => {
     it.each([
         ["mcp-server-time", ["mcp-server-time", "--local-timezone=UTC"]],
         ["mcp-server-fetch", ["mcp-server-fetch"]],
+        ["mcp-server-git", ["mcp-server-git", "--repository", "/srv/repo"]],
+        ["mcp-server-sqlite", ["mcp-server-sqlite", "--db-path", "/srv/app.db"]],
+        ["mcp-scholarly", ["mcp-scholarly"]],
         ["pubmedmcp", ["pubmedmcp"]],
     ])("pins mcp<2 for the unpinned %s row that upstream broke", (_pkg, args) => {
         const server = seedMcpServer({ config: { command: "uvx", args, env: {} } });
@@ -287,7 +290,7 @@ describe("repairMcpConfigsBrokenByUpstream", () => {
     });
 
     it.each([
-        ["a package upstream did not break", { command: "uvx", args: ["mcp-server-git", "--repository", "/r"] }],
+        ["a package upstream did not break", { command: "uvx", args: ["mcp-pandoc"] }],
         ["a different launcher", { command: "npx", args: ["mcp-server-time"] }],
         ["an empty arg list", { command: "uvx", args: [] }],
         ["non-string args", { command: "uvx", args: [{ nested: true }] }],
@@ -313,12 +316,12 @@ describe("repairMcpConfigsBrokenByUpstream", () => {
 
     it("repairs only the affected rows when several servers coexist", () => {
         const broken = seedMcpServer({ config: { command: "uvx", args: ["mcp-server-fetch"] } });
-        const fine = seedMcpServer({ config: { command: "uvx", args: ["mcp-scholarly"] } });
+        const fine = seedMcpServer({ config: { command: "uvx", args: ["mcp-pandoc"] } });
 
         repairMcpConfigsBrokenByUpstream(db);
 
         expect(argsOf(broken.id)).toEqual(["--with", "mcp<2", "mcp-server-fetch"]);
-        expect(argsOf(fine.id)).toEqual(["mcp-scholarly"]);
+        expect(argsOf(fine.id)).toEqual(["mcp-pandoc"]);
     });
 
     it("survives a failing database instead of blocking boot", () => {
@@ -342,7 +345,7 @@ describe("repairMcpConfigsBrokenByUpstream", () => {
 
     it("says nothing when there is nothing to repair", () => {
         const info = vi.spyOn(console, "info").mockImplementation(() => {});
-        seedMcpServer({ config: { command: "uvx", args: ["mcp-scholarly"] } });
+        seedMcpServer({ config: { command: "uvx", args: ["mcp-pandoc"] } });
 
         repairMcpConfigsBrokenByUpstream(db);
 

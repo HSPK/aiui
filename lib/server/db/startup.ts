@@ -133,11 +133,12 @@ export function refreshQueryPlannerStats(db: typeof Db): void {
  *
  * Presets are templates: their config is copied into `mcp_servers` at
  * creation time and never looked at again. So when the `mcp` Python SDK
- * shipped 2.0 — renaming `McpError` to `MCPError` and moving
- * `mcp.server.fastmcp` — pinning `mcp<2` in the catalogue only helped
- * servers created *after* the fix. Anyone who had already added `time`,
- * `fetch` or `pubmed` kept a row that crashes with `ImportError` before the
- * MCP handshake, and the surfaced error says nothing about what to do.
+ * shipped 2.0 — renaming `McpError` to `MCPError`, dropping
+ * `Server.list_tools` and moving `mcp.server.fastmcp` — pinning `mcp<2`
+ * in the catalogue only helped
+ * servers created *after* the fix. Anyone who had already added one of the
+ * affected presets kept a row that crashes before the MCP handshake, with a
+ * surfaced error that says nothing about what to do.
  *
  * The usual objection to rewriting user-owned config doesn't apply here:
  * these invocations cannot start at all, under any circumstances, so there
@@ -162,6 +163,9 @@ const MCP_SDK_PIN = ["--with", "mcp<2"];
 const PACKAGES_BROKEN_BY_MCP_SDK_2 = new Set([
     "mcp-server-time",
     "mcp-server-fetch",
+    "mcp-server-git",
+    "mcp-server-sqlite",
+    "mcp-scholarly",
     "pubmedmcp",
 ]);
 
