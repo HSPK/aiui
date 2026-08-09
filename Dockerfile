@@ -53,8 +53,10 @@ COPY . .
 # time, so a private in-memory database per worker removes the contention.
 ENV LOOM_DB_PATH=:memory:
 
-RUN bun run build \
-    && node scripts/prepack-trim.mjs
+# NOTE: deliberately does NOT run `scripts/prepack-trim.mjs`. That script is
+# the npm-pack step and strips `.next/standalone`, which is precisely what this
+# image ships. The two distribution paths trim different things.
+RUN bun run build
 
 # --------------------------------------------------------------------------
 # prod-deps — the same lockfile resolved without devDependencies
@@ -65,34 +67,52 @@ COPY package.json bun.lock ./
 # which belongs in a production install. Drop them; the runtime stage copies
 # the pristine package.json back in.
 #
-# The final `rm -rf` clears the musl platform variants of the SWC and sharp
-# binaries (~140 MB): bun materialises every optional variant, and this image
-# is glibc, so they can never be loaded.
+# The final `rm -rf` drops two classes of dead weight:
+#   - musl variants of the SWC and sharp binaries (~140 MB). Bun materialises
+#     every optional platform variant, and this image is glibc.
+#   - playwright-core (~14 MB). `--production` prunes devDependencies but not
+#     their *peer* dependencies, and @axe-core/playwright declares
+#     playwright-core as a peer — so a browser automation stack shipped in the
+#     server image.
 RUN node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('package.json','utf8'));for(const s of ['prepare','prepack','prepublishOnly'])delete p.scripts[s];fs.writeFileSync('package.json',JSON.stringify(p,null,2))" \
     && bun install --frozen-lockfile --production \
     && rm -rf node_modules/@next/swc-*-musl \
               node_modules/@img/sharp-linuxmusl-* \
-              node_modules/@img/sharp-libvips-linuxmusl-*
+              node_modules/@img/sharp-libvips-linuxmusl-* \
+              node_modules/playwright-core \
+              node_modules/@playwright
 
 # --------------------------------------------------------------------------
 # runtime — no compilers, no devDependencies, non-root
 # --------------------------------------------------------------------------
 FROM node:${NODE_VERSION}-bookworm-slim AS runtime
 
+# uv/uvx come from the official image rather than a curl|sh install: it is a
+# pinned, signed artifact and adds no package manager state to this layer.
+COPY --from=ghcr.io/astral-sh/uv:0.9.29 /uv /uvx /usr/local/bin/
+
 # ca-certificates: outbound TLS to upstream providers.
-# tini: PID 1 that reaps the `next start` child and forwards signals.
+# tini: PID 1 that reaps child processes and forwards signals — this matters
+#   more than usual here, because every stdio MCP server is a child process.
+# python3 / git: stdio MCP servers are launched as `uvx <server>` (11 of the
+#   built-in presets) or `npx <server>` (10 more). uvx needs a Python to run
+#   the tool, and the git MCP server shells out to git. npx ships with node.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates tini \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates tini git python3 python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
-COPY --from=build     --chown=node:node /app/.next        ./.next
-COPY --from=build     --chown=node:node /app/bin/loom.mjs ./bin/loom.mjs
-COPY --from=build     --chown=node:node /app/drizzle      ./drizzle
-COPY --from=build     --chown=node:node /app/public       ./public
-COPY --chown=node:node package.json LICENSE README.md ./
+# Next's standalone output: server.js plus only the dependencies the server
+# actually reaches. Static assets and public/ are not traced, so they are
+# copied separately.
+COPY --from=build --chown=node:node /app/.next/standalone ./
+COPY --from=build --chown=node:node /app/.next/static     ./.next/static
+COPY --from=build --chown=node:node /app/public           ./public
+COPY --from=build --chown=node:node /app/drizzle          ./drizzle
+# The CLI bundle stays for `docker run <image> init --print` and friends.
+COPY --from=build --chown=node:node /app/bin/loom.mjs     ./bin/loom.mjs
 COPY --chown=node:node docker/entrypoint.sh /usr/local/bin/loom-entrypoint
 
 RUN chmod +x /usr/local/bin/loom-entrypoint \
@@ -103,7 +123,13 @@ ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     LOOM_DB_PATH=/data/loom.db \
     LOOM_SERVER_HOSTNAME=0.0.0.0 \
-    LOOM_SERVER_PORT=3000
+    LOOM_SERVER_PORT=3000 \
+    # Set explicitly: uvx and npx both need a writable HOME for their caches,
+    # and Docker does not always derive one from USER. Mount a volume here to
+    # keep downloaded MCP servers across container recreation.
+    HOME=/home/node \
+    UV_CACHE_DIR=/home/node/.cache/uv \
+    NPM_CONFIG_CACHE=/home/node/.npm
 
 USER node
 EXPOSE 3000

@@ -130,7 +130,19 @@ fi
 case "$1" in
     start|dev)
         prepare_config
-        exec node "${APP_DIR}/bin/loom.mjs" "$@"
+        # The image ships Next's standalone build, which is a self-contained
+        # `server.js` rather than the full `next` CLI — so `loom start` has no
+        # binary to spawn here. Next's server reads PORT/HOSTNAME, so map the
+        # LOOM_* names onto them.
+        #
+        # Config still applies: lib/server/config.ts runs the same preflight
+        # during `ensureInit`, so a mounted loom.config.yaml is honoured. The
+        # one exception is `database.path`, which is read at module load before
+        # that runs — the image sets LOOM_DB_PATH for exactly this reason.
+        export PORT="${LOOM_SERVER_PORT:-3000}"
+        export HOSTNAME="${LOOM_SERVER_HOSTNAME:-0.0.0.0}"
+        shift
+        exec node "${APP_DIR}/server.js" "$@"
         ;;
     init|update)
         exec node "${APP_DIR}/bin/loom.mjs" "$@"

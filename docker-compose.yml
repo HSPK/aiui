@@ -45,6 +45,9 @@ services:
       # SQLite database + generated config. This is your entire installation:
       # back it up and you've backed up every conversation, log, and key.
       - loom-data:/data
+      # Package cache for stdio MCP servers (uvx / npx download on first run).
+      # Optional — without it every container recreate re-downloads them.
+      - loom-cache:/home/node/.cache
       # Manage providers declaratively instead of through the UI:
       # - ./loom.config.yaml:/app/loom.config.yaml:ro
     healthcheck:
@@ -61,3 +64,4 @@ services:
 
 volumes:
   loom-data:
+  loom-cache:
