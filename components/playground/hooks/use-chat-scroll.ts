@@ -21,7 +21,16 @@ export function useChatScroll({
     const currentScrollRef = React.useRef(0)
     const lastMessageIdRef = React.useRef<string | null>(null)
     const hasScrolledToBottomRef = React.useRef(false)
-    const shouldAutoScrollRef = React.useRef(true)
+    // Default to "should auto-scroll" only when there's no saved position
+    // to restore. Otherwise the "smart auto-scroll" effect below always
+    // runs once on mount too (same `[messages]` deps as the
+    // `lastMessageIdRef` initializer, which runs first and sets the ref
+    // to the last message's id in the same pass) — `isNewMessage` is then
+    // false on that very first run, so it falls into the `else if
+    // (shouldAutoScrollRef.current)` branch, which unconditionally snaps
+    // `scrollTop` back to `scrollHeight`, silently clobbering the
+    // just-restored `savedScrollPosition`.
+    const shouldAutoScrollRef = React.useRef(typeof savedScrollPosition !== 'number')
 
     const [showScrollBottom, setShowScrollBottom] = React.useState(false)
 

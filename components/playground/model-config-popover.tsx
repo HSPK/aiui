@@ -298,29 +298,33 @@ export const ModelConfigPopover = React.memo(function ModelConfigPopover({
         key: K,
         defaultValue: ModelConfig[K]
     ) => {
-        setLocalConfig(prev => {
-            const newConfig = { ...prev }
-            if (prev[key] === undefined) {
-                newConfig[key] = defaultValue
-            } else {
-                delete newConfig[key]
-            }
-            onConfigChange(modelId, newConfig)
-            return newConfig
-        })
-    }, [modelId, onConfigChange])
+        // Mirror `handleReset` below: compute the next config, set state,
+        // THEN notify the parent — never call `onConfigChange` from inside
+        // the `setLocalConfig` updater. Doing so used to trigger React's
+        // "Cannot update a component while rendering a different
+        // component" warning, since the updater runs synchronously during
+        // this component's own commit of `localConfig`, and `onConfigChange`
+        // (a `defineResource`/store setter owned by a parent) would then be
+        // invoked mid-render for that other component.
+        const newConfig = { ...localConfig }
+        if (localConfig[key] === undefined) {
+            newConfig[key] = defaultValue
+        } else {
+            delete newConfig[key]
+        }
+        setLocalConfig(newConfig)
+        onConfigChange(modelId, newConfig)
+    }, [modelId, onConfigChange, localConfig])
 
     // Update a parameter value
     const updateParam = React.useCallback(<K extends keyof ModelConfig>(
         key: K,
         value: ModelConfig[K]
     ) => {
-        setLocalConfig(prev => {
-            const newConfig = { ...prev, [key]: value }
-            onConfigChange(modelId, newConfig)
-            return newConfig
-        })
-    }, [modelId, onConfigChange])
+        const newConfig = { ...localConfig, [key]: value }
+        setLocalConfig(newConfig)
+        onConfigChange(modelId, newConfig)
+    }, [modelId, onConfigChange, localConfig])
 
     // Reset all params
     const handleReset = React.useCallback(() => {

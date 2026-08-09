@@ -121,6 +121,13 @@ export const ChatMessage = React.memo(({
     // Persisted tool_call parts (from a server-fetched message) are
     // hoisted into the same `tool_calls` array the live updater uses,
     // so the renderer doesn't need a second code path.
+    //
+    // Orphan `tool_result` parts get the same treatment. `foldToolMessages`
+    // deliberately keeps a tool message whose matching assistant turn isn't
+    // on this page "so the user still sees the execution trail" — but
+    // nothing rendered `tool_result`, so those messages came out as
+    // completely empty bubbles. Hoisting them lets ToolCallsList show the
+    // result it already knows how to display.
     const renderedToolCalls = React.useMemo<AssembledToolCall[]>(() => {
         if (message.tool_calls && message.tool_calls.length > 0) {
             return message.tool_calls
@@ -134,6 +141,17 @@ export const ChatMessage = React.memo(({
                     name: p.tool_call.name,
                     arguments: p.tool_call.arguments,
                     source: p.tool_call.source,
+                })
+            } else if (p.type === "tool_result") {
+                calls.push({
+                    id: p.tool_result.tool_call_id,
+                    name: p.tool_result.name ?? "tool",
+                    arguments: "",
+                    source: p.tool_result.source,
+                    result: {
+                        content: p.tool_result.content,
+                        is_error: p.tool_result.is_error ?? false,
+                    },
                 })
             }
         }

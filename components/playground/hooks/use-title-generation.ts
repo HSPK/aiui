@@ -57,8 +57,14 @@ export function useTitleGeneration({
         if (messages.length < 2) return
 
         const userMsg = messages.find((m) => m.role === "user")
+        // `content` may be a string OR a ContentPart[] (multimodal shape) —
+        // `.length` on an array is the PART COUNT (usually 1-3), not text
+        // length, so a raw `m.content.length > 10` check was essentially
+        // always false for realistic multimodal replies. Measure through
+        // `extractText` (same helper used for the gateway call below) so
+        // both string and array content are judged by rendered text length.
         const assistantMsg = messages.find(
-            (m) => m.role === "assistant" && m.content && m.content.length > 10
+            (m) => m.role === "assistant" && m.content && extractText(m.content).length > 10
         )
         if (!userMsg || !assistantMsg) return
 

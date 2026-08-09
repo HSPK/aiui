@@ -62,12 +62,19 @@ export default function ChatPlaygroundPage() {
     // Pre-seed the messages cache so usePaginatedMessages skips the
     // page-1 fetch — without this a brand-new draft id would 404 on
     // the freshly-spawned XHR.
-    React.useEffect(() => {
+    //
+    // This MUST run during render, not in an effect: effects fire after
+    // children mount, and `usePaginatedMessages` snapshots the cache during
+    // its own first render. Seeding afterwards was too late, so every chat
+    // page load still fired a doomed `/messages?page=1` request and logged a
+    // 404 to the console. `useMemo` gives us a render-phase hook; the write
+    // is idempotent and never clobbers real data.
+    React.useMemo(() => {
         if (urlConvId) return
-        queryClient.setQueryData<Message[]>(
-            conversations.messagesCacheKey(conversationId, INITIAL_PAGE_SIZE),
-            [],
-        )
+        const key = conversations.messagesCacheKey(conversationId, INITIAL_PAGE_SIZE)
+        if (queryClient.getQueryData<Message[]>(key) === undefined) {
+            queryClient.setQueryData<Message[]>(key, [])
+        }
     }, [urlConvId, conversationId, queryClient])
 
     return (

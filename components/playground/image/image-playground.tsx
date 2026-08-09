@@ -140,9 +140,19 @@ export function ImagePlayground() {
         (v: string) => patchImage({ prompt: v }),
         [patchImage],
     )
+    // `v` is always the FULL `sanitised` shape plus one changed key (see
+    // `ParamsPopover`'s own `onChange({ ...value, [key]: next })` below) —
+    // never a bare single-field diff. Previously this replaced `params`
+    // outright, so any field the current family's `sanitised` view drops
+    // (because it's hidden for this model family) was silently discarded
+    // from the underlying store the instant the user touched ANY OTHER
+    // popover field. Merging onto the full `params` instead preserves
+    // those hidden sibling fields — only the keys actually present in the
+    // sanitised view (i.e. the ones the popover could have touched) are
+    // overwritten.
     const setParams = React.useCallback(
-        (v: Params) => patchImage({ params: v }),
-        [patchImage],
+        (v: Params) => patchImage({ params: { ...params, ...v } }),
+        [patchImage, params],
     )
 
     const handleRun = React.useCallback(async () => {
