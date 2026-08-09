@@ -38,6 +38,10 @@ import {
 } from "@/lib/server/mcp/dispatch";
 
 const getClientMock = vi.mocked(getClient);
+
+/** The runtime's client handle, derived from the function under mock so the
+ *  tests don't need a new production export. */
+type ClientHandle = Awaited<ReturnType<typeof getClient>>;
 const listToolsMock = vi.mocked(listToolsForServer);
 
 beforeEach(() => {
@@ -242,8 +246,11 @@ describe("aggregateTools", () => {
 });
 
 describe("executeTool", () => {
-    function client(callTool: ReturnType<typeof vi.fn>) {
-        return { client: { callTool }, builtFor: "v1", release: vi.fn() };
+    // A ClientHandle carrying only the one method dispatch actually calls.
+    // The real SDK Client has ~75 private fields, so a structural mock has to
+    // be cast — the alternative is instantiating a real transport.
+    function client(callTool: ReturnType<typeof vi.fn>): ClientHandle {
+        return { client: { callTool }, builtFor: "v1", release: vi.fn() } as unknown as ClientHandle;
     }
 
     it("rejects a malformed qualified name with no separator", async () => {

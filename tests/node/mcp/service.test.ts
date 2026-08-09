@@ -31,7 +31,7 @@ beforeEach(() => {
     checkMock.mockClear();
     disposeMock.mockClear();
     forgetMock.mockClear();
-    checkMock.mockResolvedValue(undefined);
+    checkMock.mockResolvedValue(null);
     disposeMock.mockResolvedValue(undefined);
 });
 

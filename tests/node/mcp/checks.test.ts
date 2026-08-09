@@ -21,6 +21,10 @@ import { checkMcpServer, runMcpCheck, type McpCheckEvent } from "@/lib/server/mc
 import { db, schema } from "@/lib/server/db";
 
 const getClientMock = vi.mocked(getClient);
+
+/** The runtime's client handle, derived from the function under mock so the
+ *  tests don't need a new production export. */
+type ClientHandle = Awaited<ReturnType<typeof getClient>>;
 const listToolsMock = vi.mocked(listToolsForServer);
 const listResourcesMock = vi.mocked(listResourcesForServer);
 const listPromptsMock = vi.mocked(listPromptsForServer);
@@ -32,7 +36,7 @@ function freshRelease() {
 
 beforeEach(() => {
     resetDb();
-    getClientMock.mockReset().mockImplementation(async () => ({ client: {}, builtFor: "v1", release: freshRelease() }));
+    getClientMock.mockReset().mockImplementation(async () => ({ client: {}, builtFor: "v1", release: freshRelease() } as unknown as ClientHandle));
     listToolsMock.mockReset().mockResolvedValue([]);
     listResourcesMock.mockReset().mockResolvedValue(null);
     listPromptsMock.mockReset().mockResolvedValue(null);
@@ -104,7 +108,7 @@ describe("runMcpCheck", () => {
 
     it("releases the probe client handle exactly once", async () => {
         const release = vi.fn();
-        getClientMock.mockResolvedValueOnce({ client: {}, builtFor: "v1", release });
+        getClientMock.mockResolvedValueOnce({ client: {}, builtFor: "v1", release } as unknown as ClientHandle);
         const s = seedMcpServer({ enabled: true });
         await runMcpCheck(s.id, () => {});
         expect(release).toHaveBeenCalledTimes(1);
@@ -114,7 +118,7 @@ describe("runMcpCheck", () => {
         getClientMock.mockImplementationOnce(async (_dto, hooks) => {
             hooks?.onPhase?.("spawning");
             hooks?.onLog?.("child stderr line");
-            return { client: {}, builtFor: "v1", release: vi.fn() };
+            return { client: {}, builtFor: "v1", release: vi.fn() } as unknown as ClientHandle;
         });
         const s = seedMcpServer({ enabled: true });
         const { events, onEvent } = collectEvents();
@@ -226,7 +230,7 @@ describe("runMcpCheck", () => {
             const s = seedMcpServer({ enabled: true });
             getClientMock.mockImplementationOnce(async () => {
                 db.update(schema.mcpServers).set({ enabled: false }).where(eq(schema.mcpServers.id, s.id)).run();
-                return { client: {}, builtFor: "v1", release: vi.fn() };
+                return { client: {}, builtFor: "v1", release: vi.fn() } as unknown as ClientHandle;
             });
             const { events, onEvent } = collectEvents();
             const result = await runMcpCheck(s.id, onEvent);

@@ -108,7 +108,7 @@ streaming benchmark repeatable — `tokens=N` / `delay=M` in the prompt control
 token count and cadence. Current numbers live in `e2e/perf/BASELINE.md`; the
 budgets in `bundle-budget.spec.ts` are regression ratchets, not targets.
 
-See [`e2e/README.md`](../e2e/README.md) for two non-obvious traps (the Secure
+See [`e2e/README.md`](https://github.com/HSPK/loom/blob/main/e2e/README.md) for the non-obvious traps (the Secure
 session cookie, and the composer not being the first textbox).
 
 ### End-to-end scripts

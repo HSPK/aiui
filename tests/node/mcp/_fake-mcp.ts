@@ -55,7 +55,9 @@ export interface ConnectScript {
      *  exercise runtime.ts's `withTimeout` timeout branch. */
     mode?: "auto" | "manual";
     delayMs?: number;
-    error?: Error;
+    /** `unknown` on purpose: tests script non-Error rejections to exercise
+     *  the `String(err)` fallback in runtime.ts. */
+    error?: unknown;
 }
 
 export interface FakeClientScript {
