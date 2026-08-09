@@ -1,0 +1,1 @@
+CREATE INDEX `gen_logs_deleted_created_idx` ON `generation_logs` (`is_deleted`,`created_at`);

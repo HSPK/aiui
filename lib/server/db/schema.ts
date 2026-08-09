@@ -191,6 +191,12 @@ export const generationLogs = sqliteTable("generation_logs", {
     index("gen_logs_user_deleted_created_idx").on(t.userId, t.isDeleted, t.createdAt),
     index("gen_logs_cap_deleted_created_idx").on(t.capability, t.isDeleted, t.createdAt),
     index("gen_logs_status_deleted_created_idx").on(t.status, t.isDeleted, t.createdAt),
+    // The three composites above all lead with a filter column, so none of
+    // them serves the *unfiltered* admin view (`is_deleted=0 ORDER BY
+    // created_at DESC`) or the stats window (`is_deleted=0 AND created_at
+    // >= ?`). Those fell back to a full index scan / full table scan that
+    // grew with total history rather than with the requested window.
+    index("gen_logs_deleted_created_idx").on(t.isDeleted, t.createdAt),
 ]);
 
 export const userPreferences = sqliteTable("user_preferences", {
