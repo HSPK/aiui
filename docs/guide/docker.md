@@ -246,25 +246,33 @@ server starts.
 
 Both launchers download the server package on first run and cache it under
 `$HOME` (`/home/node`). That works out of the box, but the cache is lost when
-the container is recreated, so every upgrade re-downloads. Mount a volume to
-keep it:
+the container is recreated, so every upgrade re-downloads. Both caches live
+under one directory so a single volume keeps them:
 
 ```yaml
 volumes:
   - loom-data:/data
-  - loom-cache:/home/node/.cache   # uv + npx package cache
+  - loom-cache:/home/node/.cache   # uv + npm package cache
 ```
+
+The image creates that directory owned by `node` on purpose. Docker seeds a
+new named volume from whatever the image has at the mount point, so if the
+path did not exist you would get an empty **root-owned** volume — and then
+every `uvx` server fails on an unwritable cache while the `npx` ones keep
+working, which is a memorably confusing way to spend an afternoon.
 
 If you run the container with a custom `--user`, set `HOME` to a directory
 that user can write to — `uvx` and `npx` both fail on an unwritable `$HOME`.
 
 ### Pinned versions in the catalogue
 
-Three presets (`time`, `fetch`, `pubmed`) pass `--with "mcp<2"`. This is not
-cosmetic: the `mcp` Python SDK 2.0 renamed `McpError` → `MCPError` and moved
-`mcp.server.fastmcp`, and those packages declare an unbounded dependency on
-it, so an unpinned `uvx` run dies with `ImportError` before the MCP handshake.
-Drop the pin once the upstream packages are fixed.
+Six presets (`time`, `fetch`, `git`, `sqlite`, `scholarly`, `pubmed`) pass
+`--with "mcp<2"`. This is not cosmetic: the `mcp` Python SDK 2.0 is a breaking
+release — `McpError` became `MCPError`, `Server.list_tools` was dropped,
+`mcp.server.fastmcp` moved — and those packages declare an unbounded
+dependency on it, so an unpinned `uvx` run dies before the MCP handshake. The
+failure is not always the same exception, which is why the list is longer than
+it first looked. Drop the pin once the upstream packages are fixed.
 
 ## Other commands
 
@@ -308,5 +316,5 @@ docker build --build-arg NODE_VERSION=22 --build-arg BUN_VERSION=1.3.14 -t loom 
 | Container is `unhealthy` | `docker logs loom`. The healthcheck probes `/api/health` on `$LOOM_SERVER_PORT` |
 | Streaming feels chunky | Disable proxy buffering (see above) |
 | `spawn uvx ENOENT` / `spawn npx ENOENT` | You are on a custom image without the MCP runtimes, or you overrode `PATH` |
-| An MCP server fails with `ImportError: cannot import name 'McpError'` | The package resolved `mcp` 2.x. Add `--with "mcp<2"` before the package name in its args |
+| An MCP server dies immediately with `ImportError: cannot import name 'McpError'`, `AttributeError: 'Server' object has no attribute 'list_tools'`, or `ModuleNotFoundError: mcp.server.fastmcp` | The package resolved `mcp` 2.x. Add `--with "mcp<2"` before the package name in its args |
 | MCP servers re-download after every upgrade | The `$HOME` cache is not on a volume — see [MCP servers](#mcp-servers) |

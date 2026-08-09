@@ -116,8 +116,8 @@ COPY --from=build --chown=node:node /app/bin/loom.mjs     ./bin/loom.mjs
 COPY --chown=node:node docker/entrypoint.sh /usr/local/bin/loom-entrypoint
 
 RUN chmod +x /usr/local/bin/loom-entrypoint \
-    && mkdir -p /data \
-    && chown node:node /data
+    && mkdir -p /data /home/node/.cache/uv /home/node/.cache/npm \
+    && chown -R node:node /data /home/node
 
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
@@ -125,11 +125,18 @@ ENV NODE_ENV=production \
     LOOM_SERVER_HOSTNAME=0.0.0.0 \
     LOOM_SERVER_PORT=3000 \
     # Set explicitly: uvx and npx both need a writable HOME for their caches,
-    # and Docker does not always derive one from USER. Mount a volume here to
-    # keep downloaded MCP servers across container recreation.
+    # and Docker does not always derive one from USER.
+    #
+    # Both caches live under a single directory so one volume mounted at
+    # /home/node/.cache covers both launchers. The directory is created and
+    # chowned above for the same reason: Docker seeds a new named volume from
+    # whatever the image has at the mount point, so if the path doesn't exist
+    # the volume is created empty and owned by root — and every `uvx` MCP
+    # server then dies on an unwritable cache while `npx` ones carry on,
+    # which is a thoroughly confusing way to find out.
     HOME=/home/node \
     UV_CACHE_DIR=/home/node/.cache/uv \
-    NPM_CONFIG_CACHE=/home/node/.npm
+    NPM_CONFIG_CACHE=/home/node/.cache/npm
 
 USER node
 EXPOSE 3000
