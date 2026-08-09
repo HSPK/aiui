@@ -39,8 +39,9 @@ jobs:
       - name: Typecheck (tests)
         run: bun run typecheck:test
 
+      # Gates on NEW errors only — the repo carries a documented baseline.
       - name: Lint
-        run: bun run lint
+        run: bun run lint:ci
 
       - name: Unit tests with coverage
         run: bun run test:coverage

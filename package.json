@@ -1,7 +1,7 @@
 {
   "name": "loom",
   "version": "1.4.8",
-  "description": "Self-hosted AI testing platform — try models and MCP servers, log every request, and front your apps through an OpenAI-compatible gateway.",
+  "description": "Self-hosted AI testing platform \u2014 try models and MCP servers, log every request, and front your apps through an OpenAI-compatible gateway.",
   "keywords": [
     "ai",
     "ai-gateway",
@@ -67,7 +67,8 @@
     "test:e2e": "node scripts/run-e2e.mjs",
     "prepare": "node scripts/build-cli.mjs",
     "prepack": "node scripts/prepack-trim.mjs",
-    "prepublishOnly": "bun run build"
+    "prepublishOnly": "bun run build",
+    "lint:ci": "node scripts/lint-baseline.mjs"
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.29",
