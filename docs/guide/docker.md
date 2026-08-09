@@ -70,6 +70,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     volumes:
       - loom-data:/data
+      - loom-cache:/home/node/.cache
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
@@ -79,6 +80,7 @@ services:
 
 volumes:
   loom-data:
+  loom-cache:
 ```
 
 Put your values in a `.env` file next to the compose file:
@@ -227,6 +229,43 @@ location / {
 `proxy_buffering off` matters: without it, SSE tokens arrive in bursts and
 the time-to-first-token metric becomes meaningless.
 
+## MCP servers
+
+Most MCP servers are not libraries — they are subprocesses the container has
+to spawn. The image therefore ships the two ecosystems the built-in catalogue
+draws from, so stdio presets work without a custom image:
+
+| Runtime | Serves |
+| --- | --- |
+| `node` / `npx` | The TypeScript reference servers (`npx -y @modelcontextprotocol/server-*`) |
+| `uv` / `uvx` + `python3` | The Python servers (`uvx mcp-server-*`) |
+| `git` | Required by the `git` preset, which shells out rather than using a library |
+
+Without these you get `spawn uvx ENOENT` (or `spawn npx ENOENT`) the moment a
+server starts.
+
+Both launchers download the server package on first run and cache it under
+`$HOME` (`/home/node`). That works out of the box, but the cache is lost when
+the container is recreated, so every upgrade re-downloads. Mount a volume to
+keep it:
+
+```yaml
+volumes:
+  - loom-data:/data
+  - loom-cache:/home/node/.cache   # uv + npx package cache
+```
+
+If you run the container with a custom `--user`, set `HOME` to a directory
+that user can write to — `uvx` and `npx` both fail on an unwritable `$HOME`.
+
+### Pinned versions in the catalogue
+
+Three presets (`time`, `fetch`, `pubmed`) pass `--with "mcp<2"`. This is not
+cosmetic: the `mcp` Python SDK 2.0 renamed `McpError` → `MCPError` and moved
+`mcp.server.fastmcp`, and those packages declare an unbounded dependency on
+it, so an unpinned `uvx` run dies with `ImportError` before the MCP handshake.
+Drop the pin once the upstream packages are fixed.
+
 ## Other commands
 
 The entrypoint forwards unknown commands straight through, so the container
@@ -248,8 +287,12 @@ docker run -d -p 3000:3000 -v loom-data:/data loom
 
 The build is multi-stage: a builder compiles the Next.js app and the CLI
 bundle, a second stage resolves the lockfile without devDependencies, and the
-runtime stage carries no compilers. Override the Node or Bun version with
-build args:
+runtime stage carries no compilers. The app ships as a Next.js
+[standalone](https://nextjs.org/docs/app/api-reference/config/next-config-js/output)
+server, which traces the modules actually imported instead of copying
+`node_modules` wholesale — that is the difference between a ~600 MB dependency
+tree and ~55 MB, and it is why the image has room for the Python and Node MCP
+runtimes above. Override the Node or Bun version with build args:
 
 ```bash
 docker build --build-arg NODE_VERSION=22 --build-arg BUN_VERSION=1.3.14 -t loom .
@@ -264,3 +307,6 @@ docker build --build-arg NODE_VERSION=22 --build-arg BUN_VERSION=1.3.14 -t loom 
 | Stored provider keys stopped decrypting | `LOOM_MASTER_KEY` changed. Restore the old key, or re-enter the provider keys |
 | Container is `unhealthy` | `docker logs loom`. The healthcheck probes `/api/health` on `$LOOM_SERVER_PORT` |
 | Streaming feels chunky | Disable proxy buffering (see above) |
+| `spawn uvx ENOENT` / `spawn npx ENOENT` | You are on a custom image without the MCP runtimes, or you overrode `PATH` |
+| An MCP server fails with `ImportError: cannot import name 'McpError'` | The package resolved `mcp` 2.x. Add `--with "mcp<2"` before the package name in its args |
+| MCP servers re-download after every upgrade | The `$HOME` cache is not on a volume — see [MCP servers](#mcp-servers) |

@@ -72,12 +72,15 @@ export const MCP_PRESETS: McpPreset[] = [
         transport: "stdio",
         category: "official",
         config: {
+            // Pinned: mcp SDK 2.0 renamed McpError → MCPError and this
+            // package's dependency range is unbounded, so an unpinned
+            // uvx run dies with ImportError before the handshake.
             command: "uvx",
-            args: ["mcp-server-time", "--local-timezone=UTC"],
+            args: ["--with", "mcp<2", "mcp-server-time", "--local-timezone=UTC"],
             env: {},
         },
         slots: [
-            { path: "args[1]", label: "IANA timezone flag (e.g. --local-timezone=America/Los_Angeles)", kind: "text" },
+            { path: "args[3]", label: "IANA timezone flag (e.g. --local-timezone=America/Los_Angeles)", kind: "text" },
         ],
         homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/time",
     },
@@ -87,7 +90,8 @@ export const MCP_PRESETS: McpPreset[] = [
         description: "HTTP fetch with HTML → markdown conversion.",
         transport: "stdio",
         category: "official",
-        config: { command: "uvx", args: ["mcp-server-fetch"], env: {} },
+        // Pinned for the same reason as `time` — see above.
+        config: { command: "uvx", args: ["--with", "mcp<2", "mcp-server-fetch"], env: {} },
         slots: [],
         homepage: "https://github.com/modelcontextprotocol/servers/tree/main/src/fetch",
     },
@@ -182,7 +186,8 @@ export const MCP_PRESETS: McpPreset[] = [
         description: "Search biomedical literature abstracts on PubMed.",
         transport: "stdio",
         category: "academic",
-        config: { command: "uvx", args: ["pubmedmcp"], env: {} },
+        // Pinned: needs mcp.server.fastmcp, which moved in mcp SDK 2.0.
+        config: { command: "uvx", args: ["--with", "mcp<2", "pubmedmcp"], env: {} },
         slots: [],
         homepage: "https://pypi.org/project/pubmedmcp/",
     },
