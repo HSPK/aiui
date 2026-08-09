@@ -27,6 +27,35 @@ docker run -d -p 3000:3000 -v loom-data:/data ghcr.io/hspk/loom:latest
 
 ---
 
+## Screenshots
+
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/playground-compare-dark.png">
+  <img src="docs/assets/playground-compare-light.png" alt="Three models answering the same prompt side by side in the Loom playground" width="100%">
+</picture>
+
+<em>One prompt, three providers, answers side by side.</em>
+
+</div>
+
+|  |  |
+| --- | --- |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/dashboard-dark.png"><img src="docs/assets/dashboard-light.png" alt="Loom dashboard showing request volume, token usage, latency and error rate"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/logs-dark.png"><img src="docs/assets/logs-light.png" alt="Loom request log listing traces with model, capability, tokens and latency"></picture> |
+| **Dashboard** — volume, tokens, latency and error rate per model. | **Request log** — every call, with TTFT and total latency split out. |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/log-detail-dark.png"><img src="docs/assets/log-detail-light.png" alt="Trace detail panel showing the full prompt and completion for one request"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/mcp-dark.png"><img src="docs/assets/mcp-light.png" alt="MCP server list showing stdio servers with their discovered tool counts"></picture> |
+| **Trace detail** — the full prompt and response, reassembled from the stream. | **MCP servers** — stdio or HTTP, with the tools Loom discovered on each. |
+| <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/providers-dark.png"><img src="docs/assets/providers-light.png" alt="Provider list with six configured upstreams and their model counts"></picture> | <picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/playground-chat-dark.png"><img src="docs/assets/playground-chat-light.png" alt="Chat playground rendering a multi-turn conversation with a code block"></picture> |
+| **Providers** — point at anything OpenAI-compatible; models are discovered. | **Playground** — multi-turn chat with markdown, code and tool calls. |
+
+<sub>Captured from a throwaway instance seeded by
+[`scripts/demo-screenshots.sh`](scripts/demo-screenshots.sh). The traffic is
+real — it went through the gateway and was logged by it — against a scripted
+local upstream, so no vendor was called and the numbers are reproducible.</sub>
+
+---
+
 ## What it does
 
 Loom gives you, in a single process backed by one SQLite file, three things that

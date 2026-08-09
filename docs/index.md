@@ -15,6 +15,42 @@ docker run -d -p 3000:3000 -v loom-data:/data ghcr.io/hspk/loom:latest
 See [Getting started](guide/getting-started.md) for every install route, or
 [Docker deployment](guide/docker.md) for containers.
 
+## A look at it
+
+![Three models answering the same prompt side by side](assets/playground-compare-light.png#only-light)
+![Three models answering the same prompt side by side](assets/playground-compare-dark.png#only-dark)
+
+*One prompt, three providers, answers side by side.*
+
+<div class="grid cards" markdown>
+
+- ![Dashboard](assets/dashboard-light.png#only-light)
+    ![Dashboard](assets/dashboard-dark.png#only-dark)
+
+    **Dashboard** — volume, tokens, latency and error rate per model.
+
+- ![Request log](assets/logs-light.png#only-light)
+    ![Request log](assets/logs-dark.png#only-dark)
+
+    **Request log** — every call, with TTFT and total latency split out.
+
+- ![Trace detail](assets/log-detail-light.png#only-light)
+    ![Trace detail](assets/log-detail-dark.png#only-dark)
+
+    **Trace detail** — the full prompt and response, reassembled from the stream.
+
+- ![MCP servers](assets/mcp-light.png#only-light)
+    ![MCP servers](assets/mcp-dark.png#only-dark)
+
+    **MCP servers** — stdio or HTTP, with the tools Loom discovered on each.
+
+</div>
+
+Captured from a throwaway instance seeded by `scripts/demo-screenshots.sh`.
+The traffic is real — it went through the gateway and was logged by it —
+against a scripted local upstream, so no vendor was called and the numbers
+are reproducible.
+
 ## What it does
 
 Loom gives you, in a single process backed by one SQLite file, three things
