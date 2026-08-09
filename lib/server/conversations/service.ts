@@ -128,7 +128,19 @@ export function listMessages(userId: string, conversationId: string, query: Mess
     let ancestors: typeof rows = [];
     if (seedParents.length > 0) {
         const seedJson = JSON.stringify(seedParents);
-        ancestors = db.all<typeof messages.$inferSelect>(sql`
+        // The CTE resolves *ids only*. It used to `SELECT m.*` straight
+        // into `db.all<typeof messages.$inferSelect>(...)`, but that
+        // generic is a type assertion with no runtime counterpart:
+        // raw SQL bypasses Drizzle's column mapping, so every row came
+        // back with snake_case keys and unparsed values. `createdAt`
+        // was `undefined` (killing both the DTO timestamp and the sort
+        // comparator below, which then treated every ancestor as tied)
+        // and `content` stayed a JSON *string*, which the FE rendered
+        // literally as `[{"type":"text",...}]`. Re-selecting the ids
+        // through the query builder puts mapping and json decoding
+        // back in Drizzle's hands, where the rest of this function
+        // already assumes they happened.
+        const ancestorIds = db.all<{ id: string }>(sql`
             WITH RECURSIVE ancestors(id, depth) AS (
                 SELECT value AS id, 0 AS depth FROM json_each(${seedJson})
                 UNION
@@ -139,10 +151,24 @@ export function listMessages(userId: string, conversationId: string, query: Mess
                   AND m.conversation_id = ${conversationId}
                   AND a.depth < 64
             )
-            SELECT m.* FROM messages m
+            SELECT m.id AS id FROM messages m
             JOIN ancestors a ON m.id = a.id
             WHERE m.conversation_id = ${conversationId}
-        `);
+        `).map((r) => r.id)
+            // The walk climbs to the root, so it re-reports rows the page
+            // window already returned. Without this the concatenation
+            // below emits them twice — measured at 10 duplicates in a
+            // 38-message conversation.
+            .filter((id) => !haveIds.has(id));
+
+        if (ancestorIds.length > 0) {
+            ancestors = db.select().from(messages)
+                .where(and(
+                    eq(messages.conversationId, conversationId),
+                    inArray(messages.id, ancestorIds),
+                ))
+                .all();
+        }
         for (const a of ancestors) haveIds.add(a.id);
     }
 
@@ -179,11 +205,20 @@ export function listMessages(userId: string, conversationId: string, query: Mess
         }
     }
 
-    // Merge + dedup, preserving the requested sort order with the
-    // same (created_at, id) tiebreaker the SQL uses — otherwise
+    // Merge, preserving the requested sort order with the same
+    // (created_at, id) tiebreaker the SQL uses — otherwise
     // tied-timestamp rows could reorder across the SQL/JS boundary.
+    // Each source already excludes anything in `haveIds`, so the
+    // concatenation is duplicate-free by construction.
     const merged = [...rows, ...ancestors, ...descendants].sort((a, b) => {
-        let cmp = a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0;
+        // Guard the timestamp rather than comparing it raw. A missing
+        // `createdAt` makes every `<`/`>` false, so a whole class of
+        // rows silently compares "equal" and the list degrades to id
+        // order — which is exactly how the raw-SQL mapping bug above
+        // surfaced as scrambled conversations instead of an error.
+        const at = a.createdAt ?? "";
+        const bt = b.createdAt ?? "";
+        let cmp = at < bt ? -1 : at > bt ? 1 : 0;
         if (cmp === 0) cmp = a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
         return query.sort.startsWith("-") ? -cmp : cmp;
     });

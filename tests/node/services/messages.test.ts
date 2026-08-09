@@ -134,8 +134,121 @@ describe("messages service (listMessages + rateMessage)", () => {
             expect(ids).toEqual([m1.id, m2.id, m3.id, m4.id, m5.id].sort());
         });
 
-        it("does NOT pull tool children of an errored assistant (defense-in-depth orphan guard)", () => {
-            const user = seedUser({ username: "error-guard-user" });
+        // The three assertions below cover a bug that shipped despite the
+        // subtree-completion test above passing: that test only compared a
+        // *set of ids*, and the ancestor rows came back from raw SQL whose
+        // generic (`db.all<typeof messages.$inferSelect>`) asserted a shape
+        // Drizzle never actually produced. The ids were right; everything
+        // else about those rows was wrong.
+        describe("ancestor rows are fully hydrated, not raw SQLite rows", () => {
+            /** user -> assistant -> user -> assistant, so a small page window
+             *  forces the ancestor walk to climb past the page boundary. */
+            function seedChain(username: string) {
+                const user = seedUser({ username });
+                const conv = seedConversation({ userId: user.id });
+                const m1 = seedMessage({
+                    conversationId: conv.id, role: "user", createdAt: ts(0),
+                    content: [{ type: "text", text: "first question" }],
+                });
+                const m2 = seedMessage({
+                    conversationId: conv.id, role: "assistant", parentId: m1.id, createdAt: ts(1),
+                    content: [{ type: "text", text: "first answer" }],
+                });
+                const m3 = seedMessage({
+                    conversationId: conv.id, role: "user", parentId: m2.id, createdAt: ts(2),
+                    content: [{ type: "text", text: "second question" }],
+                });
+                const m4 = seedMessage({
+                    conversationId: conv.id, role: "assistant", parentId: m3.id, createdAt: ts(3),
+                    content: [{ type: "text", text: "second answer" }],
+                });
+                return { user, conv, m1, m2, m3, m4 };
+            }
+
+            it("decodes array content instead of leaking the stored JSON string", () => {
+                // Raw SQL skips Drizzle's `mode: "json"` decoding, so ancestors
+                // arrived as the literal string `[{"type":"text",...}]` and the
+                // FE rendered it verbatim in the chat bubble.
+                const { user, conv } = seedChain("hydrate-content");
+
+                const page = listMessages(user.id, conv.id, { page: 1, page_size: 1, sort: "-created_at" });
+
+                expect(page.items.length).toBeGreaterThan(1);
+                for (const m of page.items) {
+                    expect(Array.isArray(m.content), `content of ${m.role} should be an array`).toBe(true);
+                }
+                expect(page.items.map((m) => m.content)).toContainEqual([{ type: "text", text: "first question" }]);
+            });
+
+            it("maps created_at instead of dropping it on the snake_case boundary", () => {
+                // `SELECT m.*` yields `created_at`, so `row.createdAt` was
+                // undefined and the DTO carried no timestamp at all.
+                const { user, conv } = seedChain("hydrate-timestamps");
+
+                const page = listMessages(user.id, conv.id, { page: 1, page_size: 1, sort: "-created_at" });
+
+                for (const m of page.items) {
+                    expect(m.created_at, `created_at of ${m.role}`).toBeTruthy();
+                }
+            });
+
+            it("keeps the whole page in the requested order once ancestors join it", () => {
+                // Undefined timestamps made every ancestor compare equal in the
+                // merge sort, so the list silently degraded to id order — which
+                // is what surfaced as a scrambled conversation.
+                const { user, conv } = seedChain("hydrate-order");
+
+                const desc = listMessages(user.id, conv.id, { page: 1, page_size: 1, sort: "-created_at" });
+                const descTimes = desc.items.map((m) => m.created_at);
+                expect(descTimes).toEqual([...descTimes].sort().reverse());
+
+                const asc = listMessages(user.id, conv.id, { page: 1, page_size: 1, sort: "created_at" });
+                const ascTimes = asc.items.map((m) => m.created_at);
+                expect(ascTimes).toEqual([...ascTimes].sort());
+            });
+
+            it("returns each message once when the ancestor walk re-reaches the page window", () => {
+                // The walk climbs to the root, so it re-reports rows the page
+                // already held; the merge concatenated without checking.
+                const { user, conv } = seedChain("dedup-ancestors");
+
+                const page = listMessages(user.id, conv.id, { page: 1, page_size: 3, sort: "-created_at" });
+
+                const ids = page.items.map((m) => m.id);
+                expect(ids).toHaveLength(new Set(ids).size);
+            });
+
+            it("hydrates the remaining scalar columns the DTO exposes", () => {
+                const user = seedUser({ username: "hydrate-scalars" });
+                const conv = seedConversation({ userId: user.id });
+                const parent = seedMessage({
+                    conversationId: conv.id, role: "user", content: "q", createdAt: ts(0),
+                });
+                seedMessage({
+                    conversationId: conv.id, role: "assistant", parentId: parent.id, createdAt: ts(1),
+                    content: "a", modelId: "gpt-4o", generationId: "gen-1",
+                    reasoningContent: "thinking", rating: "up", feedback: "great",
+                });
+
+                const page = listMessages(user.id, conv.id, { page: 1, page_size: 1, sort: "-created_at" });
+                const ancestor = page.items.find((m) => m.id === parent.id)!;
+
+                expect(ancestor.conversation_id).toBe(conv.id);
+                expect(ancestor.role).toBe("user");
+                expect(ancestor.is_active).toBe(true);
+                expect(ancestor.parent_id).toBeUndefined();
+
+                const assistant = page.items.find((m) => m.id !== parent.id)!;
+                expect(assistant.parent_id).toBe(parent.id);
+                expect(assistant.model_id).toBe("gpt-4o");
+                expect(assistant.generation_id).toBe("gen-1");
+                expect(assistant.reasoning_content).toBe("thinking");
+                expect(assistant.rating).toBe("up");
+                expect(assistant.feedback).toBe("great");
+            });
+        });
+
+        it("does NOT pull tool children of an errored assistant (defense-in-depth orphan guard)", () => {            const user = seedUser({ username: "error-guard-user" });
             const conv = seedConversation({ userId: user.id });
             const m1 = seedMessage({ conversationId: conv.id, role: "user", content: "call a tool", createdAt: ts(0) });
             const m2 = seedMessage({ conversationId: conv.id, role: "assistant", content: "", parentId: m1.id, createdAt: ts(1), error: "upstream failure" });
