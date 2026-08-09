@@ -5,73 +5,45 @@ interface UseChatScrollOptions {
     onLoadMore?: () => void
     hasMore?: boolean
     isLoadingMore?: boolean
-    savedScrollPosition?: number
-    onSaveScrollPosition?: (position: number) => void
 }
 
+/**
+ * Opening a conversation always lands on the newest message, the way
+ * every chat client behaves.
+ *
+ * There used to be a per-conversation saved scroll offset restored here.
+ * It could not work: the restore ran in a layout effect on mount, before
+ * the messages query resolved, so the viewport was still one screen tall
+ * and `scrollTop = saved` clamped straight to 0. Nothing ran afterwards
+ * to correct it, because every scroll-to-bottom path was gated on there
+ * being no saved offset. Measured with saved offsets of 300, 1500 and
+ * 9000: all three opened the conversation at the very top.
+ */
 export function useChatScroll({
     messages,
     onLoadMore,
     hasMore = false,
     isLoadingMore = false,
-    savedScrollPosition,
-    onSaveScrollPosition,
 }: UseChatScrollOptions) {
     const viewportRef = React.useRef<HTMLDivElement>(null)
     const currentScrollRef = React.useRef(0)
     const lastMessageIdRef = React.useRef<string | null>(null)
-    const hasScrolledToBottomRef = React.useRef(false)
-    // Default to "should auto-scroll" only when there's no saved position
-    // to restore. Otherwise the "smart auto-scroll" effect below always
-    // runs once on mount too (same `[messages]` deps as the
-    // `lastMessageIdRef` initializer, which runs first and sets the ref
-    // to the last message's id in the same pass) — `isNewMessage` is then
-    // false on that very first run, so it falls into the `else if
-    // (shouldAutoScrollRef.current)` branch, which unconditionally snaps
-    // `scrollTop` back to `scrollHeight`, silently clobbering the
-    // just-restored `savedScrollPosition`.
-    const shouldAutoScrollRef = React.useRef(typeof savedScrollPosition !== 'number')
+    const shouldAutoScrollRef = React.useRef(true)
 
     const [showScrollBottom, setShowScrollBottom] = React.useState(false)
 
-    // Save scroll position on unmount
-    const saveScrollRef = React.useRef<() => void>(() => { })
-
-    React.useLayoutEffect(() => {
-        saveScrollRef.current = () => {
-            if (currentScrollRef.current > 0 && onSaveScrollPosition) {
-                onSaveScrollPosition(currentScrollRef.current)
-            }
-        }
-    })
-
-    React.useEffect(() => {
-        return () => {
-            saveScrollRef.current()
-        }
-    }, [])
-
-    // Restore scroll position or scroll to bottom on mount
+    // Land on the newest message as soon as there is anything to land on.
+    // Keyed on `messages.length` rather than a one-shot ref: the first
+    // page arrives in more than one commit (cache hydration, then the
+    // query), and markdown/code blocks keep growing the content after
+    // that, so a single early snap would leave the viewport stranded
+    // part-way up.
     React.useLayoutEffect(() => {
         const viewport = viewportRef.current
-        if (!viewport) return
-
-        if (typeof savedScrollPosition === 'number') {
-            viewport.scrollTop = savedScrollPosition
-        } else if (messages.length > 0) {
-            viewport.scrollTop = viewport.scrollHeight
-        }
-    }, [savedScrollPosition])
-
-    // Initial scroll to bottom when messages first appear
-    React.useEffect(() => {
-        if (typeof savedScrollPosition !== 'number' && !hasScrolledToBottomRef.current && messages.length > 0) {
-            if (viewportRef.current) {
-                viewportRef.current.scrollTop = viewportRef.current.scrollHeight
-                hasScrolledToBottomRef.current = true
-            }
-        }
-    }, [messages.length, savedScrollPosition])
+        if (!viewport || messages.length === 0) return
+        if (!shouldAutoScrollRef.current) return
+        viewport.scrollTop = viewport.scrollHeight
+    }, [messages.length])
 
     // Initialize lastMessageIdRef
     React.useEffect(() => {

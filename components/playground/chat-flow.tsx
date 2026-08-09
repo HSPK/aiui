@@ -23,7 +23,6 @@ import { readCachedMessages } from "@/components/playground/hooks/use-paginated-
 import { LogDetails } from "@/components/logs/log-details-lazy"
 import { mcpServers } from "@/lib/api/mcp"
 import { usePlaygroundStore } from "@/lib/stores/playground-store"
-import { useModalityStore } from "@/lib/stores/modality-store"
 
 const INITIAL_PAGE_SIZE = 20
 
@@ -82,14 +81,6 @@ export function ChatFlow({ conversationId }: { conversationId: string }) {
         onLoadMore: () => preserveScrollPosition(loadMore),
         hasMore,
         isLoadingMore,
-        // Restore the user's scroll offset for this conversation if we
-        // have one — they bounced to another modality and came back,
-        // we want the message they were reading to still be in view.
-        savedScrollPosition: useModalityStore
-            .getState()
-            .getChatScrollOffset(conversationId),
-        onSaveScrollPosition: (offset) =>
-            useModalityStore.getState().setChatScrollOffset(conversationId, offset),
     })
 
     useTitleGeneration({ conversationId, messages, isLoading, getModelIds })

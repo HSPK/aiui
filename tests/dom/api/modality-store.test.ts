@@ -53,7 +53,6 @@ describe("lib/stores/modality-store", () => {
             expect(s.lastPath).toBeNull();
             expect(s.modalityPaths).toEqual({});
             expect(s.navCollapsed).toBe(false);
-            expect(s.chatScrollOffsets).toEqual({});
             expect(s.chatHistoryOpen).toBe(false);
         });
     });
@@ -83,24 +82,6 @@ describe("lib/stores/modality-store", () => {
             expect(useModalityStore.getState().navCollapsed).toBe(false);
             useModalityStore.getState().toggleNav();
             expect(useModalityStore.getState().navCollapsed).toBe(true);
-        });
-    });
-
-    describe("chat scroll offsets", () => {
-        it("getChatScrollOffset returns undefined for an unknown conversation", () => {
-            expect(useModalityStore.getState().getChatScrollOffset("conv-x")).toBeUndefined();
-        });
-
-        it("setChatScrollOffset stores per-conversation offsets independently", () => {
-            const store = useModalityStore.getState();
-            store.setChatScrollOffset("conv-1", 120);
-            store.setChatScrollOffset("conv-2", 480);
-            expect(useModalityStore.getState().getChatScrollOffset("conv-1")).toBe(120);
-            expect(useModalityStore.getState().getChatScrollOffset("conv-2")).toBe(480);
-
-            store.setChatScrollOffset("conv-1", 240);
-            expect(useModalityStore.getState().getChatScrollOffset("conv-1")).toBe(240);
-            expect(useModalityStore.getState().getChatScrollOffset("conv-2")).toBe(480);
         });
     });
 
@@ -222,7 +203,6 @@ describe("lib/stores/modality-store", () => {
             expect(parsed.state).not.toHaveProperty("chatHistoryOpen");
             expect(Object.keys(parsed.state).sort()).toEqual(
                 [
-                    "chatScrollOffsets",
                     "embedding",
                     "image",
                     "lastPath",

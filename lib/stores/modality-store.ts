@@ -206,11 +206,6 @@ interface ModalityStoreState {
      *  power users tend to hide chrome to maximise their workspace. */
     navCollapsed: boolean
 
-    /** Per-conversation scroll offset for the chat playground. Restored
-     *  when the user navigates back to chat so the conversation picks
-     *  up exactly where they left reading, not at the bottom. */
-    chatScrollOffsets: Record<string, number>
-
     /** Mobile-only: controls the conversation-history Sheet. Lifted to
      *  the store so the trigger can live in the topbar (contextual to
      *  the chat page) while the Sheet itself lives in
@@ -222,8 +217,6 @@ interface ModalityStoreState {
     setNavCollapsed: (collapsed: boolean) => void
     toggleNav: () => void
 
-    setChatScrollOffset: (conversationId: string, offset: number) => void
-    getChatScrollOffset: (conversationId: string) => number | undefined
 
     setChatHistoryOpen: (open: boolean) => void
 
@@ -245,7 +238,7 @@ interface ModalityStoreState {
 
 export const useModalityStore = create<ModalityStoreState>()(
     persist(
-        (set, get) => ({
+        (set) => ({
             image: initialImage,
             speech: initialSpeech,
             transcription: initialTranscription,
@@ -254,7 +247,6 @@ export const useModalityStore = create<ModalityStoreState>()(
             lastPath: null,
             modalityPaths: {},
             navCollapsed: false,
-            chatScrollOffsets: {},
             chatHistoryOpen: false,
 
             setLastPath: (path) => set({ lastPath: path }),
@@ -264,12 +256,6 @@ export const useModalityStore = create<ModalityStoreState>()(
                 })),
             setNavCollapsed: (collapsed) => set({ navCollapsed: collapsed }),
             toggleNav: () => set((s) => ({ navCollapsed: !s.navCollapsed })),
-
-            setChatScrollOffset: (id, offset) =>
-                set((s) => ({
-                    chatScrollOffsets: { ...s.chatScrollOffsets, [id]: offset },
-                })),
-            getChatScrollOffset: (id) => get().chatScrollOffsets[id],
 
             setChatHistoryOpen: (open) => set({ chatHistoryOpen: open }),
 
@@ -302,7 +288,6 @@ export const useModalityStore = create<ModalityStoreState>()(
                 lastPath: s.lastPath,
                 modalityPaths: s.modalityPaths,
                 navCollapsed: s.navCollapsed,
-                chatScrollOffsets: s.chatScrollOffsets,
                 image: { ...s.image, result: null, error: null },
                 speech: { ...s.speech, result: null, error: null },
                 transcription: { ...s.transcription, result: null, error: null },

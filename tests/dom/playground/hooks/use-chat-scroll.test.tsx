@@ -70,7 +70,7 @@ describe("useChatScroll", () => {
     })
 
     describe("mount behavior", () => {
-        it("does not touch scrollTop on mount when there are no messages and no savedScrollPosition", () => {
+        it("does not touch scrollTop on mount when there are no messages", () => {
             const { viewport } = renderHarness({ messages: [] })
             mockScrollGeometry(viewport, { scrollHeight: 1000, clientHeight: 400, scrollTop: 0 })
             expect(viewport.scrollTop).toBe(0)
@@ -86,70 +86,55 @@ describe("useChatScroll", () => {
             expect(viewport.scrollTo).not.toHaveBeenCalled()
         })
 
-        it("restores a numeric savedScrollPosition on mount when there are no messages yet to trigger auto-scroll", () => {
-            // Isolates the restore-on-mount layout effect: with messages
-            // empty, the "smart auto-scroll" effect no-ops (it's guarded by
-            // `messages.length === 0`), so this exercises the restore path
-            // in isolation, uninterfered-with. See the BUG test below for
-            // the realistic (messages already present) scenario.
+        it("lands on the newest message when messages are already present on the first render", () => {
+            // The realistic open: readCachedMessages hands ChatFlow a
+            // populated list synchronously, so the very first commit already
+            // has content to scroll past.
             const { viewport } = renderHarness(
-                { messages: [], savedScrollPosition: 250 },
+                { messages: [{ id: "m1" }] },
                 { scrollHeight: 1000, clientHeight: 400, scrollTop: 0 },
             )
-            expect(viewport.scrollTop).toBe(250)
+            expect(viewport.scrollTop).toBe(1000)
         })
 
         // =====================================================================
-        // Regression test for a bug found while testing:
-        // components/playground/hooks/use-chat-scroll.ts (`shouldAutoScrollRef`).
-        // `shouldAutoScrollRef` used to be unconditionally initialized to
-        // `true`, with no regard for whether a `savedScrollPosition` restore
-        // is in play. Per chat-flow.tsx's own comment ("Restore the user's
-        // scroll offset for this conversation if we have one — they bounced
-        // to another modality and came back"), the realistic restore
-        // scenario is a MOUNT where `messages` (from readCachedMessages) and
-        // `savedScrollPosition` (from useModalityStore.getState(), a
-        // synchronous snapshot read) are BOTH already available on the very
-        // FIRST render — not a later transition.
-        // In that mount, within the SAME commit:
-        //   1. layout effect sees a numeric savedScrollPosition and sets
-        //      viewport.scrollTop = 250 (correct, momentarily).
-        //   2. passive effect "Initialize lastMessageIdRef" runs next
-        //      (still null) and sets lastMessageIdRef.current to the last
-        //      message's id.
-        //   3. passive effect "Smart auto-scroll" runs last: isNewMessage =
-        //      lastMsg.id !== lastMessageIdRef.current is FALSE (effect #2,
-        //      just above it, already set that ref to the very same id) ->
-        //      falls into `else if (shouldAutoScrollRef.current)`, which
-        //      used to be unconditionally `true` -> ran
-        //      `viewport.scrollTop = viewport.scrollHeight`, clobbering the
-        //      value effect #1 just restored.
-        // Fixed by initializing `shouldAutoScrollRef` to
-        // `typeof savedScrollPosition !== 'number'` instead of an
-        // unconditional `true`, so step 3 above only re-snaps to the
-        // bottom when there was nothing to restore in the first place.
+        // Regression: opening a conversation used to land at the very top.
+        //
+        // A per-conversation scroll offset was restored in a mount layout
+        // effect, before the messages query resolved. At that point the
+        // viewport is one screen tall, so `scrollTop = saved` clamped to 0 —
+        // and every scroll-to-bottom path was gated on there being no saved
+        // offset, so nothing corrected it once the content arrived.
+        // Reproduced in a browser with saved offsets of 300, 1500 and 9000:
+        // all three opened at the top. The offset is gone; landing on the
+        // newest message is now unconditional.
         // =====================================================================
-        it(
-            "restores a numeric savedScrollPosition on mount even when messages are already present, without it being clobbered back to the bottom",
-            () => {
-                const { viewport } = renderHarness(
-                    { messages: [{ id: "m1" }], savedScrollPosition: 250 },
-                    { scrollHeight: 1000, clientHeight: 400, scrollTop: 0 },
-                )
-                expect(viewport.scrollTop).toBe(250)
-            },
-        )
+        it("keeps landing on the bottom as the first page arrives across several commits", () => {
+            const { viewport, rerenderWith } = renderHarness({ messages: [] })
 
-        it(
-            "still scrolls to the bottom on mount when there is NO savedScrollPosition and messages are already present (fresh conversation)",
-            () => {
-                const { viewport } = renderHarness(
-                    { messages: [{ id: "m1" }], savedScrollPosition: undefined },
-                    { scrollHeight: 1000, clientHeight: 400, scrollTop: 0 },
-                )
-                expect(viewport.scrollTop).toBe(1000)
-            },
-        )
+            mockScrollGeometry(viewport, { scrollHeight: 400, clientHeight: 400, scrollTop: 0 })
+            rerenderWith({ messages: [{ id: "m1" }] })
+
+            // Content keeps growing after hydration (markdown, code blocks),
+            // which is exactly when a one-shot snap would strand the viewport.
+            mockScrollGeometry(viewport, { scrollHeight: 4000, clientHeight: 400, scrollTop: viewport.scrollTop })
+            rerenderWith({ messages: [{ id: "m1" }, { id: "m2" }] })
+
+            expect(viewport.scrollTop).toBe(4000)
+        })
+
+        it("does not fight the user once they scroll up to read", () => {
+            const { viewport, rerenderWith, getApi } = renderHarness({ messages: [{ id: "m1" }] })
+            mockScrollGeometry(viewport, { scrollHeight: 4000, clientHeight: 400, scrollTop: 200 })
+
+            act(() => {
+                getApi().handleScroll({ currentTarget: viewport } as unknown as React.UIEvent<HTMLDivElement>)
+            })
+            // A re-render that isn't a new message must leave them where they are.
+            rerenderWith({ messages: [{ id: "m1" }] })
+
+            expect(viewport.scrollTop).toBe(200)
+        })
     })
 
     describe("smart auto-scroll on new messages", () => {
@@ -348,28 +333,19 @@ describe("useChatScroll", () => {
         })
     })
 
-    describe("unmount — saving scroll position", () => {
-        it("calls onSaveScrollPosition with the last recorded scrollTop when it is > 0", () => {
-            const onSaveScrollPosition = vi.fn()
-            const { viewport, unmount } = renderHarness({ messages: [{ id: "m1" }], onSaveScrollPosition })
+    describe("unmount", () => {
+        it("tears down without persisting a scroll offset", () => {
+            // The hook no longer accepts a save callback at all — scrolling
+            // then unmounting must simply be inert.
+            const { viewport, unmount } = renderHarness({ messages: [{ id: "m1" }] })
             mockScrollGeometry(viewport, { scrollHeight: 1000, clientHeight: 300, scrollTop: 0 })
 
             act(() => {
                 fireEvent.scroll(viewport, { target: { scrollTop: 321 } })
             })
 
-            unmount()
-
-            expect(onSaveScrollPosition).toHaveBeenCalledWith(321)
-        })
-
-        it("does not call onSaveScrollPosition when the recorded scroll position is still 0", () => {
-            const onSaveScrollPosition = vi.fn()
-            const { unmount } = renderHarness({ messages: [{ id: "m1" }], onSaveScrollPosition })
-
-            unmount()
-
-            expect(onSaveScrollPosition).not.toHaveBeenCalled()
+            expect(() => unmount()).not.toThrow()
+            expect(localStorage.getItem("loom-modality-state") ?? "").not.toContain("chatScrollOffsets")
         })
     })
 })

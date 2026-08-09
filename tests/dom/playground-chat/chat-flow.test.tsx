@@ -502,15 +502,10 @@ describe("ChatFlow — scroll-to-bottom affordance & scroll-offset restore", () 
         expect(loadMore).toHaveBeenCalledOnce();
     });
 
-    it("reads/writes this conversation's saved scroll offset in the modality store, passed through to useChatScroll", () => {
-        act(() => {
-            useModalityStore.getState().setChatScrollOffset("conv-1", 321);
-        });
+    it("does not carry a saved scroll offset — opening a conversation always lands on the newest message", () => {
         renderWithClient(<ChatFlow conversationId="conv-1" />);
-        expect(useChatScrollMock).toHaveBeenCalledWith(expect.objectContaining({ savedScrollPosition: 321 }));
-
-        const onSaveScrollPosition = useChatScrollMock.mock.calls[0][0].onSaveScrollPosition as (n: number) => void;
-        act(() => onSaveScrollPosition(555));
-        expect(useModalityStore.getState().getChatScrollOffset("conv-1")).toBe(555);
+        const args = useChatScrollMock.mock.calls[0][0];
+        expect(args).not.toHaveProperty("savedScrollPosition");
+        expect(args).not.toHaveProperty("onSaveScrollPosition");
     });
 });
