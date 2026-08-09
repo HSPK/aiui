@@ -29,6 +29,10 @@ if (!existsSync(NEXT_DIR)) {
 }
 
 const EXACT_PATHS = [
+    // Docker ships `.next/standalone`; the npm tarball ships the regular
+    // build plus a real dependency install, so carrying both would nearly
+    // double the tarball for no benefit.
+    "standalone",
     "cache",
     "dev",
     "trace",
