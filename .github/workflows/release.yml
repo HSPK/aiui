@@ -40,8 +40,11 @@ jobs:
       - name: Build (Next.js + CLI + external aliases)
         run: bun run build
 
+      - name: Run unit tests with coverage
+        run: bun run test:coverage
+
       - name: Run e2e suite
-        run: bun run test
+        run: bun run test:e2e
 
       - name: Pack tarball
         id: pack
@@ -81,9 +84,26 @@ jobs:
             ${{ steps.pack.outputs.tarball }}
             ${{ steps.pack.outputs.alias_tarball }}
           body: |
-            Install latest:
+            ## Install
+
+            **Install script** (Linux / macOS):
+
+                curl -fsSL https://raw.githubusercontent.com/HSPK/loom/main/install.sh | sh -s -- --version ${{ steps.pack.outputs.version }}
+
+            **Docker**:
+
+                docker run -d -p 3000:3000 -v loom-data:/data ghcr.io/hspk/loom:${{ steps.pack.outputs.version }}
+
+            **Tarball** — latest:
+
                 bun add -g https://github.com/HSPK/loom/releases/latest/download/loom.tgz
 
-            Install pinned:
+            **Tarball** — pinned:
+
                 bun add -g https://github.com/HSPK/loom/releases/download/${{ steps.tag.outputs.tag }}/${{ steps.pack.outputs.tarball }}
+
+            Already installed? `loom update`.
+
+            Docs: https://hspk.github.io/loom
+          generate_release_notes: true
           fail_on_unmatched_files: true

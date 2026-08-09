@@ -1,0 +1,74 @@
+name: Bug report
+description: Something doesn't work the way it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. If this is a security issue, please use
+        [private reporting](https://github.com/HSPK/loom/security/advisories/new) instead.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. loom start
+        2. Open /playground/chat
+        3. ...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Loom version
+      description: Output of `loom --version`, or the container image tag.
+      placeholder: "1.4.8 / ghcr.io/hspk/loom:latest"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How did you install it?
+      options:
+        - Install script (curl | sh)
+        - Docker
+        - Docker Compose
+        - Release tarball (bun/npm)
+        - From source
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: OS and Node version
+      placeholder: "Ubuntu 24.04, Node 22.11 (or: n/a, running in Docker)"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Server output around the failure. For gateway problems, the matching
+        row from `/logs` is more useful than a description.
+      render: shell
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant configuration
+      description: Your `loom.config.yaml` or compose file. **Redact every API key and the master_key.**
+      render: yaml

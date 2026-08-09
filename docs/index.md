@@ -4,6 +4,19 @@
 > recording every request, and fronting your applications through the same
 > OpenAI-compatible gateway.
 
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/HSPK/loom/main/install.sh | sh
+# or
+docker run -d -p 3000:3000 -v loom-data:/data ghcr.io/hspk/loom:latest
+```
+
+See [Getting started](guide/getting-started.md) for every install route, or
+[Docker deployment](guide/docker.md) for containers.
+
+## What it does
+
 Loom gives you, in a single process backed by one SQLite file, three things
 that usually live in three separate tools:
 
@@ -20,6 +33,7 @@ observability service to deploy.
 ## Documentation map
 
 - [Getting started](guide/getting-started.md) — install, init, first request
+- [Docker deployment](guide/docker.md) — image tags, volumes, secrets, backups
 - [Configuration](guide/configuration.md) — config file, env vars, search order
 - [Providers](guide/providers.md) — register upstreams, override model params
 - [MCP integration](guide/mcp.md) — connect MCP servers and use their tools

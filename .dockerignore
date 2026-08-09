@@ -1,0 +1,49 @@
+# Everything that must not leak into the build context or the image.
+
+# Dependencies / build output — rebuilt inside the image
+node_modules
+.next
+out
+build
+bin/loom.mjs
+*.tgz
+
+# Tests, benchmarks and their reports: not shipped, and `next build`
+# already excludes them from the production typecheck.
+tests
+bench
+coverage
+coverage-*
+.coverage-*
+vitest.config.mts
+tsconfig.test.json
+
+# Runtime state and secrets
+data
+loom.config.yaml
+loom.config.yml
+loom.config.json
+.config
+.env
+.env.*
+*.pem
+
+# VCS / CI / editor
+.git
+.gitignore
+.github
+.vscode
+.idea
+.DS_Store
+
+# Docs site (mkdocs build output + sources not needed at runtime)
+site
+docs
+mkdocs.yml
+*.md
+!README.md
+
+# Local tooling
+.cursor
+.claude
+.copilot

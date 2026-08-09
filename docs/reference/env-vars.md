@@ -58,3 +58,23 @@ Set to `0` to disable caching.
 | `LOOM_USER_CWD`           | What the CLI considers "user cwd" (rarely set by hand)     | `process.cwd()`       |
 | `LOOM_PACKAGE_ROOT`       | Where the installed `loom` package lives (set by CLI shim) | —                     |
 | `XDG_CONFIG_HOME`         | Where to look for `loom.yaml` if not in the project        | `~/.config`           |
+
+## Proxying
+
+| Variable                  | What it controls                                            | Default               |
+| ------------------------- | ----------------------------------------------------------- | --------------------- |
+| `LOOM_TRUST_PROXY`        | Trust `X-Forwarded-For` when identifying clients. Set to `1` behind nginx / Traefik / Cloudflare, never when Loom is directly exposed | unset |
+
+Only set this when a proxy you control rewrites the header — otherwise clients
+can spoof their address and evade the login rate limiter.
+
+## Docker
+
+Read by the [container entrypoint](../guide/docker.md), not by the server.
+
+| Variable                  | What it controls                                            | Default               |
+| ------------------------- | ----------------------------------------------------------- | --------------------- |
+| `LOOM_DATA_DIR`           | Where the entrypoint bootstraps `loom.config.yaml`          | `/data`               |
+
+The image also presets `LOOM_DB_PATH=/data/loom.db`, `LOOM_SERVER_HOSTNAME=0.0.0.0`,
+and `LOOM_SERVER_PORT=3000`. Override any of them with `-e`.

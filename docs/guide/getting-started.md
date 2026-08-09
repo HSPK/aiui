@@ -1,41 +1,84 @@
 # Getting started
 
-Loom ships as a single Node CLI distributed via GitHub Releases (no npm registry).
-It runs as a single Node process backed by SQLite.
+Loom ships as a single Node CLI distributed via GitHub Releases (no npm registry),
+and as a container image on the GitHub Container Registry. Either way it runs as
+a single process backed by SQLite.
 
 ## Requirements
 
-- **Node.js ≥ 20**
+- **Node.js ≥ 20** — or just Docker, which bundles everything
 - A modern OS that can build / run `better-sqlite3` (Linux, macOS, Windows)
 - An API key from at least one upstream LLM provider
 
 ## Install
 
-Pre-built tarballs are attached to every GitHub Release. Re-run the same
-command to upgrade.
+Loom runs as a single Node process backed by SQLite, or as a container.
 
-=== "Latest"
+=== "Install script"
+
+    Linux and macOS. Detects `bun` or `npm`, verifies your Node version, and
+    installs the latest release:
 
     ```bash
+    curl -fsSL https://raw.githubusercontent.com/HSPK/loom/main/install.sh | sh
+    ```
+
+    Options go after `-s --`:
+
+    ```bash
+    # Pin a version
+    curl -fsSL .../install.sh | sh -s -- --version 1.4.8
+    # Force a package manager
+    curl -fsSL .../install.sh | sh -s -- --package-manager npm
+    # Remove it again
+    curl -fsSL .../install.sh | sh -s -- --uninstall
+    ```
+
+=== "Docker"
+
+    No Node install, no config — a master key and admin password are
+    generated into the volume on first start:
+
+    ```bash
+    docker run -d --name loom -p 3000:3000 -v loom-data:/data \
+      ghcr.io/hspk/loom:latest
+    docker logs loom      # first-run admin password
+    ```
+
+    See [Docker deployment](docker.md) for volumes, secrets, backups, and
+    reverse proxies.
+
+=== "Docker Compose"
+
+    ```bash
+    curl -fsSLO https://raw.githubusercontent.com/HSPK/loom/main/docker-compose.yml
+    docker compose up -d
+    docker compose logs -f loom
+    ```
+
+=== "Tarball"
+
+    Pre-built tarballs are attached to every GitHub Release. Re-run the same
+    command to upgrade.
+
+    ```bash
+    # Latest
     bun add -g https://github.com/HSPK/loom/releases/latest/download/loom.tgz
-    ```
-
-=== "Pin version"
-
-    ```bash
-    bun add -g https://github.com/HSPK/loom/releases/download/v1.3.4/loom-1.3.4.tgz
-    ```
-
-=== "With npm"
-
-    ```bash
+    # Pinned
+    bun add -g https://github.com/HSPK/loom/releases/download/v1.4.8/loom-1.4.8.tgz
+    # With npm
     npm i -g https://github.com/HSPK/loom/releases/latest/download/loom.tgz
     ```
 
-Both add the `loom` binary to your `$PATH`. No lifecycle scripts run on tarball
-install — Loom recreates its install-time symlinks at CLI startup, so the
-package works identically on bun, npm, pnpm, and yarn without any trust
-prompts or `--allow-scripts` flags.
+All the CLI routes add the `loom` binary to your `$PATH`. No lifecycle scripts
+run on tarball install — Loom recreates its install-time symlinks at CLI
+startup, so the package works identically on bun, npm, pnpm, and yarn without
+any trust prompts or `--allow-scripts` flags.
+
+!!! tip "Docker users can skip ahead"
+
+    The container runs `loom start` for you and bootstraps its own config.
+    Jump straight to [Your first request](#your-first-request).
 
 ## Initialize
 
@@ -104,6 +147,7 @@ print(client.chat.completions.create(
 
 ## Next steps
 
+- Deploy with containers, volumes, and a reverse proxy — see [Docker](docker.md)
 - Add more providers and tweak per-model defaults — see [Providers](providers.md)
 - Wire in MCP tools — see [MCP integration](mcp.md)
 - Explore the playground — see [Playground](playground.md)

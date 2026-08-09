@@ -1,0 +1,63 @@
+# Loom — self-hosted AI testing platform
+#
+#   docker compose up -d
+#   docker compose logs -f loom      # first-run admin password is printed here
+#
+# Open http://localhost:3000 and sign in.
+#
+# Everything is optional: on first start Loom generates a master key and an
+# admin password into the `loom-data` volume (/data/loom.config.yaml). Set the
+# variables below — in a .env file next to this one, or in your orchestrator —
+# to take control. Environment variables always win over the config file.
+
+services:
+  loom:
+    image: ghcr.io/hspk/loom:latest
+    # Build from this checkout instead of pulling the published image:
+    # build:
+    #   context: .
+    container_name: loom
+    restart: unless-stopped
+    ports:
+      - "${LOOM_PORT:-3000}:3000"
+    environment:
+      # ---- Secrets -----------------------------------------------------
+      # AES-256-GCM key protecting every stored provider / MCP credential.
+      # Generate one with: openssl rand -base64 32
+      # Leave unset to have it generated into the volume on first boot.
+      LOOM_MASTER_KEY: ${LOOM_MASTER_KEY:-}
+
+      # ---- Admin bootstrap (first boot only, while users table is empty)
+      LOOM_ADMIN_USERNAME: ${LOOM_ADMIN_USERNAME:-admin}
+      LOOM_ADMIN_PASSWORD: ${LOOM_ADMIN_PASSWORD:-}
+
+      # ---- Upstream provider keys, referenced from loom.config.yaml as
+      #      ${OPENAI_API_KEY} — or just add providers in the admin UI.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+
+      # ---- Tuning ------------------------------------------------------
+      # LOOM_SESSION_TTL_DAYS: "30"
+      # LOOM_MODELS_CACHE_TTL: "300"
+      # LOOM_TRUST_PROXY: "1"          # behind nginx / Traefik / Cloudflare
+    volumes:
+      # SQLite database + generated config. This is your entire installation:
+      # back it up and you've backed up every conversation, log, and key.
+      - loom-data:/data
+      # Manage providers declaratively instead of through the UI:
+      # - ./loom.config.yaml:/app/loom.config.yaml:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    # SQLite + Node needs very little; raise if you run big MCP servers.
+    # deploy:
+    #   resources:
+    #     limits:
+    #       memory: 1g
+
+volumes:
+  loom-data:

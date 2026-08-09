@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://hspk.github.io/loom
+    about: Install guides, configuration, CLI and API reference.
+  - name: Questions and ideas
+    url: https://github.com/HSPK/loom/discussions
+    about: Ask how something works, or float a feature before building it.
+  - name: Report a vulnerability
+    url: https://github.com/HSPK/loom/security/advisories/new
+    about: Please report security issues privately, not as a public issue.

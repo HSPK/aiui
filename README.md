@@ -7,12 +7,23 @@ recording every request, and — when you're ready — fronting your application
 through the same OpenAI-compatible gateway.
 
 [![Release](https://img.shields.io/github/v/release/HSPK/loom?style=flat-square&color=4338ca&label=release)](https://github.com/HSPK/loom/releases/latest)
+[![Container](https://img.shields.io/badge/ghcr.io-hspk%2Floom-2496ed?style=flat-square&logo=docker&logoColor=white)](https://github.com/HSPK/loom/pkgs/container/loom)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg?style=flat-square)](#requirements)
 [![Docs](https://img.shields.io/badge/docs-mkdocs-success?style=flat-square)](https://hspk.github.io/loom)
 [![Docs CI](https://img.shields.io/github/actions/workflow/status/HSPK/loom/docs.yml?branch=main&style=flat-square&label=docs%20build)](https://github.com/HSPK/loom/actions/workflows/docs.yml)
 
+**[Documentation](https://hspk.github.io/loom)** · **[Quickstart](#quickstart)** · **[API reference](docs/reference/api.md)** · **[Releases](https://github.com/HSPK/loom/releases)**
+
 </div>
+
+```bash
+# Install the CLI (Linux / macOS)
+curl -fsSL https://raw.githubusercontent.com/HSPK/loom/main/install.sh | sh
+
+# ...or run it as a container
+docker run -d -p 3000:3000 -v loom-data:/data ghcr.io/hspk/loom:latest
+```
 
 ---
 
@@ -69,15 +80,47 @@ sqlite3 data/loom.db '
 
 ### Install
 
-Loom ships as a single Node CLI. Pre-built tarballs are attached to each
-GitHub Release (we don't publish to the npm registry).
+**Install script** (Linux / macOS) — detects `bun` or `npm`, checks your Node
+version, installs the latest release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/HSPK/loom/main/install.sh | sh
+```
+
+Pass options after `-s --` to pin a version, force a package manager, or
+uninstall:
+
+```bash
+curl -fsSL .../install.sh | sh -s -- --version 1.4.8
+curl -fsSL .../install.sh | sh -s -- --package-manager npm
+curl -fsSL .../install.sh | sh -s -- --uninstall
+```
+
+**Docker** — nothing to configure; a master key and admin password are
+generated into the `/data` volume on first start:
+
+```bash
+docker run -d --name loom -p 3000:3000 -v loom-data:/data ghcr.io/hspk/loom:latest
+docker logs loom            # first-run admin password is printed here
+```
+
+**Docker Compose**:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/HSPK/loom/main/docker-compose.yml
+docker compose up -d
+docker compose logs -f loom
+```
+
+**Tarball** — pre-built tarballs are attached to every GitHub Release (Loom is
+not published to the npm registry):
 
 ```bash
 # Latest — re-run the same command later to upgrade.
 bun add -g https://github.com/HSPK/loom/releases/latest/download/loom.tgz
 
 # Or pin to a specific version:
-bun add -g https://github.com/HSPK/loom/releases/download/v1.3.4/loom-1.3.4.tgz
+bun add -g https://github.com/HSPK/loom/releases/download/v1.4.8/loom-1.4.8.tgz
 ```
 
 `npm i -g <url>` works identically if you prefer npm. No special flags
@@ -86,6 +129,8 @@ and Loom recreates its install-time symlinks at CLI startup so no
 post-install step is necessary.
 
 ### Run
+
+Skip this if you used Docker — the container starts the server for you.
 
 ```bash
 # Interactive setup wizard — picks providers, generates a master key,
@@ -98,6 +143,8 @@ loom start
 
 Visit <http://localhost:3000>, sign in with the admin credentials, register
 your providers, and start a chat in the playground.
+
+Upgrade later with `loom update`, or by re-running the install command.
 
 To use Loom as a gateway from your applications:
 
@@ -113,6 +160,41 @@ The full list of supported modalities (chat, embeddings, rerank, images,
 text-to-speech, transcription) lives in the
 [API reference](docs/reference/api.md).
 
+## Deployment
+
+The container image is published to the GitHub Container Registry for
+`linux/amd64` and `linux/arm64`:
+
+| Tag | Tracks |
+| --- | --- |
+| `ghcr.io/hspk/loom:latest` | The most recent tagged release |
+| `ghcr.io/hspk/loom:1.4.8` / `:1.4` / `:1` | A release, minor line, or major line |
+| `ghcr.io/hspk/loom:edge` | The current `main` branch |
+
+Everything lives in the `/data` volume — SQLite database plus the generated
+config. Back that up and you've backed up the whole installation. Pin a
+version tag in production; `latest` moves under you.
+
+```yaml
+services:
+  loom:
+    image: ghcr.io/hspk/loom:latest
+    restart: unless-stopped
+    ports: ["3000:3000"]
+    environment:
+      LOOM_MASTER_KEY: ${LOOM_MASTER_KEY:-}       # generated on first boot if unset
+      LOOM_ADMIN_PASSWORD: ${LOOM_ADMIN_PASSWORD:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      - loom-data:/data
+
+volumes:
+  loom-data:
+```
+
+Secrets, bind mounts, backups, reverse proxies, and building the image
+yourself are all covered in [Docker deployment](docs/guide/docker.md).
+
 ## Why a single process
 
 Loom keeps state in one SQLite file and avoids external services. Copy
@@ -125,7 +207,7 @@ where it originated. There is no separate observability service to wire up.
 
 ## Requirements
 
-- Node.js ≥ 20
+- Node.js ≥ 20 — or just Docker, which bundles everything
 - An OS that can run a native `better-sqlite3` build (Linux / macOS / Windows)
 - An API key from at least one upstream LLM provider
 
@@ -135,6 +217,7 @@ Full documentation is published to **<https://hspk.github.io/loom>** and lives
 under [`docs/`](docs/). Topic index:
 
 - [Getting started](docs/guide/getting-started.md)
+- [Docker deployment](docs/guide/docker.md)
 - [Configuration](docs/guide/configuration.md)
 - [Providers](docs/guide/providers.md)
 - [MCP integration](docs/guide/mcp.md)
@@ -159,6 +242,13 @@ Loom is under active development. The public surface (HTTP API, CLI flags,
 config file shape) is stabilising but may shift before `1.0`. Pin a specific
 version in production until then.
 
+## Contributing
+
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md)
+for the setup, the verification commands, and the extension points that make
+most changes a one-file affair. Found a vulnerability? Please report it
+privately via [SECURITY.md](SECURITY.md).
+
 ## License
 
-[MIT](LICENSE) — © HSPK and contributors. Issues and pull requests welcome.
+[MIT](LICENSE) — © HSPK and contributors.
