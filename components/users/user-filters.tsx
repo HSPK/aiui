@@ -48,7 +48,7 @@ export function UserFilters({
                     className="w-[140px] md:w-[180px] h-8 text-xs shrink-0"
                 />
                 <Select value={filterAdmin} onValueChange={onFilterAdminChange}>
-                    <SelectTrigger className="w-[120px] h-8 text-xs shrink-0">
+                    <SelectTrigger aria-label="Filter by role" className="w-[120px] h-8 text-xs shrink-0">
                         <SelectValue />
                     </SelectTrigger>
                     <SelectContent>

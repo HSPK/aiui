@@ -302,6 +302,7 @@ export function ConversationSidebar() {
                                     compact ? "h-7 w-7" : "h-10 w-10",
                                 )}
                                 disabled={!activeId}
+                                aria-label="New chat"
                             >
                                 <SquarePen className={compact ? "h-3.5 w-3.5" : "h-5 w-5"} />
                             </Button>
@@ -315,6 +316,7 @@ export function ConversationSidebar() {
                                     variant="ghost"
                                     size="icon"
                                     onClick={toggleSidebar}
+                                    aria-label="Collapse sidebar"
                                     className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
                                 >
                                     <PanelLeftClose className="h-3.5 w-3.5" />
@@ -410,6 +412,7 @@ export function ConversationSidebar() {
                                     variant="ghost"
                                     size="icon"
                                     onClick={toggleSidebar}
+                                    aria-label="Show chat history"
                                     className="h-7 w-7 text-muted-foreground hover:text-foreground"
                                 >
                                     <PanelLeft className="h-3.5 w-3.5" />
@@ -423,6 +426,7 @@ export function ConversationSidebar() {
                                     variant="ghost"
                                     size="icon"
                                     onClick={handleNewChat}
+                                    aria-label="New chat"
                                     className="h-7 w-7 mt-0.5 text-muted-foreground hover:text-foreground"
                                 >
                                     <SquarePen className="h-3.5 w-3.5" />

@@ -189,7 +189,7 @@ export default function ProvidersPage() {
                     </div>
 
                     <Select value={sortOrder} onValueChange={setSortOrder}>
-                        <SelectTrigger className="w-[140px] h-8 text-xs shrink-0">
+                        <SelectTrigger aria-label="Sort providers" className="w-[140px] h-8 text-xs shrink-0">
                             <ArrowUpDown className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
                             <SelectValue placeholder="Sort" />
                         </SelectTrigger>

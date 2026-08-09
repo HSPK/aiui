@@ -314,6 +314,7 @@ export function ConnectedModelSelector({ conversationId }: { conversationId: str
                 onClick={handleOpen}
             >
                 <Bot className="h-5 w-5" />
+                <span className="sr-only">Select models</span>
                 {modelCount > 1 && (
                     <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] text-primary-foreground font-bold leading-none">
                         {modelCount}

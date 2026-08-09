@@ -55,7 +55,7 @@ export function TablePagination({
                         value={pageSize.toString()}
                         onValueChange={(v) => onPageSizeChange(Number(v))}
                     >
-                        <SelectTrigger className="h-7 w-[60px] text-xs border-0 bg-transparent hover:bg-muted/50 focus:ring-0 focus:ring-offset-0 px-2">
+                        <SelectTrigger aria-label="Rows per page" className="h-7 w-[60px] text-xs border-0 bg-transparent hover:bg-muted/50 focus:ring-0 focus:ring-offset-0 px-2">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent align="start">
@@ -77,6 +77,7 @@ export function TablePagination({
                     disabled={page <= 1 || isLoading}
                 >
                     <ChevronLeft className="h-4 w-4" />
+                    <span className="sr-only">Previous page</span>
                 </Button>
                 <div className="text-xs font-medium min-w-[3.5rem] text-center tabular-nums text-muted-foreground">
                     {page} / {totalPages}
@@ -89,6 +90,7 @@ export function TablePagination({
                     disabled={page >= totalPages || isLoading}
                 >
                     <ChevronRight className="h-4 w-4" />
+                    <span className="sr-only">Next page</span>
                 </Button>
             </div>
         </div>

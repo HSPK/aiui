@@ -92,7 +92,7 @@ export default function LogsPage() {
                             className="w-[140px] md:w-[180px] h-8 text-xs shrink-0"
                         />
                         <Select value={status} onValueChange={(v) => { setStatus(v as StatusFilter); table.setPage(1) }}>
-                            <SelectTrigger className="w-[120px] h-8 text-xs shrink-0">
+                            <SelectTrigger aria-label="Filter by status" className="w-[120px] h-8 text-xs shrink-0">
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>

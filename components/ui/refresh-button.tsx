@@ -31,6 +31,9 @@ export function RefreshButton({
                         size="icon"
                         onClick={onClick}
                         disabled={isLoading}
+                        // Radix's tooltip only supplies aria-describedby, so an
+                        // icon-only trigger has no accessible name without this.
+                        aria-label={tooltip}
                         className={`h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/80 transition-colors ${className || ""}`}
                     >
                         {isLoading ? (

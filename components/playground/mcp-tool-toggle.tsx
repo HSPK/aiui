@@ -66,6 +66,13 @@ export function McpToolToggle({ conversationId }: Props) {
                         activeCount > 0 && "text-foreground"
                     )}
                     title="MCP tools"
+                    // `title` alone is only an accname fallback used when the
+                    // element has NO text content — once the count Badge
+                    // renders (activeCount > 0), that visible text becomes
+                    // the computed accessible name instead ("1" rather than
+                    // "MCP tools"). Pin the name explicitly so it survives
+                    // the badge in either state.
+                    aria-label="MCP tools"
                 >
                     <Wrench className="h-3.5 w-3.5" />
                     {activeCount > 0 && (

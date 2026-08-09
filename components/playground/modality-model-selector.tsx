@@ -60,6 +60,10 @@ export function ModalitySingleModelSelector({
         return data.find((m) => m.name === value) ?? null
     }, [value, data])
 
+    // Only meaningful once the catalog has actually arrived — before that we
+    // have nothing to compare `value` against.
+    const catalogLoaded = Array.isArray(data)
+
     // "Stale" = saved value exists somewhere but doesn't satisfy the
     // current filter (capability mismatch, disabled, deleted upstream).
     // Without surfacing this, the trigger renders the stale name as if
@@ -95,7 +99,7 @@ export function ModalitySingleModelSelector({
                                 <span className="truncate text-destructive line-through">{selected.name}</span>
                                 <span className="text-[10px] text-destructive shrink-0">(unavailable)</span>
                             </>
-                        ) : value && !selected ? (
+                        ) : value && !selected && catalogLoaded ? (
                             <>
                                 <Bot className="h-4 w-4 text-destructive" />
                                 <span className="truncate text-destructive">{value}</span>
@@ -104,8 +108,12 @@ export function ModalitySingleModelSelector({
                         ) : (
                             <>
                                 <Bot className="h-4 w-4 text-muted-foreground" />
-                                <span className="text-muted-foreground">
-                                    {isLoading ? "Loading…" : placeholder}
+                                <span className="truncate text-muted-foreground">
+                                    {/* While the catalog is in flight a persisted value is the
+                                        best information we have — show it plainly rather than
+                                        flashing a destructive "(missing)" for a model that is
+                                        almost always still valid. */}
+                                    {value || (isLoading ? "Loading…" : placeholder)}
                                 </span>
                             </>
                         )}

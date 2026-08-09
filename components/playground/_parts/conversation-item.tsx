@@ -124,6 +124,15 @@ export const ConversationItem = React.memo(function ConversationItem({
                     <Check className="h-3.5 w-3.5" />
                 </button>
                 <button
+                    // `onMouseDown` + `preventDefault` runs BEFORE the input's
+                    // `onBlur={handleSaveEdit}` and stops the blur happening at
+                    // all. With only `onClick`, clicking Cancel first blurred the
+                    // input, which unconditionally saved the edited title — so
+                    // "cancel" silently performed the rename it was meant to
+                    // discard. `onClick` is kept for keyboard activation
+                    // (Enter/Space dispatch click without a preceding mousedown);
+                    // it can't double-fire because cancelling unmounts this button.
+                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); handleCancelEdit() }}
                     onClick={(e) => { e.stopPropagation(); handleCancelEdit() }}
                     className="p-0.5 hover:bg-red-500/10 rounded text-red-600 shrink-0"
                 >
@@ -173,6 +182,7 @@ export const ConversationItem = React.memo(function ConversationItem({
                     <button
                         type="button"
                         onClick={(e) => { e.preventDefault(); e.stopPropagation() }}
+                        aria-label="Conversation actions"
                         className={cn(
                             "shrink-0 rounded transition-opacity inline-flex items-center justify-center",
                             "hover:bg-black/10 dark:hover:bg-white/10",
