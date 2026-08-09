@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type BetterSqlite3 from "better-sqlite3";
+import { eq } from "drizzle-orm";
 import { db, schema } from "@/lib/server/db";
-import { refreshQueryPlannerStats, resetHealthCheckState } from "@/lib/server/db/startup";
+import {
+    refreshQueryPlannerStats,
+    repairMcpConfigsBrokenByUpstream,
+    resetHealthCheckState,
+} from "@/lib/server/db/startup";
 import { resetDb, seedMcpServer, seedProvider, seedUser } from "../../helpers/db";
 
 const raw = (db as unknown as { $client: BetterSqlite3.Database }).$client;
@@ -205,5 +210,143 @@ describe("refreshQueryPlannerStats", () => {
             .all() as Array<{ detail: string }>;
 
         expect(plan.map((r) => r.detail).join(" ")).toContain("gen_logs_deleted_created_idx");
+    });
+});
+
+describe("repairMcpConfigsBrokenByUpstream", () => {
+    beforeEach(() => resetDb());
+
+    /** Read a server's `config.args` back out of the database. */
+    function argsOf(id: string): unknown {
+        const row = db.select().from(schema.mcpServers).where(eq(schema.mcpServers.id, id)).get();
+        return (row?.config as { args?: unknown }).args;
+    }
+
+    it.each([
+        ["mcp-server-time", ["mcp-server-time", "--local-timezone=UTC"]],
+        ["mcp-server-fetch", ["mcp-server-fetch"]],
+        ["pubmedmcp", ["pubmedmcp"]],
+    ])("pins mcp<2 for the unpinned %s row that upstream broke", (_pkg, args) => {
+        const server = seedMcpServer({ config: { command: "uvx", args, env: {} } });
+
+        repairMcpConfigsBrokenByUpstream(db);
+
+        expect(argsOf(server.id)).toEqual(["--with", "mcp<2", ...args]);
+    });
+
+    it("preserves flags the admin customised through the preset's slots", () => {
+        // The `time` preset exposes the timezone as an editable slot, so a
+        // repaired row must keep whatever zone the admin picked. Prepending
+        // rather than replacing the args is what buys this.
+        const server = seedMcpServer({
+            config: { command: "uvx", args: ["mcp-server-time", "--local-timezone=Asia/Shanghai"], env: {} },
+        });
+
+        repairMcpConfigsBrokenByUpstream(db);
+
+        expect(argsOf(server.id)).toEqual([
+            "--with", "mcp<2", "mcp-server-time", "--local-timezone=Asia/Shanghai",
+        ]);
+    });
+
+    it("keeps the rest of the config blob intact", () => {
+        const server = seedMcpServer({
+            config: { command: "uvx", args: ["mcp-server-fetch"], env: { HTTP_PROXY: "http://p:8080" }, cwd: "/srv" },
+        });
+
+        repairMcpConfigsBrokenByUpstream(db);
+
+        const row = db.select().from(schema.mcpServers).where(eq(schema.mcpServers.id, server.id)).get();
+        expect(row?.config).toEqual({
+            command: "uvx",
+            args: ["--with", "mcp<2", "mcp-server-fetch"],
+            env: { HTTP_PROXY: "http://p:8080" },
+            cwd: "/srv",
+        });
+    });
+
+    it("leaves a row alone once the admin has pinned something themselves", () => {
+        // args[0] is a flag, not the package -> someone is already in
+        // control of resolution and we must not second-guess them.
+        const args = ["--with", "mcp==1.9.4", "mcp-server-time"];
+        const server = seedMcpServer({ config: { command: "uvx", args, env: {} } });
+
+        repairMcpConfigsBrokenByUpstream(db);
+
+        expect(argsOf(server.id)).toEqual(args);
+    });
+
+    it("is idempotent — a second boot doesn't stack another pin", () => {
+        const server = seedMcpServer({ config: { command: "uvx", args: ["pubmedmcp"], env: {} } });
+
+        repairMcpConfigsBrokenByUpstream(db);
+        repairMcpConfigsBrokenByUpstream(db);
+        repairMcpConfigsBrokenByUpstream(db);
+
+        expect(argsOf(server.id)).toEqual(["--with", "mcp<2", "pubmedmcp"]);
+    });
+
+    it.each([
+        ["a package upstream did not break", { command: "uvx", args: ["mcp-server-git", "--repository", "/r"] }],
+        ["a different launcher", { command: "npx", args: ["mcp-server-time"] }],
+        ["an empty arg list", { command: "uvx", args: [] }],
+        ["non-string args", { command: "uvx", args: [{ nested: true }] }],
+        ["a missing args key", { command: "uvx" }],
+    ])("does not touch %s", (_label, config) => {
+        const server = seedMcpServer({ config: config as Record<string, unknown> });
+
+        repairMcpConfigsBrokenByUpstream(db);
+
+        const row = db.select().from(schema.mcpServers).where(eq(schema.mcpServers.id, server.id)).get();
+        expect(row?.config).toEqual(config);
+    });
+
+    it("does not touch http servers", () => {
+        const config = { url: "https://example.com/mcp" };
+        const server = seedMcpServer({ transport: "http", config });
+
+        repairMcpConfigsBrokenByUpstream(db);
+
+        const row = db.select().from(schema.mcpServers).where(eq(schema.mcpServers.id, server.id)).get();
+        expect(row?.config).toEqual(config);
+    });
+
+    it("repairs only the affected rows when several servers coexist", () => {
+        const broken = seedMcpServer({ config: { command: "uvx", args: ["mcp-server-fetch"] } });
+        const fine = seedMcpServer({ config: { command: "uvx", args: ["mcp-scholarly"] } });
+
+        repairMcpConfigsBrokenByUpstream(db);
+
+        expect(argsOf(broken.id)).toEqual(["--with", "mcp<2", "mcp-server-fetch"]);
+        expect(argsOf(fine.id)).toEqual(["mcp-scholarly"]);
+    });
+
+    it("survives a failing database instead of blocking boot", () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        const exploding = { select: () => { throw new Error("db gone"); } } as unknown as typeof db;
+
+        expect(() => repairMcpConfigsBrokenByUpstream(exploding)).not.toThrow();
+        expect(warn).toHaveBeenCalledWith("[loom] failed to repair MCP server configs:", expect.any(Error));
+        warn.mockRestore();
+    });
+
+    it("announces what it changed rather than rewriting configs silently", () => {
+        const info = vi.spyOn(console, "info").mockImplementation(() => {});
+        seedMcpServer({ name: "time", config: { command: "uvx", args: ["mcp-server-time"] } });
+
+        repairMcpConfigsBrokenByUpstream(db);
+
+        expect(info).toHaveBeenCalledWith(expect.stringContaining("time (mcp-server-time)"));
+        info.mockRestore();
+    });
+
+    it("says nothing when there is nothing to repair", () => {
+        const info = vi.spyOn(console, "info").mockImplementation(() => {});
+        seedMcpServer({ config: { command: "uvx", args: ["mcp-scholarly"] } });
+
+        repairMcpConfigsBrokenByUpstream(db);
+
+        expect(info).not.toHaveBeenCalled();
+        info.mockRestore();
     });
 });

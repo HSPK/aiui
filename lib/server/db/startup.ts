@@ -1,5 +1,5 @@
 import "server-only";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { Database as BetterSqlite3Database } from "better-sqlite3";
 import { mcpServers, providers } from "./schema";
 import type { db as Db } from "./index";
@@ -125,5 +125,77 @@ export function refreshQueryPlannerStats(db: typeof Db): void {
     } catch (err) {
         // Purely an optimisation — a failure here must never block boot.
         console.warn("[loom] failed to refresh query planner statistics:", err);
+    }
+}
+
+/**
+ * Repair MCP server rows that upstream broke and a catalogue fix can't reach.
+ *
+ * Presets are templates: their config is copied into `mcp_servers` at
+ * creation time and never looked at again. So when the `mcp` Python SDK
+ * shipped 2.0 — renaming `McpError` to `MCPError` and moving
+ * `mcp.server.fastmcp` — pinning `mcp<2` in the catalogue only helped
+ * servers created *after* the fix. Anyone who had already added `time`,
+ * `fetch` or `pubmed` kept a row that crashes with `ImportError` before the
+ * MCP handshake, and the surfaced error says nothing about what to do.
+ *
+ * The usual objection to rewriting user-owned config doesn't apply here:
+ * these invocations cannot start at all, under any circumstances, so there
+ * is no working intent to overwrite. The match is still deliberately narrow:
+ *
+ *   - stdio transport launched through `uvx`, and
+ *   - `args[0]` is one of the affected packages.
+ *
+ * That second condition is the whole safety argument. `args[0]` being the
+ * package name means no `--with` / `--from` flag precedes it, i.e. the
+ * invocation is definitely unpinned. If an admin has already pinned
+ * something themselves, `args[0]` is their flag, we skip the row, and their
+ * choice stands. Everything after the package name — `--local-timezone`,
+ * whatever they customised through the preset's slots — is preserved by
+ * prepending rather than replacing, so a row edited via the UI is repaired
+ * just like an untouched one.
+ *
+ * Idempotent by construction: once the pin is prepended `args[0]` is
+ * `--with`, so the row no longer matches on any later boot.
+ */
+const MCP_SDK_PIN = ["--with", "mcp<2"];
+const PACKAGES_BROKEN_BY_MCP_SDK_2 = new Set([
+    "mcp-server-time",
+    "mcp-server-fetch",
+    "pubmedmcp",
+]);
+
+export function repairMcpConfigsBrokenByUpstream(db: typeof Db): void {
+    try {
+        const rows = db.select().from(mcpServers).all();
+        const repaired: string[] = [];
+
+        for (const row of rows) {
+            if (row.transport !== "stdio") continue;
+            const config = row.config as { command?: unknown; args?: unknown };
+            if (config?.command !== "uvx") continue;
+            if (!Array.isArray(config.args)) continue;
+
+            const [first] = config.args;
+            if (typeof first !== "string") continue;
+            if (!PACKAGES_BROKEN_BY_MCP_SDK_2.has(first)) continue;
+
+            db.update(mcpServers)
+                .set({ config: { ...config, args: [...MCP_SDK_PIN, ...config.args] } })
+                .where(eq(mcpServers.id, row.id))
+                .run();
+            repaired.push(`${row.name} (${first})`);
+        }
+
+        if (repaired.length > 0) {
+            // Say so rather than doing it silently — an admin who sees the
+            // args change in the UI should be able to find out why.
+            console.info(
+                `[loom] pinned mcp<2 for ${repaired.length} MCP server(s) broken by the mcp SDK 2.0 release: ${repaired.join(", ")}`,
+            );
+        }
+    } catch (err) {
+        // Best-effort repair — never block boot over it.
+        console.warn("[loom] failed to repair MCP server configs:", err);
     }
 }

@@ -5,7 +5,7 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import * as schema from "./schema";
-import { resetHealthCheckState, refreshQueryPlannerStats } from "./startup";
+import { resetHealthCheckState, refreshQueryPlannerStats, repairMcpConfigsBrokenByUpstream } from "./startup";
 
 const USER_CWD = process.env.LOOM_USER_CWD || process.cwd();
 const DB_PATH = process.env.LOOM_DB_PATH || resolve(USER_CWD, "data", "loom.db");
@@ -97,6 +97,7 @@ function createDb() {
     if (!skipMigrations) {
         resetHealthCheckState(db);
         refreshQueryPlannerStats(db);
+        repairMcpConfigsBrokenByUpstream(db);
     }
 
     return db;
