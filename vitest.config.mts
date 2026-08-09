@@ -18,6 +18,18 @@ export default defineConfig({
     resolve: { alias },
     test: {
         globals: true,
+        // Vitest's 5s default is a generic guess, not a budget derived from
+        // this suite. Several tests are legitimately multi-second because the
+        // cost *is* the thing under test: the login-lockout test drives 31
+        // real bcrypt compares (the route runs one against a dummy hash even
+        // for missing users, so response time can't enumerate usernames), and
+        // the param-popover tests drive a dozen sequential Radix Select
+        // open/pick/close cycles. Both sat at ~2.6s locally — under 2x
+        // headroom — and the lockout one duly timed out on a loaded CI
+        // runner. Raising the ceiling costs nothing on green runs (a timeout
+        // only ever fires on a hang) and removes a whole class of flakes.
+        testTimeout: 20_000,
+        hookTimeout: 20_000,
         coverage: {
             provider: "v8",
             reportsDirectory: "./coverage",

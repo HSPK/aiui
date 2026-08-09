@@ -150,6 +150,11 @@ describe("POST /api/login", () => {
         expect(locked.status).toBe(429);
         const body = await envelope(locked);
         expect(body.msg).toMatch(/too many failed attempts/i);
+        // Slowest test in the suite (~2.7s) and deliberately so: 31 requests
+        // against a username that doesn't exist, each paying a full bcrypt
+        // compare against DUMMY_HASH because the login route refuses to let
+        // response timing reveal whether a username exists. See the raised
+        // testTimeout in vitest.config.mts.
     });
 });
 
