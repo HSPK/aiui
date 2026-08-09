@@ -147,20 +147,47 @@ export function defineRoute<
 function parseOrThrow<T>(schema: z.ZodType<T>, value: unknown, label: string): T {
     const parsed = schema.safeParse(value);
     if (!parsed.success) {
-        const message = formatZodIssues(parsed.error, label);
+        const message = formatZodIssues(parsed.error, label, value);
         throw new HttpError(message, 400);
     }
     return parsed.data;
 }
 
-function formatZodIssues(err: ZodError, label = "input"): string {
+/** Walk an issue path against the input that failed validation. Returns
+ *  `undefined` when the field is absent — which is how we tell "you forgot
+ *  this field" apart from "you sent the wrong type".
+ *
+ *  zod v3 exposed a `received: "undefined"` discriminator on the issue and
+ *  this used to read it directly. zod v4 dropped both `received` and
+ *  `input` from the issue object, so that check silently became dead code
+ *  and every missing-field error started leaking zod's raw wording
+ *  ("id: Invalid input: expected string, received undefined") on every
+ *  endpoint. Resolving against the input is version-independent. */
+function valueAtPath(input: unknown, path: readonly PropertyKey[]): unknown {
+    let cur = input;
+    for (const segment of path) {
+        if (cur === null || typeof cur !== "object") return undefined;
+        cur = (cur as Record<PropertyKey, unknown>)[segment];
+    }
+    return cur;
+}
+
+/** Distinguishes "no input available" from "input was literally undefined".
+ *  A ZodError thrown from inside a handler reaches `formatZodIssues`
+ *  without the value that produced it. */
+const NO_INPUT = Symbol("no-input");
+
+function formatZodIssues(err: ZodError, label = "input", input: unknown = NO_INPUT): string {
     if (err.issues.length === 0) return `Invalid ${label}`;
     return err.issues
         .map((i) => {
             const path = i.path.length > 0 ? i.path.join(".") : label;
             // Treat missing required fields specially for nicer error text.
-            const received = (i as { received?: string }).received;
-            if (i.code === "invalid_type" && received === "undefined") {
+            if (
+                i.code === "invalid_type" &&
+                input !== NO_INPUT &&
+                valueAtPath(input, i.path as readonly PropertyKey[]) === undefined
+            ) {
                 return `${path}: required`;
             }
             return `${path}: ${i.message}`;

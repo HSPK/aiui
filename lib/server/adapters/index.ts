@@ -37,12 +37,21 @@ export interface ProviderAdapter {
 
     /**
      * Auto-detect: return true if this adapter is the right choice for the
-     * given provider when no explicit `provider.adapter_id` is set. The
-     * registry walks adapters in registration order and returns the first
-     * hit, so more specific adapters (azure-foundry) must register BEFORE
-     * more general ones (openai).
+     * given provider when no explicit `provider.adapter_id` is set.
+     *
+     * Specificity is expressed with the `fallback` flag below, NOT with
+     * registration order — a value import between two adapter modules
+     * silently reorders the registry, which is exactly how every provider
+     * once ended up resolving to the catch-all.
      */
     matches(provider: Provider): boolean;
+
+    /**
+     * Marks a catch-all adapter (`matches: () => true`). Fallback adapters
+     * are skipped while probing for a specific match and only used when
+     * nothing else claims the provider.
+     */
+    readonly fallback?: boolean;
 
     // ----- discovery -----
 
@@ -151,6 +160,9 @@ export function resolveAdapter(provider: Provider): ProviderAdapter {
         if (explicit) return explicit;
     }
     for (const adapter of registry) {
+        // Catch-alls never win the probe — otherwise whichever module
+        // happened to evaluate first would shadow every specific adapter.
+        if (adapter.fallback) continue;
         if (adapter.matches(provider)) return adapter;
     }
     const fallback = byId.get("openai");

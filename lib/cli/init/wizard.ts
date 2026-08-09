@@ -34,9 +34,14 @@ export async function runInteractiveInit(opts: InitFlowOptions): Promise<void> {
         if (existsSync(outPath) && !opts.force) {
             console.error(`Refusing to overwrite existing file: ${outPath}`);
             console.error("Pass --force to replace it.");
+            // `else` rather than relying on process.exit() to halt: if the
+            // refusal path ever falls through (a stubbed exit, a future
+            // "return an exit code" refactor) it would overwrite the very
+            // file it just refused to touch.
             process.exit(1);
+        } else {
+            writeOut(outPath, buildConfigTemplate({ masterKey: generateMasterKey() }));
         }
-        writeOut(outPath, buildConfigTemplate({ masterKey: generateMasterKey() }));
         return;
     }
 

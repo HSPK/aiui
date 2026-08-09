@@ -399,12 +399,6 @@ function toChatCompletion(
         }));
     }
     const usage = normalizeUsage(r.usage);
-    // Pick finish_reason from tool_calls presence first (so external
-    // OpenAI-compat clients see "tool_calls" — the canonical signal
-    // for "the model wants to invoke a tool"); fall back to status.
-    const finishReason = toolCalls.length > 0
-        ? "tool_calls"
-        : (r.status === "completed" ? "stop" : (r.status ?? "stop"));
     const out: Record<string, unknown> = {
         id: r.id ?? "",
         object: "chat.completion",
@@ -414,12 +408,29 @@ function toChatCompletion(
             {
                 index: 0,
                 message,
-                finish_reason: finishReason,
+                finish_reason: chatFinishReason(r.status, toolCalls.length > 0),
             },
         ],
     };
     if (usage) out.usage = usage;
     return out;
+}
+
+/** Map a Responses-API `status` onto the chat-completions `finish_reason`
+ *  enum. This value is returned verbatim to callers as the HTTP body, so it
+ *  must stay inside the set OpenAI SDKs accept — `stop | length |
+ *  tool_calls | content_filter | function_call`. Leaking a raw Responses
+ *  status such as `"incomplete"` makes strict clients reject the reply.
+ *
+ *  `tool_calls` wins over status: it is the canonical signal that the model
+ *  wants to invoke a tool. `incomplete` means the output was cut short,
+ *  which is exactly what `length` means in chat-completions. Anything else
+ *  unrecognised degrades to `stop` rather than passing through. */
+function chatFinishReason(status: string | undefined, hasToolCalls: boolean): string {
+    if (hasToolCalls) return "tool_calls";
+    if (status === "incomplete") return "length";
+    if (status === "content_filter") return "content_filter";
+    return "stop";
 }
 
 // =============================================================================
@@ -475,11 +486,12 @@ export const responsesVariant: UpstreamApiVariant = {
             totalTokens: usage.total_tokens ?? null,
             normalized: toChatCompletion(r, content, reasoning, toolCalls),
             toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-            finishReason: toolCalls.length > 0
-                ? "tool_calls"
-                : (r.status === "completed" ? "stop"
-                    : r.status === "incomplete" ? "length"
-                    : r.status),
+            // Same mapping as the embedded `normalized.choices[0].finish_reason`
+            // above. These two must never disagree: the streaming path feeds
+            // this one into `onComplete` and the terminal SSE chunk, so a raw
+            // Responses status here would surface a non-standard value to the
+            // playground orchestrator even though the HTTP body was correct.
+            finishReason: chatFinishReason(r.status, toolCalls.length > 0),
             error,
         };
     },

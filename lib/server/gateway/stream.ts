@@ -291,9 +291,14 @@ export function handleStream({
     // `generation_logs` row stays at "pending" forever on abort.
     // The wrapper is a thin reader-passthrough; cancel propagates
     // upstream so the in-flight fetch tears down too.
+    //
+    // Held across `start`/`cancel` because the reader — not the stream —
+    // is what a cancel has to go through once the lock is taken.
+    let activeReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
     const observed = new ReadableStream<Uint8Array>({
         async start(controller) {
             const reader = piped.getReader();
+            activeReader = reader;
             try {
                 while (true) {
                     const { value, done } = await reader.read();
@@ -306,6 +311,7 @@ export function handleStream({
                 finalize("failed", reason, finishReason ?? "stop");
                 controller.error(err);
             } finally {
+                activeReader = null;
                 reader.releaseLock();
             }
         },
@@ -319,7 +325,14 @@ export function handleStream({
                     ? reason
                     : "client cancelled";
             finalize("failed", msg, finishReason ?? "stop");
-            return piped.cancel(reason);
+            // Cancel through the READER that owns the lock. `piped.cancel()`
+            // throws `TypeError: Invalid state: ReadableStream is locked`
+            // whenever a read is in flight (i.e. the normal case), so the
+            // cancellation never reached the upstream fetch and the provider
+            // connection leaked — still streaming, still billing — after the
+            // client had already disconnected.
+            const reader = activeReader;
+            return reader ? reader.cancel(reason) : piped.cancel(reason);
         },
     });
 

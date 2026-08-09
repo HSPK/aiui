@@ -119,7 +119,8 @@ export const openaiAdapter: ProviderAdapter = {
     label: "OpenAI compatible",
     description: "OpenAI direct, DeepSeek, Together, Groq, vLLM, Ollama — any /v1 OpenAI-compatible upstream.",
 
-    matches: () => true, // catch-all fallback; specific adapters register earlier
+    matches: () => true, // catch-all fallback; see `fallback` below
+    fallback: true,
 
     fetchModels: fetchOpenAIModels,
 

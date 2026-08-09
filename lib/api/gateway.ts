@@ -1,4 +1,4 @@
-import { ApiError, fetcher, rawFetch } from "./client";
+import { API_BASE, ApiError, fetcher, rawFetch } from "./client";
 import type {
     PlaygroundEmbeddingInput,
     PlaygroundEmbeddingResult,
@@ -217,6 +217,10 @@ export const gateway = {
         variant: "video" | "thumbnail" | "spritesheet" = "video",
     ): string {
         const qs = new URLSearchParams({ model, variant }).toString();
-        return `/api/v1/videos/${encodeURIComponent(id)}/content?${qs}`;
+        // Must go through API_BASE like every other call: a deployment that
+        // sets NEXT_PUBLIC_API_URL (different origin or base path) would
+        // otherwise get video/thumbnail URLs pointing at the current origin's
+        // /api, and playback would 404.
+        return `${API_BASE}/v1/videos/${encodeURIComponent(id)}/content?${qs}`;
     },
 };

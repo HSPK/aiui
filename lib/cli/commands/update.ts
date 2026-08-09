@@ -188,7 +188,7 @@ export const updateCommand = defineCommand({
         console.log("");
         console.log(`  ${style.dim("Installed")}   ${style.bold("v" + current)}`);
 
-        let release: LatestRelease;
+        let release: LatestRelease | null = null;
         try {
             release = await withSpinner("Checking GitHub Releases", fetchLatest);
         } catch (err) {
@@ -196,6 +196,9 @@ export const updateCommand = defineCommand({
             console.error(style.dim("  Check your network or try again later."));
             process.exit(1);
         }
+        // Explicit guard instead of trusting process.exit() to have halted
+        // us — everything below dereferences `release`.
+        if (!release) return;
 
         const latestTag = release.tag_name;
         const latestVersion = latestTag.replace(/^v/, "");
@@ -228,6 +231,8 @@ export const updateCommand = defineCommand({
             console.error(style.red(`\n${sym.err} Neither \`bun\` nor \`npm\` found on PATH.`));
             console.error(style.dim(`  Install manually: bun add -g ${LATEST_TARBALL_URL}\n`));
             process.exit(1);
+            // Belt and braces: everything below dereferences `pm`.
+            return;
         }
 
         // ALWAYS install via the stable latest URL — it dedups against
