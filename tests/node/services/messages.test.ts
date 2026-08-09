@@ -248,6 +248,57 @@ describe("messages service (listMessages + rateMessage)", () => {
             });
         });
 
+        it("bounds the ancestor walk so a page is a page, not the whole history", () => {
+            // The walk used to climb to the root. In a linear chat every
+            // message's parent is its predecessor, so seeding from the
+            // oldest row of any page dragged the entire conversation back
+            // — opening a chat loaded it from the beginning instead of the
+            // end. Measured here at 60/60 before the depth cap.
+            const user = seedUser({ username: "long-linear-chat" });
+            const conv = seedConversation({ userId: user.id });
+            let parent: string | null = null;
+            for (let i = 0; i < 60; i++) {
+                const m = seedMessage({
+                    conversationId: conv.id,
+                    role: i % 2 === 0 ? "user" : "assistant",
+                    content: `msg-${i}`,
+                    parentId: parent,
+                    createdAt: ts(i),
+                });
+                parent = m.id;
+            }
+
+            const page = listMessages(user.id, conv.id, { page: 1, page_size: 20, sort: "-created_at" });
+
+            expect(page.total).toBe(60);
+            // A handful of ancestor rows may ride along to complete the
+            // page's oldest turn, but the response must stay proportional
+            // to page_size rather than to the conversation.
+            expect(page.items.length).toBeGreaterThanOrEqual(20);
+            expect(page.items.length).toBeLessThanOrEqual(25);
+            // And it must be the *newest* slice — this is the end of the
+            // conversation, not the start of it.
+            const contents = page.items.map((m) => m.content);
+            expect(contents).toContain("msg-59");
+            expect(contents).not.toContain("msg-0");
+        });
+
+        it("still completes the oldest turn on a page so tool rows keep their assistant", () => {
+            // The cap must not cost us the reason the walk exists: when a
+            // page window opens on a tool row, its assistant parent (and
+            // that assistant's user turn) still come along.
+            const user = seedUser({ username: "capped-but-complete" });
+            const conv = seedConversation({ userId: user.id });
+            const u = seedMessage({ conversationId: conv.id, role: "user", content: "call a tool", createdAt: ts(0) });
+            const a = seedMessage({ conversationId: conv.id, role: "assistant", content: "", parentId: u.id, createdAt: ts(1) });
+            const t = seedMessage({ conversationId: conv.id, role: "tool", content: "result", parentId: a.id, createdAt: ts(2) });
+
+            // page_size=1 newest-first puts the tool row alone in the window.
+            const page = listMessages(user.id, conv.id, { page: 1, page_size: 1, sort: "-created_at" });
+
+            expect(page.items.map((m) => m.id).sort()).toEqual([u.id, a.id, t.id].sort());
+        });
+
         it("does NOT pull tool children of an errored assistant (defense-in-depth orphan guard)", () => {            const user = seedUser({ username: "error-guard-user" });
             const conv = seedConversation({ userId: user.id });
             const m1 = seedMessage({ conversationId: conv.id, role: "user", content: "call a tool", createdAt: ts(0) });

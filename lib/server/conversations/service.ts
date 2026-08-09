@@ -108,16 +108,29 @@ export function listMessages(userId: string, conversationId: string, query: Mess
         .offset((query.page - 1) * query.page_size)
         .all();
 
-    // Pull in ancestors so a page is always subtree-complete: a tool
-    // row needs its parent assistant (whose tool_call parts contain
-    // the call ids that link the rows), an assistant needs its parent
-    // user. Without this, paginating a tool-heavy turn breaks the FE
-    // fold (orphan tool rows can't bind back to a missing parent and
-    // get dropped, leaving an empty render).
+    // Pull in a few ancestors so a page is subtree-complete at its
+    // edge: a tool row needs its parent assistant (whose tool_call
+    // parts carry the ids that link the two), and that assistant reads
+    // better with the user turn that prompted it.
     //
-    // Recursive CTE: one round-trip walks the parent chain to root
-    // instead of O(depth) `IN (...)` round-trips. SQLite cap protects
-    // against pathological cycles in case of corrupted parent_id data.
+    // The walk is depth-capped, and the cap is the whole point. It used
+    // to climb to the root (depth < 64), which quietly defeated
+    // pagination: in a linear chat every message's parent is its
+    // predecessor, so seeding from the oldest row of ANY page walked
+    // the entire history back to message one. Measured on a 60-message
+    // conversation, `page_size=20` returned all 60 — opening a chat
+    // fetched and rendered it from the beginning instead of the end.
+    //
+    // Two levels is enough for the stated purpose (tool -> assistant ->
+    // user) and the FE degrades gracefully past it: `foldToolMessages`
+    // binds results to calls by `tool_call_id` rather than `parent_id`,
+    // and deliberately keeps orphan tool rows visible when their parent
+    // hasn't loaded. Anything older arrives via the next page.
+    //
+    // Recursive CTE: one round-trip walks the chain instead of O(depth)
+    // `IN (...)` round-trips, and the cap doubles as protection against
+    // a cycle in corrupted parent_id data.
+    const ANCESTOR_COMPLETION_DEPTH = 2;
     const haveIds = new Set(rows.map((r) => r.id));
     const seedParents = Array.from(
         new Set(
@@ -149,7 +162,7 @@ export function listMessages(userId: string, conversationId: string, query: Mess
                 JOIN ancestors a ON m.id = a.id
                 WHERE m.parent_id IS NOT NULL
                   AND m.conversation_id = ${conversationId}
-                  AND a.depth < 64
+                  AND a.depth < ${ANCESTOR_COMPLETION_DEPTH}
             )
             SELECT m.id AS id FROM messages m
             JOIN ancestors a ON m.id = a.id
