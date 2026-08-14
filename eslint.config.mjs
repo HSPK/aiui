@@ -48,6 +48,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // esbuild output from scripts/build-cli.mjs — bin/loom.ts is the source.
+    // The standalone variant inlines every dependency, so linting it reports
+    // on third-party code we don't own.
+    "bin/*.mjs",
   ]),
 ]);
 

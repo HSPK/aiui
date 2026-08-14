@@ -112,7 +112,9 @@ COPY --from=build --chown=node:node /app/.next/static     ./.next/static
 COPY --from=build --chown=node:node /app/public           ./public
 COPY --from=build --chown=node:node /app/drizzle          ./drizzle
 # The CLI bundle stays for `docker run <image> init --print` and friends.
-COPY --from=build --chown=node:node /app/bin/loom.mjs     ./bin/loom.mjs
+# The self-contained CLI build, not the externals-based one the npm
+# tarball ships: standalone node_modules has no citty/yaml/@clack.
+COPY --from=build --chown=node:node /app/bin/loom.standalone.mjs ./bin/loom.mjs
 COPY --chown=node:node docker/entrypoint.sh /usr/local/bin/loom-entrypoint
 
 RUN chmod +x /usr/local/bin/loom-entrypoint \

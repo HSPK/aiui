@@ -101,7 +101,26 @@ jobs:
             org.opencontainers.image.documentation=https://hspk.github.io/loom
             org.opencontainers.image.licenses=MIT
 
+      # Build amd64 first and keep it local. The unit and Playwright suites
+      # run against the repo, so nothing they do can catch an image that
+      # boots fine but whose CLI passthrough is broken — which is exactly
+      # what shipped once. Smoke it before anything reaches the registry;
+      # the push below reuses these layers from cache.
+      - name: Build amd64 for smoke testing
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: loom:smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke-test the image
+        run: ./scripts/docker-smoke.sh loom:smoke
+
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
