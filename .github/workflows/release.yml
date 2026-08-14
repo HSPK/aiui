@@ -75,6 +75,21 @@ jobs:
           # When triggered manually, inputs.ref is a tag or SHA — use it directly.
           echo "tag=$ref" >> "$GITHUB_OUTPUT"
 
+          # The release notes and the tarball name come from package.json,
+          # but the git tag is what the docker image is versioned by. If the
+          # two disagree, the release publishes a v1.4.9 image while telling
+          # people to install 1.4.8 — silently, and only visible to whoever
+          # follows the instructions. Fail loudly instead.
+          version="${{ steps.pack.outputs.version }}"
+          case "$ref" in
+            v*)
+              if [ "${ref#v}" != "$version" ]; then
+                echo "::error::tag $ref does not match package.json version $version"
+                exit 1
+              fi
+              ;;
+          esac
+
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
