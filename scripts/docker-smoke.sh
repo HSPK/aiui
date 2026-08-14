@@ -86,7 +86,11 @@ check "health endpoint reports ok" '"status":"ok"' "$(curl -s "http://127.0.0.1:
 logs=$(docker logs "$NAME" 2>&1)
 check "first run prints admin credentials" "First-run admin credentials" "$logs"
 
-password=$(printf '%s' "$logs" | grep -oE 'password : [A-Za-z0-9]+' | head -1 | awk '{print $3}')
+# Read the credential from the generated config rather than scraping the
+# banner. The generator uses base64url, so a `[A-Za-z0-9]+` match silently
+# truncates at the first `-` or `_` — which passes locally whenever the
+# random password happens to be alphanumeric and fails in CI when it isn't.
+password=$(docker exec "$NAME" sh -lc "sed -n 's/^  password: \"\(.*\)\"$/\\1/p' /data/loom.config.yaml" 2>/dev/null | head -1)
 login=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:$PORT/api/login" \
     -H 'content-type: application/json' \
     -d "{\"user_name\":\"admin\",\"user_password\":\"$password\"}")
