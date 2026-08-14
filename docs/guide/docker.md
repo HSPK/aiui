@@ -7,14 +7,21 @@ published to the GitHub Container Registry for `linux/amd64` and `linux/arm64`:
 ghcr.io/hspk/loom:latest
 ```
 
-| Tag | What it tracks |
-| --- | --- |
-| `latest` | The most recent tagged release |
-| `1.4.8`, `1.4`, `1` | A specific release / minor line / major line |
-| `edge` | The current `main` branch (amd64 only) |
-| `sha-<short>` | An exact commit |
+| Tag | What it tracks | Platforms |
+| --- | --- | --- |
+| `latest` | The most recent tagged release | amd64, arm64 |
+| `1.4.8`, `1.4`, `1` | A specific release / minor line / major line | amd64, arm64 |
+| `edge` | The current `main` branch | amd64 only |
+| `sha-<short>` | An exact commit | amd64 only |
 
 Pin a version in production — `latest` moves under you.
+
+Release tags carry both architectures; `edge` and `sha-` builds are amd64
+only, because arm64 is emulated on CI and a full Next.js build there takes
+around half an hour. If `docker pull` reports `manifest unknown` or
+`no matching manifest for linux/arm64`, you have asked for a tag or a
+platform that was never published — `docker buildx imagetools inspect
+ghcr.io/hspk/loom:latest` lists what actually exists.
 
 ## Run
 
@@ -310,6 +317,8 @@ docker build --build-arg NODE_VERSION=22 --build-arg BUN_VERSION=1.3.14 -t loom 
 
 | Symptom | Cause / fix |
 | --- | --- |
+| `manifest unknown` on `docker pull` | That tag was never published. Check with `docker buildx imagetools inspect ghcr.io/hspk/loom:latest`, or use `:edge` |
+| `no matching manifest for linux/arm64` | You are on arm64 and asked for `:edge` or a `sha-` tag, which are amd64 only. Use a release tag |
 | `/data is not writable by uid 1000` | Bind mount owned by root — `sudo chown -R 1000:1000 <hostdir>` |
 | `No users in database and LOOM_ADMIN_PASSWORD is not set` | A config was mounted without an `admin:` block. Pass `-e LOOM_ADMIN_PASSWORD=...` |
 | Stored provider keys stopped decrypting | `LOOM_MASTER_KEY` changed. Restore the old key, or re-enter the provider keys |

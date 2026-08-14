@@ -33,16 +33,39 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
           fetch-depth: 1
 
-      # arm64 is emulated, so a full Next.js build takes ~30 min. Only pay
-      # that on tagged releases; `main` ships amd64-only as `:edge`.
-      - name: Decide platforms
-        id: platforms
+      # One place decides what this build *is*, because three later steps
+      # need to agree on it. Deriving it from `github.ref` directly does not
+      # work for `workflow_dispatch`: there `github.ref` is the branch the
+      # workflow file lives on, not the ref being built, so a manual run of a
+      # release tag used to build the right code and then publish it as
+      # `:edge`. That made the dispatch path useless as a recovery route,
+      # which is exactly when you need it.
+      - name: Resolve build context
+        id: ctx
         run: |
-          if [ "${{ startsWith(github.ref, 'refs/tags/v') || inputs.ref != '' }}" = "true" ]; then
-            echo "value=linux/amd64,linux/arm64" >> "$GITHUB_OUTPUT"
+          ref="${{ inputs.ref || github.ref }}"
+          version="${ref#refs/tags/}"
+          if [ "${version#v}" != "$version" ]; then
+            # arm64 is emulated and a full Next.js build there takes ~30 min,
+            # so releases pay for it and `main` does not.
+            {
+              echo "release=true"
+              echo "version=$version"
+              echo "platforms=linux/amd64,linux/arm64"
+            } >> "$GITHUB_OUTPUT"
           else
-            echo "value=linux/amd64" >> "$GITHUB_OUTPUT"
+            {
+              echo "release=false"
+              echo "version="
+              echo "platforms=linux/amd64"
+            } >> "$GITHUB_OUTPUT"
           fi
+
+      # `type=sha` in metadata-action reads github.sha, which on a dispatch
+      # is the branch head rather than the ref we just checked out.
+      - name: Record the commit actually checked out
+        id: rev
+        run: echo "short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -62,13 +85,16 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          # `value=` pins every version-derived tag to the ref resolved above
+          # rather than to github.ref, so tag pushes and manual dispatches
+          # produce identical results.
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
-            type=sha,format=short
+            type=semver,pattern={{version}},value=${{ steps.ctx.outputs.version }},enable=${{ steps.ctx.outputs.release == 'true' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.ctx.outputs.version }},enable=${{ steps.ctx.outputs.release == 'true' }}
+            type=semver,pattern={{major}},value=${{ steps.ctx.outputs.version }},enable=${{ steps.ctx.outputs.release == 'true' }}
+            type=raw,value=latest,enable=${{ steps.ctx.outputs.release == 'true' }}
+            type=raw,value=edge,enable=${{ steps.ctx.outputs.release == 'false' && github.event_name == 'push' }}
+            type=raw,value=sha-${{ steps.rev.outputs.short }}
           labels: |
             org.opencontainers.image.title=Loom
             org.opencontainers.image.description=Self-hosted AI testing platform — model & MCP playground, full request logs, and an OpenAI-compatible gateway.
@@ -79,7 +105,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: ${{ steps.platforms.outputs.value }}
+          platforms: ${{ steps.ctx.outputs.platforms }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -97,5 +123,5 @@ jobs:
             echo "${{ steps.meta.outputs.tags }}"
             echo '```'
             echo
-            echo "Platforms: \`${{ steps.platforms.outputs.value }}\`"
+            echo "Platforms: \`${{ steps.ctx.outputs.platforms }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
